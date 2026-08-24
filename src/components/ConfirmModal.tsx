@@ -8,7 +8,9 @@ interface ConfirmModalProps {
   title: string;
   message: string;
   confirmLabel?: string;
+  confirmText?: string;
   cancelLabel?: string;
+  cancelText?: string;
   isDestructive?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -18,12 +20,17 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   visible,
   title,
   message,
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Cancel',
+  confirmLabel,
+  confirmText,
+  cancelLabel,
+  cancelText,
   isDestructive = false,
   onConfirm,
   onCancel,
 }) => {
+  const finalConfirmText = confirmText || confirmLabel || 'Confirm';
+  const finalCancelText = cancelText || cancelLabel || 'Cancel';
+
   return (
     <Modal
       visible={visible}
@@ -42,9 +49,9 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
                 ]}
               >
                 <AlertTriangle
-                  size={20}
-                  color={isDestructive ? theme.colors.danger : theme.colors.primary}
-                  strokeWidth={1.4}
+                  size={18}
+                  color={isDestructive ? theme.colors.negative : theme.colors.primary}
+                  strokeWidth={1.5}
                 />
               </View>
 
@@ -57,7 +64,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
                   onPress={onCancel}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.cancelText}>{cancelLabel}</Text>
+                  <Text style={styles.cancelText}>{finalCancelText}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -68,7 +75,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
                   onPress={onConfirm}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.confirmText}>{confirmLabel}</Text>
+                  <Text style={styles.confirmText}>{finalConfirmText}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -82,7 +89,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.35)',
+    backgroundColor: theme.colors.overlay,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
@@ -90,39 +97,38 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 320,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.container,
     padding: 20,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.border,
   },
   iconWrapper: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
     borderWidth: 1,
   },
   iconDestructive: {
-    backgroundColor: theme.colors.dangerLight,
-    borderColor: '#FECACA',
+    backgroundColor: theme.colors.negativeLight,
+    borderColor: theme.colors.negative,
   },
   iconNormal: {
-    backgroundColor: theme.colors.primaryLight,
-    borderColor: '#DBEAFE',
+    backgroundColor: theme.colors.accentLight,
+    borderColor: theme.colors.primary,
   },
   title: {
-    fontSize: 16,
-    fontWeight: '600',
+    ...theme.typography.sectionHeading,
     color: theme.colors.textPrimary,
     textAlign: 'center',
     marginBottom: 6,
   },
   message: {
-    fontSize: 13,
+    ...theme.typography.secondary,
     color: theme.colors.textSecondary,
     textAlign: 'center',
     lineHeight: 18,
@@ -131,38 +137,36 @@ const styles = StyleSheet.create({
   actionRow: {
     flexDirection: 'row',
     width: '100%',
-    gap: 10,
+    gap: 8,
   },
   cancelButton: {
     flex: 1,
     paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: '#F1F5F9',
     alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: theme.borderRadius.sm,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
   },
   cancelText: {
-    fontSize: 13,
+    ...theme.typography.secondary,
     fontWeight: '500',
     color: theme.colors.textSecondary,
   },
   confirmButton: {
     flex: 1,
     paddingVertical: 10,
-    borderRadius: 10,
     alignItems: 'center',
-    justifyContent: 'center',
-  },
-  confirmDestructive: {
-    backgroundColor: theme.colors.danger,
+    borderRadius: theme.borderRadius.sm,
   },
   confirmNormal: {
-    backgroundColor: theme.colors.primary,
+    backgroundColor: theme.colors.textPrimary,
+  },
+  confirmDestructive: {
+    backgroundColor: theme.colors.negative,
   },
   confirmText: {
-    fontSize: 13,
+    ...theme.typography.secondary,
     fontWeight: '600',
     color: '#FFFFFF',
   },

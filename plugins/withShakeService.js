@@ -52,12 +52,13 @@ class ShakeService : Service(), SensorEventListener {
         private const val ALERT_CHANNEL_ID = "shake_alert_channel"
         private const val NOTIFICATION_ID = 9001
         private const val ALERT_NOTIFICATION_ID = 9002
-        private const val SHAKE_DEBOUNCE_MS = 1800L
-        var shakeThreshold: Float = 15.0f
+        private const val SHAKE_DEBOUNCE_MS = 2000L
+        var shakeThreshold: Float = 24.0f
         var isRunning: Boolean = false
             private set
+        var isAppInForeground: Boolean = true
 
-        fun start(context: Context, threshold: Float = 15.0f) {
+        fun start(context: Context, threshold: Float = 24.0f) {
             shakeThreshold = threshold
             val intent = Intent(context, ShakeService::class.java)
             try {
@@ -101,7 +102,7 @@ class ShakeService : Service(), SensorEventListener {
         accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         if (accelerometer != null) {
             sensorManager?.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_UI)
-            Log.d(TAG, "Accelerometer registered (threshold=\$shakeThreshold)")
+            Log.d(TAG, "Accelerometer registered (threshold=$shakeThreshold)")
         } else {
             Log.e(TAG, "No accelerometer sensor found on device")
         }
@@ -156,7 +157,7 @@ class ShakeService : Service(), SensorEventListener {
             val now = System.currentTimeMillis()
             if (now - lastShakeTime > SHAKE_DEBOUNCE_MS) {
                 lastShakeTime = now
-                Log.d(TAG, "Native shake detected! delta=\$delta (threshold=\$shakeThreshold)")
+                Log.d(TAG, "Native shake detected! delta=$delta (threshold=$shakeThreshold)")
                 onShakeDetected()
             }
         }
@@ -165,6 +166,11 @@ class ShakeService : Service(), SensorEventListener {
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     private fun onShakeDetected() {
+        if (isAppInForeground) {
+            Log.d(TAG, "App is in foreground - skipping native notification/intent so foreground UI modal opens directly")
+            return
+        }
+
         try {
             val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             if (vibrator != null && vibrator.hasVibrator()) {
@@ -299,10 +305,10 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
     @ReactMethod
     fun startService(sensitivity: String) {
         val threshold = when (sensitivity.lowercase()) {
-            "low" -> 22.0f
-            "medium" -> 15.0f
+            "low" -> 24.0f
+            "medium" -> 16.0f
             "high" -> 10.0f
-            else -> 15.0f
+            else -> 24.0f
         }
         Log.d(TAG, "Starting ShakeService with sensitivity=\$sensitivity (threshold=\$threshold)")
         ShakeService.start(reactApplicationContext, threshold)
@@ -317,13 +323,19 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
     @ReactMethod
     fun updateSensitivity(sensitivity: String) {
         val threshold = when (sensitivity.lowercase()) {
-            "low" -> 22.0f
-            "medium" -> 15.0f
+            "low" -> 24.0f
+            "medium" -> 16.0f
             "high" -> 10.0f
-            else -> 15.0f
+            else -> 24.0f
         }
         ShakeService.shakeThreshold = threshold
         Log.d(TAG, "Updated ShakeService threshold to \$threshold")
+    }
+
+    @ReactMethod
+    fun setAppForeground(isForeground: Boolean) {
+        ShakeService.isAppInForeground = isForeground
+        Log.d(TAG, "Updated ShakeService isAppInForeground to \$isForeground")
     }
 
     @ReactMethod

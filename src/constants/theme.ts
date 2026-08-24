@@ -1,115 +1,134 @@
 export const theme = {
   colors: {
-    background: '#F8FAFC',
-    backgroundSecondary: '#F1F5F9',
+    // Backgrounds & Surfaces (Light Theme Only)
+    background: '#F7F7F5', // Warm light neutral
+    backgroundSecondary: '#F1F1EF',
+    surface: '#FFFFFF',
+    surfaceSubtle: '#FAFAF9',
     card: '#FFFFFF',
     modalBackground: '#FFFFFF',
-    glassBackground: '#FFFFFF',
-    glassBorder: '#E2E8F0',
-
-    // Primary & Accents
-    primary: '#2563EB',
-    primaryLight: '#EFF6FF',
-    primaryDark: '#1D4ED8',
-    primarySubtle: '#DBEAFE',
-
-    // Status Colors
-    success: '#10B981',
-    successLight: '#ECFDF5',
-    successText: '#065F46',
-
-    danger: '#EF4444',
-    dangerLight: '#FEF2F2',
-    dangerText: '#991B1B',
-
-    warning: '#F59E0B',
-    warningLight: '#FFFBEB',
-    warningText: '#92400E',
+    glassBackground: 'rgba(255, 255, 255, 0.94)',
+    glassBorder: '#E7E7E4',
 
     // Typography
-    textPrimary: '#0F172A',
-    textSecondary: '#64748B',
-    textMuted: '#94A3B8',
+    textPrimary: '#171717', // Near black, high contrast
+    textSecondary: '#737373', // Refined neutral gray
+    textTertiary: '#A3A3A3', // Placeholder / subtle
+    textMuted: '#A3A3A3',
     textInverse: '#FFFFFF',
 
-    // Borders & Dividers
-    border: '#E2E8F0',
-    borderLight: '#F1F5F9',
-    borderActive: '#2563EB',
+    // Borders & Dividers (Max 1px)
+    border: '#E7E7E4',
+    borderSubtle: '#F1F1EF',
+    borderActive: '#4F46E5',
 
-    overlay: 'rgba(15, 23, 42, 0.45)',
+    // Primary Brand Accent (Muted refined indigo)
+    primary: '#4F46E5',
+    primaryLight: '#EEF2FF',
+    primaryDark: '#3730A3',
+    accent: '#4F46E5',
+    accentLight: '#EEF2FF',
+
+    // Status Colors (Positive / Negative)
+    positive: '#16A34A',
+    positiveLight: '#F0FDF4',
+    positiveText: '#15803D',
+    success: '#16A34A',
+    successLight: '#F0FDF4',
+    successText: '#15803D',
+
+    negative: '#DC2626',
+    negativeLight: '#FEF2F2',
+    negativeText: '#B91C1C',
+    danger: '#DC2626',
+    dangerLight: '#FEF2F2',
+    dangerText: '#B91C1C',
+
+    warning: '#D97706',
+    warningLight: '#FFFBEB',
+    warningText: '#B45309',
+
+    overlay: 'rgba(23, 23, 23, 0.4)',
   },
   typography: {
-    hero: {
-      fontSize: 32,
+    display: {
+      fontSize: 30,
       fontWeight: '600' as const,
-      lineHeight: 38,
-      letterSpacing: -0.5,
+      lineHeight: 36,
+      letterSpacing: -0.6,
     },
-    title1: {
-      fontSize: 22,
+    pageHeading: {
+      fontSize: 24,
       fontWeight: '600' as const,
-      lineHeight: 28,
-      letterSpacing: -0.3,
+      lineHeight: 30,
+      letterSpacing: -0.4,
     },
-    title2: {
+    sectionHeading: {
       fontSize: 17,
       fontWeight: '600' as const,
       lineHeight: 22,
+      letterSpacing: -0.2,
     },
     bodyLarge: {
       fontSize: 15,
       fontWeight: '500' as const,
-      lineHeight: 20,
+      lineHeight: 21,
     },
     body: {
       fontSize: 14,
       fontWeight: '400' as const,
-      lineHeight: 19,
+      lineHeight: 20,
+    },
+    secondary: {
+      fontSize: 13,
+      fontWeight: '400' as const,
+      lineHeight: 18,
     },
     caption: {
       fontSize: 12,
       fontWeight: '400' as const,
       lineHeight: 16,
     },
-    small: {
+    label: {
       fontSize: 11,
-      fontWeight: '500' as const,
+      fontWeight: '600' as const,
       lineHeight: 14,
+      letterSpacing: 0.6,
     },
+    amount: {
+      fontSize: 32,
+      fontWeight: '700' as const,
+      lineHeight: 38,
+      letterSpacing: -0.8,
+    },
+    amountSmall: {
+      fontSize: 22,
+      fontWeight: '600' as const,
+      lineHeight: 28,
+      letterSpacing: -0.4,
+    },
+  },
+  spacing: {
+    xs: 4,
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 20,
+    xxl: 24,
+    xxxl: 32,
+    huge: 40,
+    massive: 48,
   },
   borderRadius: {
-    xs: 8,
-    sm: 12,
-    md: 16,
-    lg: 20,
-    xl: 24,
-    circle: 999,
-    pill: 999,
+    sm: 8,
+    md: 12,
+    lg: 16,
+    container: 20,
+    full: 999,
   },
+  // STRICT RULE: No shadows anywhere.
   shadows: {
-    subtle: {
-      shadowColor: 'transparent',
-      shadowOffset: { width: 0, height: 0 },
-      shadowOpacity: 0,
-      shadowRadius: 0,
-      elevation: 0,
-    },
-    card: {
-      shadowColor: 'transparent',
-      shadowOffset: { width: 0, height: 0 },
-      shadowOpacity: 0,
-      shadowRadius: 0,
-      elevation: 0,
-    },
-    float: {
-      shadowColor: 'transparent',
-      shadowOffset: { width: 0, height: 0 },
-      shadowOpacity: 0,
-      shadowRadius: 0,
-      elevation: 0,
-    },
-    modal: {
+    none: {
       shadowColor: 'transparent',
       shadowOffset: { width: 0, height: 0 },
       shadowOpacity: 0,

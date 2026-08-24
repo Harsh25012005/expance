@@ -23,7 +23,7 @@ interface ShakeContextType {
 
 const ShakeContext = createContext<ShakeContextType | undefined>(undefined);
 
-const SHAKE_COOLDOWN_MS = 1800;
+const SHAKE_COOLDOWN_MS = 2000;
 
 export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { settings } = useExpenses();
@@ -87,6 +87,14 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     triggerAddExpense(true);
   }, [triggerAddExpense]);
 
+  // Sync foreground state with native ShakeService
+  useEffect(() => {
+    shakeServiceBridge.setAppForeground(true);
+    return () => {
+      shakeServiceBridge.setAppForeground(false);
+    };
+  }, []);
+
   // Handle Deep Linking (from native Background ShakeService)
   useEffect(() => {
     const handleDeepLink = (event: { url: string }) => {
@@ -98,12 +106,14 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     // Check initial URL if app was launched via deep link
-    Linking.getInitialURL().then((url) => {
-      if (url && (url.includes('shake-open') || url.includes('add-expense'))) {
-        console.log('[ShakeContext] App launched via deep link:', url);
-        triggerAddExpense(true);
-      }
-    }).catch(() => {});
+    Linking.getInitialURL()
+      .then((url) => {
+        if (url && (url.includes('shake-open') || url.includes('add-expense'))) {
+          console.log('[ShakeContext] App launched via deep link:', url);
+          triggerAddExpense(true);
+        }
+      })
+      .catch(() => {});
 
     const subscription = Linking.addEventListener('url', handleDeepLink);
     return () => {
@@ -124,8 +134,8 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return;
       }
 
-      // Update rate
-      Accelerometer.setUpdateInterval(50); // 20Hz update rate
+      // 20Hz update rate
+      Accelerometer.setUpdateInterval(50);
 
       sensorSubscription = Accelerometer.addListener((data) => {
         if (!settingsRef.current.shakeEnabled) return;
@@ -149,13 +159,13 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         lastYRef.current = y;
         lastZRef.current = z;
 
-        // Threshold based on sensitivity
+        // Threshold based on sensitivity - Default is LOW
         const threshold =
           settingsRef.current.shakeSensitivity === 'low'
-            ? 2.6
+            ? 3.0 // Low sensitivity: requires deliberate shake to prevent accidental popups
             : settingsRef.current.shakeSensitivity === 'high'
-            ? 1.2
-            : 1.8;
+            ? 1.4 // High sensitivity
+            : 2.0; // Medium sensitivity
 
         if (delta > threshold) {
           triggerAddExpense(true);
@@ -166,10 +176,12 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // App state changes handling (Foreground vs Background)
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active') {
-        console.log('[ShakeContext] App active: enabling foreground accelerometer');
+        console.log('[ShakeContext] App active: enabling foreground accelerometer and syncing state');
+        shakeServiceBridge.setAppForeground(true);
         setupAccelerometer();
       } else if (nextAppState === 'background' || nextAppState === 'inactive') {
         console.log('[ShakeContext] App backgrounded: switching to native service');
+        shakeServiceBridge.setAppForeground(false);
         if (sensorSubscription) {
           sensorSubscription.remove();
           sensorSubscription = null;

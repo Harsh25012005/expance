@@ -3,8 +3,8 @@ import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native
 import { LayoutDashboard, Receipt, PieChart, Sliders } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { TabScreen } from '../types/expense';
-import { theme } from '../constants/theme';
 import { useExpenses } from '../context/ExpenseContext';
+import { theme } from '../constants/theme';
 
 interface CustomTabBarProps {
   activeTab: TabScreen;
@@ -14,7 +14,7 @@ interface CustomTabBarProps {
 const TABS: { id: TabScreen; label: string }[] = [
   { id: 'home', label: 'Home' },
   { id: 'expenses', label: 'Expenses' },
-  { id: 'analytics', label: 'Analytics' },
+  { id: 'analytics', label: 'Insights' },
   { id: 'settings', label: 'Settings' },
 ];
 
@@ -33,8 +33,8 @@ export const CustomTabBar: React.FC<CustomTabBarProps> = ({ activeTab, onTabChan
   };
 
   const renderTabIcon = (tabId: TabScreen, isActive: boolean) => {
-    const color = isActive ? theme.colors.primary : theme.colors.textSecondary;
-    const strokeWidth = 1.4;
+    const color = isActive ? theme.colors.textPrimary : theme.colors.textTertiary;
+    const strokeWidth = 1.5;
     const size = 18;
 
     switch (tabId) {
@@ -61,12 +61,12 @@ export const CustomTabBar: React.FC<CustomTabBarProps> = ({ activeTab, onTabChan
               key={tab.id}
               style={[styles.tabButton, isActive && styles.activeTabButton]}
               onPress={() => handlePress(tab.id)}
-              activeOpacity={0.7}
+              activeOpacity={0.8}
               accessibilityRole="button"
               accessibilityLabel={tab.label}
               accessibilityState={{ selected: isActive }}
             >
-              <View style={[styles.iconCircle, isActive && styles.activeIconCircle]}>
+              <View style={styles.iconWrap}>
                 {renderTabIcon(tab.id, isActive)}
               </View>
               <Text
@@ -96,46 +96,42 @@ const styles = StyleSheet.create({
   },
   container: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 999, // Pill capsule
+    backgroundColor: theme.colors.glassBackground,
+    borderRadius: theme.borderRadius.container,
     paddingVertical: 5,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.border,
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 360,
     justifyContent: 'space-between',
   },
   tabButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 5,
+    paddingVertical: 6,
     paddingHorizontal: 4,
-    borderRadius: 999,
+    borderRadius: theme.borderRadius.md,
   },
   activeTabButton: {
-    backgroundColor: theme.colors.primaryLight,
+    backgroundColor: theme.colors.backgroundSecondary,
   },
-  iconCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+  iconWrap: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 1,
+    marginBottom: 2,
   },
-  activeIconCircle: {},
   tabLabel: {
+    ...theme.typography.caption,
     fontSize: 10,
-    textAlign: 'center',
   },
   activeTabLabel: {
     fontWeight: '600',
-    color: theme.colors.primary,
+    color: theme.colors.textPrimary,
   },
   inactiveTabLabel: {
     fontWeight: '400',
-    color: theme.colors.textSecondary,
+    color: theme.colors.textTertiary,
   },
 });

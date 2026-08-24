@@ -39,7 +39,8 @@
     },
     "plugins": [
       "expo-font",
-      "./plugins/withShakeService"
+      "./plugins/withShakeService",
+      "expo-sharing"
     ],
     "extra": {
       "eas": {

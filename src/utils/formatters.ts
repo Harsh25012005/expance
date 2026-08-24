@@ -32,6 +32,9 @@ export function formatDate(dateString: string): string {
   });
 }
 
+export const formatDateHeader = formatDate;
+
+
 export function formatTime(dateString: string): string {
   const date = new Date(dateString);
   return date.toLocaleTimeString('en-US', {

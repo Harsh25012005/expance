@@ -1,27 +1,63 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import {
+  Wallet,
+  Calendar,
   TrendingUp,
   PieChart,
-  Calendar,
-  Wallet,
   Award,
   BarChart3,
-  Inbox,
+  Utensils,
+  Car,
+  ShoppingBag,
+  Zap,
+  Film,
+  HeartPulse,
+  Plane,
+  GraduationCap,
+  MoreHorizontal,
 } from 'lucide-react-native';
 import { useExpenses } from '../context/ExpenseContext';
 import { CATEGORIES } from '../constants/categories';
-import { theme } from '../constants/theme';
+import { CategoryType } from '../types/expense';
 import { formatCurrency, formatPercentage } from '../utils/formatters';
+import { theme } from '../constants/theme';
 
 export const AnalyticsScreen: React.FC = () => {
   const { stats, settings, expenses } = useExpenses();
   const hasExpenses = expenses.length > 0;
 
+  const renderCategoryIcon = (catId: CategoryType, size: number = 14, color: string = theme.colors.textPrimary) => {
+    switch (catId) {
+      case 'Food':
+        return <Utensils size={size} color={color} strokeWidth={1.5} />;
+      case 'Transport':
+        return <Car size={size} color={color} strokeWidth={1.5} />;
+      case 'Shopping':
+        return <ShoppingBag size={size} color={color} strokeWidth={1.5} />;
+      case 'Bills':
+        return <Zap size={size} color={color} strokeWidth={1.5} />;
+      case 'Entertainment':
+        return <Film size={size} color={color} strokeWidth={1.5} />;
+      case 'Health':
+        return <HeartPulse size={size} color={color} strokeWidth={1.5} />;
+      case 'Travel':
+        return <Plane size={size} color={color} strokeWidth={1.5} />;
+      case 'Education':
+        return <GraduationCap size={size} color={color} strokeWidth={1.5} />;
+      case 'Other':
+      default:
+        return <MoreHorizontal size={size} color={color} strokeWidth={1.5} />;
+    }
+  };
+
   const activeCategories = CATEGORIES.map((cat) => ({
     ...cat,
     amount: stats.categoryTotals[cat.id] || 0,
-    percentage: stats.totalSpending > 0 ? ((stats.categoryTotals[cat.id] || 0) / stats.totalSpending) * 100 : 0,
+    percentage:
+      stats.totalSpending > 0
+        ? ((stats.categoryTotals[cat.id] || 0) / stats.totalSpending) * 100
+        : 0,
   }))
     .filter((cat) => cat.amount > 0)
     .sort((a, b) => b.amount - a.amount);
@@ -56,90 +92,67 @@ export const AnalyticsScreen: React.FC = () => {
       contentContainerStyle={styles.contentContainer}
       showsVerticalScrollIndicator={false}
     >
-      <View style={styles.header}>
-        <Text style={styles.title}>Analytics</Text>
-      </View>
-
       {hasExpenses ? (
         <>
-          {/* Summary Overview Grid */}
+          {/* 1. Metric Overview Cards */}
           <View style={styles.metricsGrid}>
             <View style={styles.metricCard}>
-              <View style={[styles.metricIconCircle, { backgroundColor: theme.colors.primaryLight }]}>
-                <Wallet size={15} color={theme.colors.primary} strokeWidth={1.4} />
-              </View>
-              <Text style={styles.metricLabel}>Total</Text>
+              <Text style={styles.metricLabel}>TOTAL SPENT</Text>
               <Text style={styles.metricValue}>
                 {formatCurrency(stats.totalSpending, settings.currency)}
               </Text>
             </View>
 
             <View style={styles.metricCard}>
-              <View style={[styles.metricIconCircle, { backgroundColor: '#ECFDF5' }]}>
-                <Calendar size={15} color="#059669" strokeWidth={1.4} />
-              </View>
-              <Text style={styles.metricLabel}>This Month</Text>
+              <Text style={styles.metricLabel}>THIS MONTH</Text>
               <Text style={styles.metricValue}>
                 {formatCurrency(stats.thisMonthSpending, settings.currency)}
               </Text>
             </View>
 
             <View style={styles.metricCard}>
-              <View style={[styles.metricIconCircle, { backgroundColor: '#FFFBEB' }]}>
-                <TrendingUp size={15} color="#D97706" strokeWidth={1.4} />
-              </View>
-              <Text style={styles.metricLabel}>Average</Text>
+              <Text style={styles.metricLabel}>AVG / TRANSACTION</Text>
               <Text style={styles.metricValue}>
                 {formatCurrency(stats.averageExpense, settings.currency)}
               </Text>
             </View>
 
             <View style={styles.metricCard}>
-              <View style={[styles.metricIconCircle, { backgroundColor: '#FDF2F8' }]}>
-                <Award size={15} color="#DB2777" strokeWidth={1.4} />
-              </View>
-              <Text style={styles.metricLabel}>Top Category</Text>
+              <Text style={styles.metricLabel}>TOP CATEGORY</Text>
               <Text style={styles.metricValue} numberOfLines={1}>
                 {stats.topCategory?.category || 'None'}
               </Text>
             </View>
           </View>
 
-          {/* Monthly Trend Visualizer */}
+          {/* 2. Spending Trend Card */}
           <View style={styles.card}>
             <View style={styles.cardHeader}>
-              <BarChart3 size={15} color={theme.colors.primary} strokeWidth={1.4} />
-              <Text style={styles.cardTitle}>Monthly Trends</Text>
+              <Text style={styles.cardTitle}>Spending trend</Text>
+              <Text style={styles.cardSubtitle}>Last 4 months</Text>
             </View>
 
-            <View style={styles.chartRow}>
-              {monthlyTrends.map((item, idx) => {
-                const heightPercent = maxMonthAmount > 0 ? (item.amount / maxMonthAmount) * 100 : 0;
-                const isCurrent = idx === monthlyTrends.length - 1;
+            <View style={styles.trendBarsContainer}>
+              {monthlyTrends.map((month) => {
+                const heightPercent = Math.max((month.amount / maxMonthAmount) * 100, 6);
+                const isCurrentMonth = month.label === monthlyTrends[monthlyTrends.length - 1].label;
 
                 return (
-                  <View key={item.label} style={styles.chartCol}>
+                  <View key={month.label} style={styles.trendBarCol}>
                     <Text style={styles.barAmountText}>
-                      {item.amount > 0 ? `${settings.currency}${Math.round(item.amount)}` : '$0'}
+                      {month.amount > 0 ? formatCurrency(month.amount, settings.currency) : '-'}
                     </Text>
                     <View style={styles.barTrack}>
                       <View
                         style={[
                           styles.barFill,
-                          {
-                            height: `${Math.max(6, heightPercent)}%`,
-                            backgroundColor: isCurrent ? theme.colors.primary : '#93C5FD',
-                          },
+                          { height: `${heightPercent}%` },
+                          isCurrentMonth && styles.barFillActive,
                         ]}
                       />
                     </View>
-                    <Text
-                      style={[
-                        styles.barLabelText,
-                        isCurrent && styles.barLabelCurrent,
-                      ]}
-                    >
-                      {item.label}
+                    <Text style={[styles.barMonthLabel, isCurrentMonth && styles.barMonthLabelActive]}>
+                      {month.label}
                     </Text>
                   </View>
                 );
@@ -147,54 +160,44 @@ export const AnalyticsScreen: React.FC = () => {
             </View>
           </View>
 
-          {/* Category Breakdown */}
+          {/* 3. Top Categories Ranking */}
           <View style={styles.card}>
             <View style={styles.cardHeader}>
-              <PieChart size={15} color={theme.colors.primary} strokeWidth={1.4} />
-              <Text style={styles.cardTitle}>Categories</Text>
+              <Text style={styles.cardTitle}>Top categories</Text>
+              <Text style={styles.cardSubtitle}>{activeCategories.length} active</Text>
             </View>
 
-            {/* Segmented Bar */}
-            <View style={styles.segmentedBar}>
-              {activeCategories.map((cat) => (
-                <View
-                  key={cat.id}
-                  style={[
-                    styles.barSegment,
-                    {
-                      flex: cat.percentage,
-                      backgroundColor: cat.color,
-                    },
-                  ]}
-                />
-              ))}
-            </View>
-
-            {/* Categories List (Text only) */}
             <View style={styles.categoriesList}>
-              {activeCategories.map((cat) => (
-                <View key={cat.id} style={styles.categoryItem}>
-                  <View style={styles.catInfoCol}>
-                    <View style={styles.catNameRow}>
-                      <Text style={styles.catLabel}>{cat.label}</Text>
+              {activeCategories.map((cat, idx) => (
+                <View key={cat.id} style={styles.categoryRow}>
+                  <View style={styles.categoryRowTop}>
+                    <View style={styles.catLeft}>
+                      <Text style={styles.catRank}>#{idx + 1}</Text>
+                      <View style={[styles.catIconCircle, { backgroundColor: cat.bgColor }]}>
+                        {renderCategoryIcon(cat.id, 14, cat.color)}
+                      </View>
+                      <Text style={styles.catName}>{cat.label}</Text>
+                    </View>
+                    <View style={styles.catRight}>
                       <Text style={styles.catAmount}>
                         {formatCurrency(cat.amount, settings.currency)}
                       </Text>
-                    </View>
-
-                    <View style={styles.catTrack}>
-                      <View
-                        style={[
-                          styles.catFill,
-                          {
-                            width: `${Math.min(100, Math.max(3, cat.percentage))}%`,
-                            backgroundColor: cat.color,
-                          },
-                        ]}
-                      />
+                      <Text style={styles.catPercent}>
+                        {formatPercentage(cat.percentage)}
+                      </Text>
                     </View>
                   </View>
-                  <Text style={styles.catPercent}>{formatPercentage(cat.percentage)}</Text>
+                  <View style={styles.progressBarTrack}>
+                    <View
+                      style={[
+                        styles.progressBarFill,
+                        {
+                          width: `${Math.min(Math.max(cat.percentage, 4), 100)}%`,
+                          backgroundColor: theme.colors.primary,
+                        },
+                      ]}
+                    />
+                  </View>
                 </View>
               ))}
             </View>
@@ -202,18 +205,16 @@ export const AnalyticsScreen: React.FC = () => {
         </>
       ) : (
         /* Empty State */
-        <View style={styles.emptyState}>
+        <View style={styles.emptyContainer}>
           <View style={styles.emptyIconCircle}>
-            <Inbox size={32} color={theme.colors.textMuted} strokeWidth={1.4} />
+            <PieChart size={24} color={theme.colors.textTertiary} strokeWidth={1.5} />
           </View>
-          <Text style={styles.emptyTitle}>No analytics yet</Text>
-          <Text style={styles.emptyDescription}>
-            Spending trends will appear here when you record expenses.
+          <Text style={styles.emptyTitle}>Not enough data yet</Text>
+          <Text style={styles.emptySubtitle}>
+            Add a few expenses to see your spending insights, category breakdown, and monthly trends.
           </Text>
         </View>
       )}
-
-      <View style={{ height: 80 }} />
     </ScrollView>
   );
 };
@@ -225,194 +226,187 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     paddingHorizontal: 20,
-    paddingTop: 10,
-  },
-  header: {
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
-    letterSpacing: -0.2,
+    paddingTop: 8,
+    paddingBottom: 110,
   },
   metricsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
+    gap: 10,
+    marginBottom: 16,
   },
   metricCard: {
     width: '48%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 12,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    padding: 14,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  metricIconCircle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.border,
   },
   metricLabel: {
-    fontSize: 11,
+    ...theme.typography.label,
     color: theme.colors.textSecondary,
-    marginBottom: 2,
+    marginBottom: 6,
   },
   metricValue: {
-    fontSize: 14,
-    fontWeight: '600',
+    ...theme.typography.sectionHeading,
     color: theme.colors.textPrimary,
   },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.container,
+    padding: 18,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.border,
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 12,
+    justifyContent: 'space-between',
+    marginBottom: 16,
   },
   cardTitle: {
-    fontSize: 14,
-    fontWeight: '600',
+    ...theme.typography.sectionHeading,
     color: theme.colors.textPrimary,
   },
-  chartRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    height: 120,
-    paddingTop: 16,
+  cardSubtitle: {
+    ...theme.typography.caption,
+    color: theme.colors.textSecondary,
   },
-  chartCol: {
+  trendBarsContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    height: 130,
+    paddingTop: 10,
+  },
+  trendBarCol: {
     flex: 1,
     alignItems: 'center',
     height: '100%',
     justifyContent: 'flex-end',
   },
   barAmountText: {
+    ...theme.typography.caption,
     fontSize: 10,
+    fontWeight: '600',
     color: theme.colors.textSecondary,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   barTrack: {
-    width: 20,
-    height: 70,
-    backgroundColor: '#F1F5F9',
-    borderRadius: 4,
+    width: 24,
+    height: 80,
+    backgroundColor: theme.colors.backgroundSecondary,
+    borderRadius: 6,
     justifyContent: 'flex-end',
     overflow: 'hidden',
   },
   barFill: {
     width: '100%',
-    borderRadius: 4,
+    backgroundColor: theme.colors.border,
+    borderRadius: 6,
   },
-  barLabelText: {
-    fontSize: 11,
+  barFillActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  barMonthLabel: {
+    ...theme.typography.caption,
+    fontWeight: '500',
     color: theme.colors.textSecondary,
     marginTop: 6,
   },
-  barLabelCurrent: {
+  barMonthLabelActive: {
+    color: theme.colors.textPrimary,
     fontWeight: '600',
-    color: theme.colors.primary,
-  },
-  segmentedBar: {
-    flexDirection: 'row',
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
-    backgroundColor: '#F1F5F9',
-    marginBottom: 12,
-  },
-  barSegment: {
-    height: '100%',
   },
   categoriesList: {
-    gap: 10,
+    gap: 12,
   },
-  categoryItem: {
+  categoryRow: {
+    gap: 6,
+  },
+  categoryRowTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  catLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  catInfoCol: {
-    flex: 1,
+  catRank: {
+    ...theme.typography.caption,
+    fontWeight: '600',
+    color: theme.colors.textTertiary,
+    width: 18,
   },
-  catNameRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 3,
+  catIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  catLabel: {
-    fontSize: 12,
+  catName: {
+    ...theme.typography.body,
     fontWeight: '500',
     color: theme.colors.textPrimary,
   },
+  catRight: {
+    alignItems: 'flex-end',
+  },
   catAmount: {
-    fontSize: 12,
-    fontWeight: '500',
+    ...theme.typography.body,
+    fontWeight: '600',
+    color: theme.colors.textPrimary,
+  },
+  catPercent: {
+    ...theme.typography.caption,
     color: theme.colors.textSecondary,
   },
-  catTrack: {
+  progressBarTrack: {
     height: 4,
+    backgroundColor: theme.colors.backgroundSecondary,
     borderRadius: 2,
-    backgroundColor: '#F1F5F9',
     overflow: 'hidden',
   },
-  catFill: {
+  progressBarFill: {
     height: '100%',
     borderRadius: 2,
   },
-  catPercent: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: theme.colors.textSecondary,
-    width: 32,
-    textAlign: 'right',
-  },
-  emptyState: {
+  emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 48,
-    paddingHorizontal: 20,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    paddingVertical: 60,
+    paddingHorizontal: 24,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.container,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.border,
+    marginTop: 12,
   },
   emptyIconCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#F8FAFC',
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: theme.colors.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.borderSubtle,
   },
   emptyTitle: {
-    fontSize: 15,
-    fontWeight: '600',
+    ...theme.typography.sectionHeading,
     color: theme.colors.textPrimary,
     marginBottom: 4,
   },
-  emptyDescription: {
-    fontSize: 12,
+  emptySubtitle: {
+    ...theme.typography.secondary,
     color: theme.colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 16,
+    lineHeight: 18,
   },
 });

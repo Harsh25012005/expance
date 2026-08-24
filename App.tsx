@@ -12,13 +12,13 @@ import {
   PlusJakartaSans_800ExtraBold,
 } from '@expo-google-fonts/plus-jakarta-sans';
 
-import { ExpenseProvider } from './src/context/ExpenseContext';
+import { ExpenseProvider, useExpenses } from './src/context/ExpenseContext';
 import { ShakeProvider } from './src/context/ShakeContext';
 import { Header } from './src/components/Header';
 import { CustomTabBar } from './src/components/CustomTabBar';
 import { QuickExpenseModal } from './src/components/QuickExpenseModal';
-import { ShakeSimulatorFab } from './src/components/ShakeSimulatorFab';
 
+import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { AllExpensesScreen } from './src/screens/AllExpensesScreen';
 import { AnalyticsScreen } from './src/screens/AnalyticsScreen';
@@ -48,25 +48,25 @@ function MainApp() {
     switch (activeTab) {
       case 'home':
         return {
-          title: 'ExpenseFlow',
+          isHome: true,
           showAddButton: true,
         };
       case 'expenses':
         return {
-          title: 'Expenses History',
+          title: 'Expenses',
           subtitle: 'All recorded transactions',
           showAddButton: true,
         };
       case 'analytics':
         return {
-          title: 'Analytics',
+          title: 'Insights',
           subtitle: 'Spending patterns & trends',
           showAddButton: false,
         };
       case 'settings':
         return {
-          title: 'Preferences',
-          subtitle: 'Shake & data settings',
+          title: 'Settings',
+          subtitle: 'Preferences & data management',
           showAddButton: false,
         };
     }
@@ -76,7 +76,7 @@ function MainApp() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      {/* Light Theme Status Bar (Dark text/icons) */}
+      {/* Light Theme Status Bar */}
       <StatusBar style="dark" />
 
       {/* Top Header */}
@@ -84,20 +84,46 @@ function MainApp() {
         title={headerProps.title}
         subtitle={headerProps.subtitle}
         showAddButton={headerProps.showAddButton}
+        isHome={headerProps.isHome}
       />
 
       {/* Screen Body */}
       <View style={styles.screenContainer}>{renderCurrentScreen()}</View>
 
-      {/* Floating Shake Test Simulator */}
-      <ShakeSimulatorFab />
-
       {/* Glassmorphism Bottom Tab Bar */}
       <CustomTabBar activeTab={activeTab} onTabChange={setActiveTab} />
 
-      {/* Global Shake / Quick Add Modal */}
+      {/* Global Shake / Quick Add Bottom Sheet Modal */}
       <QuickExpenseModal />
     </SafeAreaView>
+  );
+}
+
+function RootApp() {
+  const { settings, loading } = useExpenses();
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={theme.colors.textPrimary} />
+      </View>
+    );
+  }
+
+  // If user has not completed onboarding, show the 5-step onboarding experience
+  if (!settings.onboardingCompleted) {
+    return (
+      <>
+        <StatusBar style="dark" />
+        <OnboardingScreen />
+      </>
+    );
+  }
+
+  return (
+    <ShakeProvider>
+      <MainApp />
+    </ShakeProvider>
   );
 }
 
@@ -113,7 +139,7 @@ export default function App() {
   if (!fontsLoaded) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <ActivityIndicator size="large" color={theme.colors.textPrimary} />
       </View>
     );
   }
@@ -121,9 +147,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <ExpenseProvider>
-        <ShakeProvider>
-          <MainApp />
-        </ShakeProvider>
+        <RootApp />
       </ExpenseProvider>
     </SafeAreaProvider>
   );

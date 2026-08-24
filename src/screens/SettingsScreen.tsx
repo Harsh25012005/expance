@@ -6,59 +6,90 @@ import {
   ScrollView,
   Switch,
   TouchableOpacity,
-  Platform,
-  Share,
   Alert,
+  Modal,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import {
   Smartphone,
-  DollarSign,
+  Coins,
   Trash2,
   Download,
   Check,
-  Zap,
-  ShieldCheck,
   Vibrate,
+  User,
+  Shield,
+  RotateCcw,
   Sparkles,
+  ChevronRight,
+  X,
+  FileText,
+  Table,
+  Code2,
 } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import { useExpenses } from '../context/ExpenseContext';
-import { useShake } from '../context/ShakeContext';
 import { SUPPORTED_CURRENCIES } from '../constants/categories';
 import { ShakeSensitivity } from '../types/expense';
-import { theme } from '../constants/theme';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { exportExpenses, ExportFormat } from '../services/exportService';
+import { theme } from '../constants/theme';
 
 export const SettingsScreen: React.FC = () => {
-  const { settings, updateSettings, expenses, clearAllExpenses } = useExpenses();
-  const { simulateShake } = useShake();
+  const { settings, updateSettings, expenses, clearAllExpenses, resetOnboarding } = useExpenses();
 
   const [showClearConfirm, setShowClearConfirm] = useState<boolean>(false);
-  const [showCurrencyPicker, setShowCurrencyPicker] = useState<boolean>(false);
+  const [showResetOnboardingConfirm, setShowResetOnboardingConfirm] = useState<boolean>(false);
+  const [showCurrencyModal, setShowCurrencyModal] = useState<boolean>(false);
+  const [showNameModal, setShowNameModal] = useState<boolean>(false);
+  const [showExportModal, setShowExportModal] = useState<boolean>(false);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [tempName, setTempName] = useState<string>(settings.userName || '');
+
+  const triggerHaptic = () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    } catch {}
+  };
 
   const handleSensitivityChange = (val: ShakeSensitivity) => {
+    triggerHaptic();
     updateSettings({ shakeSensitivity: val });
   };
 
-  const handleExportData = async () => {
-    try {
-      const dataStr = JSON.stringify(
-        {
-          appName: 'ExpenseFlow',
-          exportedAt: new Date().toISOString(),
-          totalRecords: expenses.length,
-          expenses,
-          settings,
-        },
-        null,
-        2
-      );
+  const handleSaveName = async () => {
+    if (tempName.trim()) {
+      await updateSettings({ userName: tempName.trim() });
+      setShowNameModal(false);
+    }
+  };
 
-      await Share.share({
-        message: dataStr,
-        title: 'ExpenseFlow_Backup.json',
-      });
+  const handleExport = async (format: ExportFormat) => {
+    if (isExporting) return;
+    triggerHaptic();
+
+    if (expenses.length === 0) {
+      setShowExportModal(false);
+      Alert.alert(
+        'No expenses to export',
+        'Add at least one expense before exporting your report.'
+      );
+      return;
+    }
+
+    try {
+      setIsExporting(true);
+      await exportExpenses(format, expenses, settings);
+      setShowExportModal(false);
     } catch (err) {
-      console.error('Failed to export data:', err);
+      console.error('Failed to export expenses:', err);
+      Alert.alert(
+        format === 'pdf' ? "Couldn't create the PDF" : "Couldn't export expenses",
+        'Something went wrong while creating your expense report. Please try again.'
+      );
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -66,9 +97,18 @@ export const SettingsScreen: React.FC = () => {
     try {
       await clearAllExpenses();
       setShowClearConfirm(false);
-      Alert.alert('Cleared', 'All records deleted.');
+      Alert.alert('Data Cleared', 'All local expense transactions have been deleted.');
     } catch (e) {
       console.error('Failed to clear data:', e);
+    }
+  };
+
+  const handleResetOnboardingConfirm = async () => {
+    try {
+      await resetOnboarding();
+      setShowResetOnboardingConfirm(false);
+    } catch (e) {
+      console.error('Failed to reset onboarding:', e);
     }
   };
 
@@ -78,253 +118,466 @@ export const SettingsScreen: React.FC = () => {
       contentContainerStyle={styles.contentContainer}
       showsVerticalScrollIndicator={false}
     >
-      <View style={styles.header}>
-        <Text style={styles.title}>Settings</Text>
-      </View>
-
-      {/* Shake Detection */}
+      {/* ──────────────── 1. PREFERENCES SECTION ──────────────── */}
       <View style={styles.section}>
-        <Text style={styles.sectionHeader}>Shake Gesture</Text>
-
+        <Text style={styles.sectionHeader}>PREFERENCES</Text>
         <View style={styles.card}>
+          {/* User Name */}
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => {
+              triggerHaptic();
+              setTempName(settings.userName || '');
+              setShowNameModal(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={styles.rowLeft}>
+              <View style={styles.iconCircle}>
+                <User size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
+              </View>
+              <View>
+                <Text style={styles.rowTitle}>Your Name</Text>
+                <Text style={styles.rowSubtitle}>{settings.userName || 'Not set'}</Text>
+              </View>
+            </View>
+            <ChevronRight size={15} color={theme.colors.textTertiary} strokeWidth={1.5} />
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          {/* Currency */}
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => {
+              triggerHaptic();
+              setShowCurrencyModal(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={styles.rowLeft}>
+              <View style={styles.iconCircle}>
+                <Coins size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
+              </View>
+              <View>
+                <Text style={styles.rowTitle}>Currency</Text>
+                <Text style={styles.rowSubtitle}>
+                  {settings.currencyCode} ({settings.currency})
+                </Text>
+              </View>
+            </View>
+            <ChevronRight size={15} color={theme.colors.textTertiary} strokeWidth={1.5} />
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          {/* Shake-to-Add Toggle */}
           <View style={styles.row}>
             <View style={styles.rowLeft}>
-              <View style={[styles.iconCircle, { backgroundColor: theme.colors.primaryLight }]}>
-                <Smartphone size={15} color={theme.colors.primary} strokeWidth={1.4} />
+              <View style={styles.iconCircle}>
+                <Smartphone size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
               </View>
-              <View style={styles.rowTextCol}>
-                <Text style={styles.rowTitle}>Shake-to-Add</Text>
-                <Text style={styles.rowSubtitle}>Shake phone to log expense</Text>
+              <View>
+                <Text style={styles.rowTitle}>Shake to Add Expense</Text>
+                <Text style={styles.rowSubtitle}>Shake phone to trigger quick add</Text>
               </View>
             </View>
             <Switch
               value={settings.shakeEnabled}
-              onValueChange={(val) => updateSettings({ shakeEnabled: val })}
-              trackColor={{ false: '#CBD5E1', true: theme.colors.primary }}
+              onValueChange={(val) => {
+                triggerHaptic();
+                updateSettings({ shakeEnabled: val });
+              }}
+              trackColor={{ false: theme.colors.border, true: theme.colors.textPrimary }}
               thumbColor="#FFFFFF"
             />
           </View>
 
+          {/* Shake Sensitivity Selector */}
           {settings.shakeEnabled && (
             <>
               <View style={styles.divider} />
-              <View style={styles.sensitivitySection}>
+              <View style={styles.sensitivityContainer}>
                 <View style={styles.sensitivityHeader}>
-                  <Text style={styles.sublabel}>Sensitivity</Text>
-                  <Text style={styles.sublabelValue}>
-                    {settings.shakeSensitivity.toUpperCase()}
-                  </Text>
+                  <Text style={styles.sensitivityTitle}>Shake Sensitivity</Text>
+                  <View style={styles.lowDefaultBadge}>
+                    <Text style={styles.lowDefaultBadgeText}>DEFAULT: LOW</Text>
+                  </View>
                 </View>
+                <Text style={styles.sensitivityHelpText}>
+                  Low sensitivity helps prevent accidental triggers during normal phone movement.
+                </Text>
 
-                {/* Pill Segmented Control */}
-                <View style={styles.segmentedControl}>
-                  {(['low', 'medium', 'high'] as ShakeSensitivity[]).map((level) => {
-                    const isSelected = settings.shakeSensitivity === level;
+                <View style={styles.sensitivityTabs}>
+                  {(
+                    [
+                      { id: 'low', label: 'Low' },
+                      { id: 'medium', label: 'Medium' },
+                      { id: 'high', label: 'High' },
+                    ] as const
+                  ).map((item) => {
+                    const isSelected = settings.shakeSensitivity === item.id;
                     return (
                       <TouchableOpacity
-                        key={level}
+                        key={item.id}
                         style={[
-                          styles.segmentPill,
-                          isSelected && styles.segmentPillActive,
+                          styles.sensitivityTab,
+                          isSelected && styles.sensitivityTabActive,
                         ]}
-                        onPress={() => handleSensitivityChange(level)}
+                        onPress={() => handleSensitivityChange(item.id)}
                         activeOpacity={0.7}
                       >
                         <Text
                           style={[
-                            styles.segmentText,
-                            isSelected && styles.segmentTextActive,
+                            styles.sensitivityTabText,
+                            isSelected && styles.sensitivityTabTextActive,
                           ]}
                         >
-                          {level.charAt(0).toUpperCase() + level.slice(1)}
+                          {item.label}
                         </Text>
                       </TouchableOpacity>
                     );
                   })}
                 </View>
               </View>
-
-              <View style={styles.divider} />
-
-              <TouchableOpacity
-                style={styles.testPill}
-                onPress={simulateShake}
-                activeOpacity={0.7}
-              >
-                <Sparkles size={13} color={theme.colors.primary} strokeWidth={1.4} />
-                <Text style={styles.testPillText}>Test Shake Gesture</Text>
-              </TouchableOpacity>
             </>
-          )}
-        </View>
-
-        {/* Platform Status */}
-        <View style={styles.statusCard}>
-          <View style={styles.statusHeader}>
-            <Zap size={12} color={theme.colors.primary} strokeWidth={1.4} />
-            <Text style={styles.statusTitle}>Background Detection</Text>
-          </View>
-          <Text style={styles.statusDescription}>
-            {Platform.OS === 'android'
-              ? 'Active in background via Android Foreground Service.'
-              : 'Active in foreground on iOS.'}
-          </Text>
-        </View>
-      </View>
-
-      {/* Preferences */}
-      <View style={styles.section}>
-        <Text style={styles.sectionHeader}>Preferences</Text>
-
-        <View style={styles.card}>
-          <TouchableOpacity
-            style={styles.row}
-            onPress={() => setShowCurrencyPicker(!showCurrencyPicker)}
-            activeOpacity={0.7}
-          >
-            <View style={styles.rowLeft}>
-              <View style={[styles.iconCircle, { backgroundColor: '#F0FDF4' }]}>
-                <DollarSign size={15} color="#16A34A" strokeWidth={1.4} />
-              </View>
-              <View style={styles.rowTextCol}>
-                <Text style={styles.rowTitle}>Currency</Text>
-                <Text style={styles.rowSubtitle}>
-                  {SUPPORTED_CURRENCIES.find((c) => c.symbol === settings.currency)?.name ||
-                    settings.currency}
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.selectedCurrencySymbol}>{settings.currency}</Text>
-          </TouchableOpacity>
-
-          {showCurrencyPicker && (
-            <View style={styles.currencyOptionsList}>
-              {SUPPORTED_CURRENCIES.map((curr) => {
-                const isSelected = settings.currency === curr.symbol;
-                return (
-                  <TouchableOpacity
-                    key={curr.code}
-                    style={[
-                      styles.currencyOptionItem,
-                      isSelected && styles.currencyOptionActive,
-                    ]}
-                    onPress={() => {
-                      updateSettings({ currency: curr.symbol, currencyCode: curr.code });
-                      setShowCurrencyPicker(false);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.currencyOptionName}>{curr.name}</Text>
-                    {isSelected && <Check size={14} color={theme.colors.primary} strokeWidth={1.5} />}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
           )}
 
           <View style={styles.divider} />
 
+          {/* Haptic Feedback Toggle */}
           <View style={styles.row}>
             <View style={styles.rowLeft}>
-              <View style={[styles.iconCircle, { backgroundColor: '#F5F3FF' }]}>
-                <Vibrate size={15} color="#7C3AED" strokeWidth={1.4} />
+              <View style={styles.iconCircle}>
+                <Vibrate size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
               </View>
-              <View style={styles.rowTextCol}>
-                <Text style={styles.rowTitle}>Haptics</Text>
-                <Text style={styles.rowSubtitle}>Vibrate on actions</Text>
+              <View>
+                <Text style={styles.rowTitle}>Haptic Feedback</Text>
+                <Text style={styles.rowSubtitle}>Tactile response on actions</Text>
               </View>
             </View>
             <Switch
               value={settings.hapticsEnabled}
-              onValueChange={(val) => updateSettings({ hapticsEnabled: val })}
-              trackColor={{ false: '#CBD5E1', true: theme.colors.primary }}
+              onValueChange={(val) => {
+                triggerHaptic();
+                updateSettings({ hapticsEnabled: val });
+              }}
+              trackColor={{ false: theme.colors.border, true: theme.colors.textPrimary }}
               thumbColor="#FFFFFF"
             />
           </View>
         </View>
       </View>
 
-      {/* Data */}
+      {/* ──────────────── 2. DATA MANAGEMENT SECTION ──────────────── */}
       <View style={styles.section}>
-        <Text style={styles.sectionHeader}>Data</Text>
-
+        <Text style={styles.sectionHeader}>DATA & STORAGE</Text>
         <View style={styles.card}>
+          {/* Export Expenses Modal Trigger */}
           <TouchableOpacity
             style={styles.row}
-            onPress={handleExportData}
+            onPress={() => {
+              triggerHaptic();
+              if (expenses.length === 0) {
+                Alert.alert(
+                  'No expenses to export',
+                  'Add at least one expense before exporting your report.'
+                );
+                return;
+              }
+              setShowExportModal(true);
+            }}
             activeOpacity={0.7}
           >
             <View style={styles.rowLeft}>
-              <View style={[styles.iconCircle, { backgroundColor: theme.colors.primaryLight }]}>
-                <Download size={15} color={theme.colors.primary} strokeWidth={1.4} />
+              <View style={styles.iconCircle}>
+                <Download size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
               </View>
-              <View style={styles.rowTextCol}>
-                <Text style={styles.rowTitle}>Export JSON</Text>
-                <Text style={styles.rowSubtitle}>{expenses.length} records</Text>
+              <View>
+                <Text style={styles.rowTitle}>Export Expenses</Text>
+                <Text style={styles.rowSubtitle}>Export records as CSV, PDF, or JSON</Text>
               </View>
             </View>
+            <ChevronRight size={15} color={theme.colors.textTertiary} strokeWidth={1.5} />
           </TouchableOpacity>
 
           <View style={styles.divider} />
 
+          {/* Reset Onboarding */}
           <TouchableOpacity
             style={styles.row}
-            onPress={() => setShowClearConfirm(true)}
+            onPress={() => {
+              triggerHaptic();
+              setShowResetOnboardingConfirm(true);
+            }}
             activeOpacity={0.7}
           >
             <View style={styles.rowLeft}>
-              <View style={[styles.iconCircle, { backgroundColor: theme.colors.dangerLight }]}>
-                <Trash2 size={15} color={theme.colors.danger} strokeWidth={1.4} />
+              <View style={styles.iconCircle}>
+                <RotateCcw size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
               </View>
-              <View style={styles.rowTextCol}>
-                <Text style={[styles.rowTitle, { color: theme.colors.danger }]}>
-                  Clear All Data
-                </Text>
-                <Text style={styles.rowSubtitle}>Delete all records</Text>
+              <View>
+                <Text style={styles.rowTitle}>Reset Onboarding</Text>
+                <Text style={styles.rowSubtitle}>Re-launch the introductory flow</Text>
               </View>
             </View>
+            <ChevronRight size={15} color={theme.colors.textTertiary} strokeWidth={1.5} />
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          {/* Clear All Data */}
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => {
+              triggerHaptic();
+              setShowClearConfirm(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={styles.rowLeft}>
+              <View style={[styles.iconCircle, { backgroundColor: theme.colors.negativeLight }]}>
+                <Trash2 size={15} color={theme.colors.negative} strokeWidth={1.5} />
+              </View>
+              <View>
+                <Text style={[styles.rowTitle, { color: theme.colors.negative }]}>Clear All Data</Text>
+                <Text style={styles.rowSubtitle}>Permanently erase all transaction records</Text>
+              </View>
+            </View>
+            <ChevronRight size={15} color={theme.colors.negative} strokeWidth={1.5} />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* About */}
+      {/* ──────────────── 3. ABOUT SECTION ──────────────── */}
       <View style={styles.section}>
-        <Text style={styles.sectionHeader}>About</Text>
-
+        <Text style={styles.sectionHeader}>ABOUT</Text>
         <View style={styles.card}>
-          <View style={styles.aboutRow}>
-            <View style={[styles.iconCircle, { backgroundColor: theme.colors.successLight }]}>
-              <ShieldCheck size={16} color={theme.colors.success} strokeWidth={1.4} />
+          <View style={styles.appInfoRow}>
+            <View style={styles.appLogoCircle}>
+              <Sparkles size={16} color={theme.colors.textPrimary} strokeWidth={1.5} />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.aboutTitle}>100% Offline & Private</Text>
-              <Text style={styles.aboutText}>
-                All data is stored locally on device.
-              </Text>
+            <View style={styles.appMeta}>
+              <Text style={styles.appName}>ExpenseFlow</Text>
+              <Text style={styles.appVersion}>Version 1.0.0 (Editorial Release)</Text>
             </View>
           </View>
 
           <View style={styles.divider} />
 
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Version</Text>
-            <Text style={styles.infoValue}>1.0.0</Text>
+          <View style={styles.privacyRow}>
+            <Shield size={15} color={theme.colors.positive} strokeWidth={1.5} />
+            <Text style={styles.privacyText}>
+              100% On-Device Local Storage. No external databases, no analytics trackers.
+            </Text>
           </View>
         </View>
       </View>
 
-      {/* Clear Confirmation Modal */}
+      {/* ──────────────── EXPORT FORMAT MODAL ──────────────── */}
+      <Modal
+        visible={showExportModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => !isExporting && setShowExportModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Export Expenses</Text>
+                <Text style={styles.modalSubtitle}>Choose your preferred export format</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => !isExporting && setShowExportModal(false)}
+                style={styles.modalClose}
+                disabled={isExporting}
+              >
+                <X size={18} color={theme.colors.textSecondary} strokeWidth={1.5} />
+              </TouchableOpacity>
+            </View>
+
+            {isExporting ? (
+              <View style={styles.exportLoadingContainer}>
+                <ActivityIndicator size="large" color={theme.colors.textPrimary} />
+                <Text style={styles.exportLoadingText}>Preparing your report…</Text>
+              </View>
+            ) : (
+              <View style={styles.exportOptionsList}>
+                {/* Excel Option */}
+                <TouchableOpacity
+                  style={styles.exportOptionCard}
+                  onPress={() => handleExport('xlsx')}
+                  activeOpacity={0.7}
+                  disabled={isExporting}
+                >
+                  <View style={[styles.exportIconCircle, { backgroundColor: '#DCFCE7' }]}>
+                    <Table size={18} color="#16A34A" strokeWidth={1.5} />
+                  </View>
+                  <View style={styles.exportOptionTextCol}>
+                    <Text style={styles.exportOptionTitle}>Export Excel (.xlsx)</Text>
+                    <Text style={styles.exportOptionDesc}>
+                      Formatted spreadsheet with light blue header, clean borders & totals
+                    </Text>
+                  </View>
+                  <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.5} />
+                </TouchableOpacity>
+
+                {/* PDF Option */}
+                <TouchableOpacity
+                  style={styles.exportOptionCard}
+                  onPress={() => handleExport('pdf')}
+                  activeOpacity={0.7}
+                  disabled={isExporting}
+                >
+                  <View style={[styles.exportIconCircle, { backgroundColor: '#FEE2E2' }]}>
+                    <FileText size={18} color="#DC2626" strokeWidth={1.5} />
+                  </View>
+                  <View style={styles.exportOptionTextCol}>
+                    <Text style={styles.exportOptionTitle}>Export PDF (.pdf)</Text>
+                    <Text style={styles.exportOptionDesc}>
+                      Formatted statement with category breakdown & summary totals
+                    </Text>
+                  </View>
+                  <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.5} />
+                </TouchableOpacity>
+
+                {/* JSON Option */}
+                <TouchableOpacity
+                  style={styles.exportOptionCard}
+                  onPress={() => handleExport('json')}
+                  activeOpacity={0.7}
+                  disabled={isExporting}
+                >
+                  <View style={[styles.exportIconCircle, { backgroundColor: theme.colors.accentLight }]}>
+                    <Code2 size={18} color={theme.colors.primary} strokeWidth={1.5} />
+                  </View>
+                  <View style={styles.exportOptionTextCol}>
+                    <Text style={styles.exportOptionTitle}>JSON Backup (.json)</Text>
+                    <Text style={styles.exportOptionDesc}>
+                      Full structured data backup for developer portability
+                    </Text>
+                  </View>
+                  <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.5} />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Currency Selector Modal */}
+      <Modal
+        visible={showCurrencyModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowCurrencyModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Currency</Text>
+              <TouchableOpacity
+                onPress={() => setShowCurrencyModal(false)}
+                style={styles.modalClose}
+              >
+                <X size={18} color={theme.colors.textSecondary} strokeWidth={1.5} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.currencyList}>
+              {SUPPORTED_CURRENCIES.map((curr) => {
+                const isSelected = settings.currencyCode === curr.code;
+                return (
+                  <TouchableOpacity
+                    key={curr.code}
+                    style={[styles.currencyItem, isSelected && styles.currencyItemActive]}
+                    onPress={() => {
+                      triggerHaptic();
+                      updateSettings({ currency: curr.symbol, currencyCode: curr.code });
+                      setShowCurrencyModal(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.currLeft}>
+                      <View style={[styles.currBadge, isSelected && styles.currBadgeActive]}>
+                        <Text style={[styles.currBadgeText, isSelected && styles.currBadgeTextActive]}>
+                          {curr.symbol}
+                        </Text>
+                      </View>
+                      <View>
+                        <Text style={styles.currCode}>{curr.code}</Text>
+                        <Text style={styles.currName}>{curr.name}</Text>
+                      </View>
+                    </View>
+                    {isSelected && <Check size={16} color={theme.colors.primary} strokeWidth={2} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Name Edit Modal */}
+      <Modal
+        visible={showNameModal}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setShowNameModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.nameModalCard}>
+            <Text style={styles.modalTitle}>Your Name</Text>
+            <Text style={styles.modalSubtitle}>What should we call you on the dashboard?</Text>
+
+            <TextInput
+              style={styles.nameInput}
+              value={tempName}
+              onChangeText={setTempName}
+              placeholder="Enter your name"
+              placeholderTextColor={theme.colors.textTertiary}
+              autoFocus
+            />
+
+            <View style={styles.nameModalActions}>
+              <TouchableOpacity
+                style={styles.nameCancelBtn}
+                onPress={() => setShowNameModal(false)}
+              >
+                <Text style={styles.nameCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.nameSaveBtn}
+                onPress={handleSaveName}
+              >
+                <Text style={styles.nameSaveText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Clear All Confirmation Modal */}
       <ConfirmModal
         visible={showClearConfirm}
         title="Clear All Data?"
-        message="Permanently delete all stored expenses?"
-        confirmLabel="Clear All"
+        message="This will permanently delete all stored transactions. This action cannot be undone."
+        confirmText="Clear All Data"
         isDestructive
         onConfirm={handleClearAllConfirm}
         onCancel={() => setShowClearConfirm(false)}
       />
 
-      <View style={{ height: 80 }} />
+      {/* Reset Onboarding Confirmation Modal */}
+      <ConfirmModal
+        visible={showResetOnboardingConfirm}
+        title="Reset Onboarding?"
+        message="This will return you to the initial setup flow. Your expense transactions will remain safe."
+        confirmText="Reset Setup"
+        onConfirm={handleResetOnboardingConfirm}
+        onCancel={() => setShowResetOnboardingConfirm(false)}
+      />
     </ScrollView>
   );
 };
@@ -336,217 +589,335 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     paddingHorizontal: 20,
-    paddingTop: 10,
-  },
-  header: {
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
-    letterSpacing: -0.2,
+    paddingTop: 8,
+    paddingBottom: 110,
   },
   section: {
-    marginBottom: 14,
+    marginBottom: 20,
   },
   sectionHeader: {
-    fontSize: 11,
-    fontWeight: '600',
+    ...theme.typography.label,
     color: theme.colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-    marginBottom: 5,
-    marginLeft: 2,
+    marginBottom: 8,
+    marginLeft: 4,
   },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 14,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.container,
+    paddingVertical: 4,
+    paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.border,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingVertical: 12,
   },
   rowLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     flex: 1,
+    marginRight: 10,
   },
   iconCircle: {
     width: 32,
     height: 32,
-    borderRadius: 16,
+    borderRadius: 8,
+    backgroundColor: theme.colors.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  rowTextCol: {
-    flex: 1,
   },
   rowTitle: {
-    fontSize: 14,
+    ...theme.typography.body,
     fontWeight: '500',
     color: theme.colors.textPrimary,
   },
   rowSubtitle: {
-    fontSize: 11,
+    ...theme.typography.caption,
     color: theme.colors.textSecondary,
-    marginTop: 1,
+    marginTop: 2,
   },
   divider: {
     height: 1,
-    backgroundColor: '#F1F5F9',
-    marginVertical: 10,
+    backgroundColor: theme.colors.borderSubtle,
   },
-  sensitivitySection: {
-    marginTop: 2,
+  sensitivityContainer: {
+    paddingVertical: 12,
   },
   sensitivityHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 5,
+    marginBottom: 4,
   },
-  sublabel: {
-    fontSize: 12,
+  sensitivityTitle: {
+    ...theme.typography.body,
     fontWeight: '500',
     color: theme.colors.textPrimary,
   },
-  sublabelValue: {
-    fontSize: 11,
+  lowDefaultBadge: {
+    backgroundColor: theme.colors.accentLight,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  lowDefaultBadgeText: {
+    fontSize: 10,
     fontWeight: '600',
     color: theme.colors.primary,
   },
-  segmentedControl: {
+  sensitivityHelpText: {
+    ...theme.typography.caption,
+    color: theme.colors.textSecondary,
+    lineHeight: 16,
+    marginBottom: 10,
+  },
+  sensitivityTabs: {
     flexDirection: 'row',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 999, // Pill capsule
+    backgroundColor: theme.colors.backgroundSecondary,
+    borderRadius: theme.borderRadius.md,
     padding: 3,
-    gap: 3,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.border,
   },
-  segmentPill: {
+  sensitivityTab: {
     flex: 1,
-    paddingVertical: 5,
+    paddingVertical: 8,
     alignItems: 'center',
-    borderRadius: 999,
+    borderRadius: theme.borderRadius.sm,
   },
-  segmentPillActive: {
-    backgroundColor: '#FFFFFF',
+  sensitivityTabActive: {
+    backgroundColor: theme.colors.surface,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.border,
   },
-  segmentText: {
-    fontSize: 11,
+  sensitivityTabText: {
+    ...theme.typography.secondary,
     color: theme.colors.textSecondary,
   },
-  segmentTextActive: {
+  sensitivityTabTextActive: {
+    color: theme.colors.textPrimary,
     fontWeight: '600',
-    color: theme.colors.primary,
   },
-  testPill: {
+  appInfoRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+  },
+  appLogoCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: theme.colors.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F8FAFC',
-    paddingVertical: 7,
-    borderRadius: 999,
-    gap: 4,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
-  testPillText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: theme.colors.primary,
+  appMeta: {
+    flex: 1,
   },
-  statusCard: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: 14,
-    padding: 10,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: '#DBEAFE',
+  appName: {
+    ...theme.typography.bodyLarge,
+    fontWeight: '600',
+    color: theme.colors.textPrimary,
   },
-  statusHeader: {
+  appVersion: {
+    ...theme.typography.caption,
+    color: theme.colors.textSecondary,
+    marginTop: 1,
+  },
+  privacyRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 10,
+    paddingVertical: 12,
+  },
+  privacyText: {
+    flex: 1,
+    ...theme.typography.caption,
+    color: theme.colors.textSecondary,
+    lineHeight: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: theme.colors.overlay,
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: theme.borderRadius.container,
+    borderTopRightRadius: theme.borderRadius.container,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 36,
+    maxHeight: '75%',
+    borderTopWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderSubtle,
+  },
+  modalTitle: {
+    ...theme.typography.sectionHeading,
+    color: theme.colors.textPrimary,
+  },
+  modalSubtitle: {
+    ...theme.typography.secondary,
+    color: theme.colors.textSecondary,
+    marginTop: 2,
+  },
+  modalClose: {
+    padding: 4,
+  },
+  exportOptionsList: {
+    paddingTop: 12,
+    gap: 10,
+  },
+  exportOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.md,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  exportIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  exportOptionTextCol: {
+    flex: 1,
+    marginRight: 8,
+  },
+  exportOptionTitle: {
+    ...theme.typography.body,
+    fontWeight: '600',
+    color: theme.colors.textPrimary,
     marginBottom: 2,
   },
-  statusTitle: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: theme.colors.primary,
-  },
-  statusDescription: {
-    fontSize: 11,
-    color: '#1E40AF',
+  exportOptionDesc: {
+    ...theme.typography.caption,
+    color: theme.colors.textSecondary,
     lineHeight: 15,
   },
-  selectedCurrencySymbol: {
+  exportLoadingContainer: {
+    paddingVertical: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exportLoadingText: {
+    ...theme.typography.body,
+    color: theme.colors.textSecondary,
+    marginTop: 12,
+  },
+  currencyList: {
+    paddingTop: 8,
+  },
+  currencyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderSubtle,
+  },
+  currencyItemActive: {
+    backgroundColor: theme.colors.accentLight,
+    borderRadius: theme.borderRadius.sm,
+    paddingHorizontal: 8,
+  },
+  currLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  currBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: theme.colors.backgroundSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  currBadgeActive: {
+    backgroundColor: theme.colors.surface,
+  },
+  currBadgeText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
+    color: theme.colors.textPrimary,
+  },
+  currBadgeTextActive: {
     color: theme.colors.primary,
   },
-  currencyOptionsList: {
-    marginTop: 8,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 4,
-    gap: 2,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  currencyOptionItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-  },
-  currencyOptionActive: {
-    backgroundColor: '#FFFFFF',
-  },
-  currencyOptionName: {
-    fontSize: 12,
-    color: theme.colors.textPrimary,
-  },
-  aboutRow: {
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'center',
-  },
-  aboutTitle: {
-    fontSize: 13,
+  currCode: {
+    ...theme.typography.body,
     fontWeight: '600',
     color: theme.colors.textPrimary,
-    marginBottom: 1,
   },
-  aboutText: {
-    fontSize: 11,
-    color: theme.colors.textSecondary,
-    lineHeight: 14,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  infoLabel: {
-    fontSize: 12,
+  currName: {
+    ...theme.typography.caption,
     color: theme.colors.textSecondary,
   },
-  infoValue: {
-    fontSize: 12,
+  nameModalCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.container,
+    padding: 24,
+    marginHorizontal: 20,
+    marginBottom: 'auto',
+    marginTop: 'auto',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  nameInput: {
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.sm,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 15,
     fontWeight: '500',
     color: theme.colors.textPrimary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginBottom: 18,
+  },
+  nameModalActions: {
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'flex-end',
+  },
+  nameCancelBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: theme.borderRadius.sm,
+  },
+  nameCancelText: {
+    ...theme.typography.secondary,
+    fontWeight: '500',
+    color: theme.colors.textSecondary,
+  },
+  nameSaveBtn: {
+    backgroundColor: theme.colors.textPrimary,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: theme.borderRadius.sm,
+  },
+  nameSaveText: {
+    ...theme.typography.secondary,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

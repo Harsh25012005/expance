@@ -33,6 +33,8 @@ interface ExpenseContextType {
   deleteExpense: (id: string) => Promise<void>;
   clearAllExpenses: () => Promise<void>;
   updateSettings: (newSettings: Partial<AppSettings>) => Promise<void>;
+  completeOnboarding: (onboardingData: { userName: string; currency: string; currencyCode: string; shakeSensitivity: ShakeSensitivity; trackingStyle?: string }) => Promise<void>;
+  resetOnboarding: () => Promise<void>;
 }
 
 const ExpenseContext = createContext<ExpenseContextType | undefined>(undefined);
@@ -159,6 +161,42 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [settings]
   );
 
+  const completeOnboarding = useCallback(
+    async (onboardingData: {
+      userName: string;
+      currency: string;
+      currencyCode: string;
+      shakeSensitivity: ShakeSensitivity;
+      trackingStyle?: string;
+    }): Promise<void> => {
+      const updated: AppSettings = {
+        ...settings,
+        userName: onboardingData.userName.trim(),
+        currency: onboardingData.currency,
+        currencyCode: onboardingData.currencyCode,
+        shakeSensitivity: onboardingData.shakeSensitivity,
+        trackingStyle: onboardingData.trackingStyle || 'Personal',
+        onboardingCompleted: true,
+      };
+      setSettings(updated);
+      await saveStoredSettings(updated);
+
+      if (updated.shakeEnabled) {
+        shakeServiceBridge.startService(updated.shakeSensitivity);
+      }
+    },
+    [settings]
+  );
+
+  const resetOnboarding = useCallback(async (): Promise<void> => {
+    const updated: AppSettings = {
+      ...settings,
+      onboardingCompleted: false,
+    };
+    setSettings(updated);
+    await saveStoredSettings(updated);
+  }, [settings]);
+
   // Compute live analytics based ONLY on genuine local records
   const stats = useMemo<ExpenseStats>(() => {
     const now = new Date();
@@ -260,6 +298,8 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         deleteExpense,
         clearAllExpenses,
         updateSettings,
+        completeOnboarding,
+        resetOnboarding,
       }}
     >
       {children}

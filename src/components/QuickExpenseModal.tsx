@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,24 @@ import {
   Platform,
   TouchableWithoutFeedback,
   Keyboard,
+  Animated,
+  Dimensions,
 } from 'react-native';
-import { X, Sparkles, ChevronDown, Check } from 'lucide-react-native';
+import {
+  X,
+  Sparkles,
+  ChevronRight,
+  Utensils,
+  Car,
+  ShoppingBag,
+  Zap,
+  Film,
+  HeartPulse,
+  Plane,
+  GraduationCap,
+  MoreHorizontal,
+} from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import { useShake } from '../context/ShakeContext';
 import { useExpenses } from '../context/ExpenseContext';
 import { CategoryType } from '../types/expense';
@@ -26,9 +42,14 @@ export const QuickExpenseModal: React.FC = () => {
   const [name, setName] = useState<string>('');
   const [amount, setAmount] = useState<string>('');
   const [category, setCategory] = useState<CategoryType>('Food');
-  const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
+  const [showCategoryPicker, setShowCategoryPicker] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Animation values for smooth popup entrance
+  const scaleAnim = useRef(new Animated.Value(0.96)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (isQuickAddModalOpen) {
@@ -41,15 +62,68 @@ export const QuickExpenseModal: React.FC = () => {
         setAmount('');
         setCategory('Food');
       }
-      setIsDropdownOpen(false);
+      setShowCategoryPicker(false);
       setErrorMsg(null);
       setIsSubmitting(false);
+
+      // Fast, smooth spring/timing scale 96% -> 100% and opacity 0 -> 1
+      scaleAnim.setValue(0.96);
+      opacityAnim.setValue(0);
+      Animated.parallel([
+        Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        // Auto-focus the name field
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 50);
+      });
     }
   }, [isQuickAddModalOpen, editingExpense]);
 
+  const triggerHaptic = () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    } catch {}
+  };
+
   const handleQuickAddAmount = (extra: number) => {
+    triggerHaptic();
     const current = parseFloat(amount) || 0;
     setAmount((current + extra).toString());
+    if (errorMsg) setErrorMsg(null);
+  };
+
+  const renderCategoryIcon = (catId: CategoryType, size: number = 15, color: string = theme.colors.textPrimary) => {
+    switch (catId) {
+      case 'Food':
+        return <Utensils size={size} color={color} strokeWidth={1.5} />;
+      case 'Transport':
+        return <Car size={size} color={color} strokeWidth={1.5} />;
+      case 'Shopping':
+        return <ShoppingBag size={size} color={color} strokeWidth={1.5} />;
+      case 'Bills':
+        return <Zap size={size} color={color} strokeWidth={1.5} />;
+      case 'Entertainment':
+        return <Film size={size} color={color} strokeWidth={1.5} />;
+      case 'Health':
+        return <HeartPulse size={size} color={color} strokeWidth={1.5} />;
+      case 'Travel':
+        return <Plane size={size} color={color} strokeWidth={1.5} />;
+      case 'Education':
+        return <GraduationCap size={size} color={color} strokeWidth={1.5} />;
+      case 'Other':
+      default:
+        return <MoreHorizontal size={size} color={color} strokeWidth={1.5} />;
+    }
   };
 
   const handleSave = async () => {
@@ -57,18 +131,24 @@ export const QuickExpenseModal: React.FC = () => {
     const numAmount = parseFloat(amount);
 
     if (!trimmedName) {
-      setErrorMsg('Enter an expense name');
+      setErrorMsg('Please enter what you spent on');
       return;
     }
 
     if (isNaN(numAmount) || numAmount <= 0) {
-      setErrorMsg('Enter an amount > 0');
+      setErrorMsg('Please enter a valid amount');
       return;
     }
 
     try {
       setIsSubmitting(true);
       setErrorMsg(null);
+
+      if (settings.hapticsEnabled) {
+        try {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        } catch {}
+      }
 
       if (editingExpense) {
         await updateExpense(editingExpense.id, {
@@ -87,7 +167,7 @@ export const QuickExpenseModal: React.FC = () => {
       closeQuickAddModal();
     } catch (err) {
       console.error('Error saving expense:', err);
-      setErrorMsg('Failed to save.');
+      setErrorMsg('Failed to save expense');
     } finally {
       setIsSubmitting(false);
     }
@@ -103,192 +183,197 @@ export const QuickExpenseModal: React.FC = () => {
   return (
     <Modal
       visible={isQuickAddModalOpen}
-      animationType="fade"
       transparent
+      animationType="none"
       onRequestClose={closeQuickAddModal}
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.overlay}>
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={styles.keyboardContainer}
+            style={styles.keyboardWrap}
           >
-            <View style={styles.popupCard}>
+            <Animated.View
+              style={[
+                styles.popupCard,
+                {
+                  opacity: opacityAnim,
+                  transform: [{ scale: scaleAnim }],
+                },
+              ]}
+            >
               {/* Header */}
               <View style={styles.header}>
                 <View style={styles.titleRow}>
                   <Text style={styles.title}>
-                    {editingExpense ? 'Edit Expense' : 'Add Expense'}
+                    {editingExpense ? 'Edit expense' : 'Add expense'}
                   </Text>
                   {triggeredByShake && (
                     <View style={styles.shakeBadge}>
-                      <Sparkles size={11} color="#B45309" strokeWidth={1.4} />
+                      <Sparkles size={10} color={theme.colors.primary} strokeWidth={1.5} />
                       <Text style={styles.shakeBadgeText}>Shake</Text>
                     </View>
                   )}
                 </View>
 
                 <TouchableOpacity
-                  style={styles.closeCircle}
+                  style={styles.closeBtn}
                   onPress={closeQuickAddModal}
                   activeOpacity={0.7}
                   accessibilityLabel="Close"
                 >
-                  <X size={16} color={theme.colors.textSecondary} strokeWidth={1.4} />
+                  <X size={16} color={theme.colors.textSecondary} strokeWidth={1.5} />
                 </TouchableOpacity>
               </View>
 
-              {/* Amount Input */}
-              <View style={styles.amountSection}>
-                <View style={styles.amountInputRow}>
-                  <Text style={styles.currencySymbol}>{settings.currency}</Text>
+              <ScrollView
+                style={styles.formScroll}
+                contentContainerStyle={styles.formContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                {/* 1. Expense Name */}
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>EXPENSE NAME</Text>
                   <TextInput
-                    style={styles.amountInput}
-                    value={amount}
+                    ref={inputRef}
+                    style={styles.textInput}
+                    value={name}
                     onChangeText={(val) => {
-                      const cleaned = val.replace(/[^0-9.]/g, '');
-                      setAmount(cleaned);
+                      setName(val);
                       if (errorMsg) setErrorMsg(null);
                     }}
-                    placeholder="0.00"
-                    placeholderTextColor={theme.colors.textMuted}
-                    keyboardType="decimal-pad"
-                    autoFocus={!editingExpense}
+                    placeholder="What did you spend on?"
+                    placeholderTextColor={theme.colors.textTertiary}
+                    returnKeyType="next"
                   />
                 </View>
 
-                {/* Horizontal Scroll Quick Amount Chips */}
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.quickChipsContent}
-                  style={styles.quickChipsScroll}
-                >
-                  {[5, 10, 20, 50, 100, 200, 500].map((inc) => (
-                    <TouchableOpacity
-                      key={inc}
-                      style={styles.quickChip}
-                      onPress={() => handleQuickAddAmount(inc)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.quickChipText}>+{inc}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-
-              {/* Expense Name */}
-              <View style={styles.fieldSection}>
-                <Text style={styles.inputLabel}>Name</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={name}
-                  onChangeText={(val) => {
-                    setName(val);
-                    if (errorMsg) setErrorMsg(null);
-                  }}
-                  placeholder="e.g. Coffee, Lunch, Uber"
-                  placeholderTextColor={theme.colors.textMuted}
-                  returnKeyType="done"
-                />
-              </View>
-
-              {/* Category Dropdown (Clean text only, scrollable list) */}
-              <View style={styles.fieldSection}>
-                <Text style={styles.inputLabel}>Category</Text>
-                <TouchableOpacity
-                  style={[styles.dropdownButton, isDropdownOpen && styles.dropdownButtonActive]}
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    setIsDropdownOpen(!isDropdownOpen);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.dropdownSelectedText}>{currentCatInfo.label}</Text>
-                  <ChevronDown
-                    size={16}
-                    color={theme.colors.textSecondary}
-                    strokeWidth={1.4}
-                    style={{
-                      transform: [{ rotate: isDropdownOpen ? '180deg' : '0deg' }],
+                {/* 2. Category Selector */}
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>CATEGORY</Text>
+                  <TouchableOpacity
+                    style={styles.categorySelector}
+                    onPress={() => {
+                      triggerHaptic();
+                      Keyboard.dismiss();
+                      setShowCategoryPicker(!showCategoryPicker);
                     }}
-                  />
-                </TouchableOpacity>
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.categoryLeft}>
+                      <View style={[styles.categoryIconWrap, { backgroundColor: currentCatInfo.bgColor }]}>
+                        {renderCategoryIcon(category, 14, currentCatInfo.color)}
+                      </View>
+                      <Text style={styles.categorySelectedText}>{currentCatInfo.label}</Text>
+                    </View>
+                    <ChevronRight size={15} color={theme.colors.textTertiary} strokeWidth={1.5} />
+                  </TouchableOpacity>
 
-                {/* Dropdown Options List with dedicated Smooth ScrollView */}
-                {isDropdownOpen && (
-                  <View style={styles.dropdownMenu}>
-                    <ScrollView
-                      style={styles.dropdownScroll}
-                      nestedScrollEnabled
-                      showsVerticalScrollIndicator={true}
-                    >
+                  {/* 3x3 Compact Category Grid */}
+                  {showCategoryPicker && (
+                    <View style={styles.categoryGrid}>
                       {CATEGORIES.map((cat) => {
                         const isSelected = category === cat.id;
                         return (
                           <TouchableOpacity
                             key={cat.id}
                             style={[
-                              styles.dropdownItem,
-                              isSelected && styles.dropdownItemActive,
+                              styles.categoryGridItem,
+                              isSelected && styles.categoryGridItemSelected,
                             ]}
                             onPress={() => {
+                              triggerHaptic();
                               setCategory(cat.id);
-                              setIsDropdownOpen(false);
+                              setShowCategoryPicker(false);
                             }}
                             activeOpacity={0.7}
                           >
-                            <Text
+                            <View
                               style={[
-                                styles.dropdownItemLabel,
-                                isSelected && styles.dropdownItemLabelActive,
+                                styles.gridIconWrap,
+                                { backgroundColor: cat.bgColor },
+                                isSelected && { backgroundColor: theme.colors.textPrimary },
                               ]}
                             >
-                              {cat.label}
+                              {renderCategoryIcon(cat.id, 13, isSelected ? '#FFFFFF' : cat.color)}
+                            </View>
+                            <Text
+                              style={[
+                                styles.gridItemLabel,
+                                isSelected && styles.gridItemLabelSelected,
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {cat.id}
                             </Text>
-                            {isSelected && (
-                              <Check size={14} color={theme.colors.primary} strokeWidth={1.5} />
-                            )}
                           </TouchableOpacity>
                         );
                       })}
-                    </ScrollView>
+                    </View>
+                  )}
+                </View>
+
+                {/* 3. Amount */}
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>AMOUNT</Text>
+                  <View style={styles.amountContainer}>
+                    <Text style={styles.currencySymbol}>{settings.currency}</Text>
+                    <TextInput
+                      style={styles.amountInput}
+                      value={amount}
+                      onChangeText={(val) => {
+                        const cleaned = val.replace(/[^0-9.]/g, '');
+                        setAmount(cleaned);
+                        if (errorMsg) setErrorMsg(null);
+                      }}
+                      placeholder="0.00"
+                      placeholderTextColor={theme.colors.textTertiary}
+                      keyboardType="decimal-pad"
+                      returnKeyType="done"
+                    />
+                  </View>
+
+                  {/* Increment Pills */}
+                  <View style={styles.quickPillsRow}>
+                    {[10, 50, 100, 200, 500].map((inc) => (
+                      <TouchableOpacity
+                        key={inc}
+                        style={styles.quickPill}
+                        onPress={() => handleQuickAddAmount(inc)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.quickPillText}>+{inc}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Error Banner */}
+                {errorMsg && (
+                  <View style={styles.errorContainer}>
+                    <Text style={styles.errorText}>{errorMsg}</Text>
                   </View>
                 )}
-              </View>
+              </ScrollView>
 
-              {/* Error Banner */}
-              {errorMsg && (
-                <View style={styles.errorBanner}>
-                  <Text style={styles.errorText}>{errorMsg}</Text>
-                </View>
-              )}
-
-              {/* Action Buttons */}
+              {/* Bottom Save Action */}
               <View style={styles.footer}>
                 <TouchableOpacity
-                  style={styles.cancelPill}
-                  onPress={closeQuickAddModal}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.cancelPillText}>Cancel</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
                   style={[
-                    styles.savePill,
-                    (!isValid || isSubmitting) && styles.savePillDisabled,
+                    styles.saveButton,
+                    (!isValid || isSubmitting) && styles.saveButtonDisabled,
                   ]}
                   onPress={handleSave}
                   disabled={!isValid || isSubmitting}
-                  activeOpacity={0.8}
+                  activeOpacity={0.85}
                 >
-                  <Text style={styles.savePillText}>
-                    {isSubmitting ? 'Saving...' : editingExpense ? 'Update' : 'Save'}
+                  <Text style={styles.saveButtonText}>
+                    {isSubmitting ? 'Saving...' : editingExpense ? 'Save Changes' : 'Save Expense'}
                   </Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </Animated.View>
           </KeyboardAvoidingView>
         </View>
       </TouchableWithoutFeedback>
@@ -299,31 +384,34 @@ export const QuickExpenseModal: React.FC = () => {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    backgroundColor: theme.colors.overlay,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24, // 24px side gutters
+    paddingHorizontal: 20,
   },
-  keyboardContainer: {
+  keyboardWrap: {
     width: '100%',
-    maxWidth: 400,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   popupCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
     width: '100%',
+    maxWidth: 360,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.container,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    maxHeight: Dimensions.get('window').height * 0.78,
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingBottom: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    marginBottom: 14,
+    borderBottomColor: theme.colors.borderSubtle,
   },
   titleRow: {
     flexDirection: 'row',
@@ -331,199 +419,202 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   title: {
-    fontSize: 17,
-    fontWeight: '600',
+    ...theme.typography.sectionHeading,
     color: theme.colors.textPrimary,
   },
   shakeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FEF3C7',
-    paddingVertical: 2,
+    gap: 4,
+    backgroundColor: theme.colors.accentLight,
     paddingHorizontal: 7,
-    borderRadius: 999,
-    gap: 3,
-    borderWidth: 1,
-    borderColor: '#FDE68A',
+    paddingVertical: 2,
+    borderRadius: 6,
   },
   shakeBadgeText: {
     fontSize: 10,
     fontWeight: '600',
-    color: '#B45309',
+    color: theme.colors.primary,
   },
-  closeCircle: {
+  closeBtn: {
     width: 28,
     height: 28,
-    borderRadius: 14,
-    backgroundColor: '#F8FAFC',
+    borderRadius: 6,
+    backgroundColor: theme.colors.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
-  amountSection: {
+  formScroll: {
+    maxHeight: 380,
+  },
+  formContent: {
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 14,
+  },
+  fieldGroup: {
     marginBottom: 14,
   },
-  amountInputRow: {
+  fieldLabel: {
+    ...theme.typography.label,
+    color: theme.colors.textSecondary,
+    marginBottom: 6,
+  },
+  textInput: {
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    fontWeight: '400',
+    color: theme.colors.textPrimary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  categorySelector: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    justifyContent: 'space-between',
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.border,
+  },
+  categoryLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  categoryIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categorySelectedText: {
+    ...theme.typography.body,
+    fontSize: 13,
+    fontWeight: '500',
+    color: theme.colors.textPrimary,
+  },
+  categoryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.md,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  categoryGridItem: {
+    width: '31%',
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderRadius: theme.borderRadius.sm,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  categoryGridItemSelected: {
+    borderColor: theme.colors.textPrimary,
+    backgroundColor: theme.colors.backgroundSecondary,
+  },
+  gridIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  gridItemLabel: {
+    ...theme.typography.caption,
+    fontSize: 10,
+    color: theme.colors.textPrimary,
+  },
+  gridItemLabelSelected: {
+    fontWeight: '600',
+  },
+  amountContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   currencySymbol: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: theme.colors.primary,
+    ...theme.typography.amountSmall,
+    fontSize: 20,
+    color: theme.colors.textPrimary,
     marginRight: 6,
   },
   amountInput: {
     flex: 1,
-    fontSize: 24,
-    fontWeight: '600',
+    ...theme.typography.amountSmall,
+    fontSize: 20,
     color: theme.colors.textPrimary,
-    padding: 0,
+    paddingVertical: 4,
   },
-  quickChipsScroll: {
-    marginTop: 8,
-  },
-  quickChipsContent: {
+  quickPillsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 6,
+    marginTop: 6,
   },
-  quickChip: {
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 5,
-    paddingHorizontal: 11,
-    borderRadius: 999,
+  quickPill: {
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: theme.borderRadius.sm,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.border,
   },
-  quickChipText: {
+  quickPillText: {
+    ...theme.typography.caption,
     fontSize: 11,
     fontWeight: '500',
-    color: theme.colors.textSecondary,
-  },
-  fieldSection: {
-    marginBottom: 12,
-  },
-  inputLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: theme.colors.textSecondary,
-    marginBottom: 5,
-  },
-  textInput: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    fontSize: 14,
-    color: theme.colors.textPrimary,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  dropdownButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  dropdownButtonActive: {
-    borderColor: theme.colors.primary,
-  },
-  dropdownSelectedText: {
-    fontSize: 13,
-    fontWeight: '500',
     color: theme.colors.textPrimary,
   },
-  dropdownMenu: {
-    marginTop: 6,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    maxHeight: 160,
-    overflow: 'hidden',
-  },
-  dropdownScroll: {
-    maxHeight: 160,
-  },
-  dropdownItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F8FAFC',
-  },
-  dropdownItemActive: {
-    backgroundColor: theme.colors.primaryLight,
-  },
-  dropdownItemLabel: {
-    fontSize: 13,
-    color: theme.colors.textPrimary,
-  },
-  dropdownItemLabelActive: {
-    fontWeight: '600',
-    color: theme.colors.primary,
-  },
-  errorBanner: {
-    backgroundColor: theme.colors.dangerLight,
+  errorContainer: {
+    backgroundColor: theme.colors.negativeLight,
     padding: 8,
-    borderRadius: 8,
-    marginBottom: 8,
+    borderRadius: theme.borderRadius.sm,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: theme.colors.negative,
+    marginTop: 4,
   },
   errorText: {
-    color: theme.colors.dangerText,
-    fontSize: 12,
-    fontWeight: '500',
+    ...theme.typography.caption,
+    color: theme.colors.negative,
     textAlign: 'center',
   },
   footer: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.borderSubtle,
+    backgroundColor: theme.colors.surface,
   },
-  cancelPill: {
-    flex: 1,
-    paddingVertical: 11,
-    borderRadius: 999,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  cancelPillText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: theme.colors.textSecondary,
-  },
-  savePill: {
-    flex: 2,
-    paddingVertical: 11,
-    borderRadius: 999,
-    backgroundColor: theme.colors.primary,
+  saveButton: {
+    backgroundColor: theme.colors.textPrimary,
+    height: 44,
+    borderRadius: theme.borderRadius.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  savePillDisabled: {
-    opacity: 0.5,
+  saveButtonDisabled: {
+    opacity: 0.4,
   },
-  savePillText: {
-    fontSize: 13,
+  saveButtonText: {
+    fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
   },

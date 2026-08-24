@@ -1,7 +1,8 @@
 import React from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity } from 'react-native';
 import { Smartphone, Zap } from 'lucide-react-native';
 import { useShake } from '../context/ShakeContext';
+import { theme } from '../constants/theme';
 
 export const ShakeSimulatorFab: React.FC = () => {
   const { simulateShake } = useShake();
@@ -14,8 +15,8 @@ export const ShakeSimulatorFab: React.FC = () => {
       accessibilityLabel="Test shake gesture"
       accessibilityRole="button"
     >
-      <Smartphone size={16} color="#0F172A" strokeWidth={1.4} />
-      <Zap size={9} color="#EAB308" strokeWidth={1.5} style={styles.zap} />
+      <Smartphone size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
+      <Zap size={8} color={theme.colors.warning} strokeWidth={2} style={styles.zap} />
     </TouchableOpacity>
   );
 };
@@ -25,19 +26,19 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 74,
     right: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: theme.colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.border,
     zIndex: 99,
   },
   zap: {
     position: 'absolute',
-    top: 7,
-    right: 8,
+    top: 6,
+    right: 7,
   },
 });

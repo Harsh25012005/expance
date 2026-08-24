@@ -5,10 +5,13 @@ const EXPENSES_STORAGE_KEY = '@expense_app_expenses_v2';
 const SETTINGS_STORAGE_KEY = '@expense_app_settings_v2';
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  userName: '',
+  onboardingCompleted: false,
+  trackingStyle: 'Personal',
   shakeEnabled: true,
-  shakeSensitivity: 'medium',
-  currency: '$',
-  currencyCode: 'USD',
+  shakeSensitivity: 'low', // Default MUST be low
+  currency: '₹',
+  currencyCode: 'INR',
   hapticsEnabled: true,
 };
 

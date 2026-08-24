@@ -47,6 +47,18 @@ export const shakeServiceBridge = {
     }
   },
 
+  setAppForeground(isForeground: boolean): void {
+    if (this.isSupported()) {
+      try {
+        if (ShakeServiceModule.setAppForeground) {
+          ShakeServiceModule.setAppForeground(isForeground);
+        }
+      } catch (err) {
+        console.warn('[ShakeServiceBridge] Failed to set app foreground state:', err);
+      }
+    }
+  },
+
   async isRunning(): Promise<boolean> {
     if (this.isSupported()) {
       try {

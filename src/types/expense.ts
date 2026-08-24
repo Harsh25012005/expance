@@ -28,6 +28,9 @@ export interface CurrencyConfig {
 }
 
 export interface AppSettings {
+  userName?: string;
+  onboardingCompleted: boolean;
+  trackingStyle?: string;
   shakeEnabled: boolean;
   shakeSensitivity: ShakeSensitivity;
   currency: string;
