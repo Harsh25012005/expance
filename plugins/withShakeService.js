@@ -607,6 +607,12 @@ function withShakeServiceMainActivity(config) {
           "import android.content.Intent\nimport android.os.Bundle"
         );
       }
+      if (!contents.includes("import android.util.Log")) {
+        contents = contents.replace(
+          "import android.os.Bundle",
+          "import android.os.Bundle\nimport android.util.Log"
+        );
+      }
 
       const onCreateEnd = contents.indexOf("super.onCreate(null)");
       if (onCreateEnd !== -1) {
