@@ -1,6 +1,6 @@
 import './global.css';
 import React, { useState } from 'react';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -17,6 +17,7 @@ import { ShakeProvider } from './src/context/ShakeContext';
 import { Header } from './src/components/Header';
 import { CustomTabBar } from './src/components/CustomTabBar';
 import { QuickExpenseModal } from './src/components/QuickExpenseModal';
+import { AppLogo } from './src/components/AppLogo';
 
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -25,6 +26,17 @@ import { AnalyticsScreen } from './src/screens/AnalyticsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { TabScreen } from './src/types/expense';
 import { theme } from './src/constants/theme';
+
+function SplashScreen() {
+  return (
+    <View style={styles.splashContainer}>
+      <AppLogo size="large" />
+      <Text style={styles.splashTitle}>Mova</Text>
+      <Text style={styles.splashSubtitle}>Track your spending, effortlessly.</Text>
+      <ActivityIndicator size="small" color={theme.colors.textSecondary} style={styles.splashSpinner} />
+    </View>
+  );
+}
 
 function MainApp() {
   const [activeTab, setActiveTab] = useState<TabScreen>('home');
@@ -93,7 +105,7 @@ function MainApp() {
       {/* Glassmorphism Bottom Tab Bar */}
       <CustomTabBar activeTab={activeTab} onTabChange={setActiveTab} />
 
-      {/* Global Shake / Quick Add Bottom Sheet Modal */}
+      {/* Global Shake / Quick Add Popup Modal */}
       <QuickExpenseModal />
     </SafeAreaView>
   );
@@ -103,11 +115,7 @@ function RootApp() {
   const { settings, loading } = useExpenses();
 
   if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.textPrimary} />
-      </View>
-    );
+    return <SplashScreen />;
   }
 
   // If user has not completed onboarding, show the 5-step onboarding experience
@@ -137,11 +145,7 @@ export default function App() {
   });
 
   if (!fontsLoaded) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.textPrimary} />
-      </View>
-    );
+    return <SplashScreen />;
   }
 
   return (
@@ -158,11 +162,29 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
-  loadingContainer: {
+  splashContainer: {
     flex: 1,
     backgroundColor: theme.colors.background,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  splashTitle: {
+    ...theme.typography.display,
+    fontSize: 28,
+    fontWeight: '700',
+    color: theme.colors.textPrimary,
+    marginTop: 18,
+    letterSpacing: -0.5,
+  },
+  splashSubtitle: {
+    ...theme.typography.body,
+    color: theme.colors.textSecondary,
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  splashSpinner: {
+    marginTop: 28,
   },
   screenContainer: {
     flex: 1,

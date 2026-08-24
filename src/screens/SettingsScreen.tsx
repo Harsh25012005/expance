@@ -35,6 +35,7 @@ import { ShakeSensitivity } from '../types/expense';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { exportExpenses, ExportFormat } from '../services/exportService';
 import { theme } from '../constants/theme';
+import { AppLogo } from '../components/AppLogo';
 
 export const SettingsScreen: React.FC = () => {
   const { settings, updateSettings, expenses, clearAllExpenses, resetOnboarding } = useExpenses();
@@ -353,14 +354,11 @@ export const SettingsScreen: React.FC = () => {
       <View style={styles.section}>
         <Text style={styles.sectionHeader}>ABOUT</Text>
         <View style={styles.card}>
-          <View style={styles.appInfoRow}>
-            <View style={styles.appLogoCircle}>
-              <Sparkles size={16} color={theme.colors.textPrimary} strokeWidth={1.5} />
-            </View>
-            <View style={styles.appMeta}>
-              <Text style={styles.appName}>ExpenseFlow</Text>
-              <Text style={styles.appVersion}>Version 1.0.0 (Editorial Release)</Text>
-            </View>
+          <View style={styles.aboutBox}>
+            <AppLogo size={44} style={styles.aboutLogo} />
+            <Text style={styles.appName}>Mova</Text>
+            <Text style={styles.appTagline}>Your personal expense tracker.</Text>
+            <Text style={styles.appVersion}>Version 1.0.0 (Editorial Release)</Text>
           </View>
 
           <View style={styles.divider} />
@@ -702,32 +700,28 @@ const styles = StyleSheet.create({
     color: theme.colors.textPrimary,
     fontWeight: '600',
   },
-  appInfoRow: {
-    flexDirection: 'row',
+  aboutBox: {
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
+    paddingVertical: 18,
   },
-  appLogoCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: theme.colors.backgroundSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  appMeta: {
-    flex: 1,
+  aboutLogo: {
+    marginBottom: 8,
   },
   appName: {
-    ...theme.typography.bodyLarge,
-    fontWeight: '600',
+    ...theme.typography.sectionHeading,
+    fontSize: 18,
+    fontWeight: '700',
     color: theme.colors.textPrimary,
+  },
+  appTagline: {
+    ...theme.typography.secondary,
+    color: theme.colors.textSecondary,
+    marginTop: 2,
   },
   appVersion: {
     ...theme.typography.caption,
-    color: theme.colors.textSecondary,
-    marginTop: 1,
+    color: theme.colors.textTertiary,
+    marginTop: 4,
   },
   privacyRow: {
     flexDirection: 'row',

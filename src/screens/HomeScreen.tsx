@@ -125,7 +125,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToExpenses }) 
           <View style={styles.quickShakeLeft}>
             <Text style={styles.quickShakeTitle}>Shake to add</Text>
             <Text style={styles.quickShakeSubtitle}>
-              Record an expense instantly by shaking your phone.
+              Mova makes recording an expense as simple as a shake.
             </Text>
           </View>
 

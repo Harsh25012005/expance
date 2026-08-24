@@ -13,8 +13,6 @@ import {
 import {
   ArrowRight,
   Check,
-  Smartphone,
-  Sparkles,
   Zap,
   Receipt,
 } from 'lucide-react-native';
@@ -23,6 +21,7 @@ import { useExpenses } from '../context/ExpenseContext';
 import { SUPPORTED_CURRENCIES } from '../constants/categories';
 import { ShakeSensitivity } from '../types/expense';
 import { theme } from '../constants/theme';
+import { AppLogo } from '../components/AppLogo';
 
 export const OnboardingScreen: React.FC = () => {
   const { completeOnboarding } = useExpenses();
@@ -117,8 +116,8 @@ export const OnboardingScreen: React.FC = () => {
         {/* Top Header & Progress Indicator */}
         <View style={styles.topBar}>
           <View style={styles.brandRow}>
-            <View style={styles.brandDot} />
-            <Text style={styles.brandName}>ExpenseFlow</Text>
+            <AppLogo size={20} />
+            <Text style={styles.brandName}>Mova</Text>
           </View>
 
           {/* Subtle Dots: ● ○ ○ ○ ○ */}
@@ -151,13 +150,19 @@ export const OnboardingScreen: React.FC = () => {
           {/* ──────────────── SCREEN 1: WELCOME ──────────────── */}
           {currentStep === 0 && (
             <View style={styles.stepContainer}>
-              <View style={styles.editorialHeader}>
-                <Text style={styles.displayHeadline}>
-                  Your money,{"\n"}made simple.
-                </Text>
-                <Text style={styles.displaySubtitle}>
-                  Track everyday spending without slowing down your day.
-                </Text>
+              <View style={styles.welcomeTopSection}>
+                <View style={styles.welcomeLogoWrap}>
+                  <AppLogo size={64} />
+                </View>
+
+                <View style={styles.editorialHeader}>
+                  <Text style={styles.displayHeadline}>
+                    Your money,{"\n"}made simple.
+                  </Text>
+                  <Text style={styles.displaySubtitle}>
+                    Track everyday spending without slowing down your day.
+                  </Text>
+                </View>
               </View>
 
               {/* Minimal geometric financial visual */}
@@ -303,7 +308,7 @@ export const OnboardingScreen: React.FC = () => {
                   One shake.{"\n"}One expense.
                 </Text>
                 <Text style={styles.displaySubtitle}>
-                  Record an expense instantly without searching through the app.
+                  Mova makes recording an expense as simple as a shake.
                 </Text>
               </View>
 
@@ -440,24 +445,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 32,
+    marginBottom: 24,
   },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  brandDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: theme.colors.primary,
-  },
   brandName: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
     color: theme.colors.textPrimary,
-    letterSpacing: -0.2,
+    letterSpacing: -0.3,
   },
   progressDots: {
     flexDirection: 'row',
@@ -483,6 +482,13 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'space-between',
     paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+  },
+  welcomeTopSection: {
+    alignItems: 'flex-start',
+  },
+  welcomeLogoWrap: {
+    marginBottom: 20,
+    alignSelf: 'flex-start',
   },
   upperContent: {
     paddingTop: 8,
