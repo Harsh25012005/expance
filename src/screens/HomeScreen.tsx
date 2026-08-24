@@ -125,7 +125,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToExpenses }) 
           <View style={styles.quickShakeLeft}>
             <Text style={styles.quickShakeTitle}>Shake to add</Text>
             <Text style={styles.quickShakeSubtitle}>
-              Mova makes recording an expense as simple as a shake.
+              Expenza makes recording an expense as simple as a shake.
             </Text>
           </View>
 
@@ -385,14 +385,17 @@ const styles = StyleSheet.create({
     gap: 6,
     backgroundColor: theme.colors.backgroundSecondary,
     borderRadius: theme.borderRadius.sm,
-    paddingVertical: 9,
+    height: 40,
+    paddingHorizontal: 14,
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
   manualAddBtnText: {
-    ...theme.typography.secondary,
+    fontSize: 13,
     fontWeight: '600',
     color: theme.colors.textPrimary,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   sectionCard: {
     backgroundColor: theme.colors.surface,
@@ -593,15 +596,18 @@ const styles = StyleSheet.create({
   addFirstBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 6,
     backgroundColor: theme.colors.textPrimary,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+    paddingHorizontal: 20,
+    height: 42,
     borderRadius: theme.borderRadius.sm,
   },
   addFirstBtnText: {
-    ...theme.typography.secondary,
+    fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
 });

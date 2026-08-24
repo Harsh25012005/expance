@@ -1,5 +1,5 @@
 {
-  "name": "mova",
+  "name": "expenza",
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
@@ -21,7 +21,7 @@
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.2",
     "expo-task-manager": "~57.0.13",
-    "lucide-react-native": "^1.33.0",
+    "lucide-react-native": "^0.475.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.2",
@@ -29,12 +29,14 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-svg": "15.15.4",
     "react-native-web": "^0.21.2",
+    "react-native-worklets": "0.10.1",
     "xlsx": "^0.18.5",
     "xlsx-js-style": "^1.2.0"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
     "nativewind": "^4.2.6",
+    "react-refresh": "^0.18.0",
     "tailwindcss": "^3.4.19",
     "typescript": "~5.7.3"
   },
@@ -45,7 +47,7 @@
     "web": "expo start --web"
   },
   "overrides": {
-    "react-native-worklets": "0.10.4"
+    "react-native-worklets": "0.10.1"
   },
   "private": true
 }

@@ -42,7 +42,7 @@ export const AppLogo: React.FC<AppLogoProps> = ({ size = 'medium', style }) => {
       ]}
       resizeMode="contain"
       accessibilityRole="image"
-      accessibilityLabel="Mova Logo"
+      accessibilityLabel="Expenza Logo"
     />
   );
 };

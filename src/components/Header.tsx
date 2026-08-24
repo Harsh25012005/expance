@@ -29,7 +29,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const displayName = settings.userName?.trim() || 'Harsh';
-  const headerTitle = isHome ? `${getGreeting()}, ${displayName}` : title || 'Mova';
+  const headerTitle = isHome ? `${getGreeting()}, ${displayName}` : title || 'Expenza';
   const headerSubtitle = isHome ? "Here's where your money went this month." : subtitle || 'Track your daily finances';
 
   const userInitial = displayName.charAt(0).toUpperCase();

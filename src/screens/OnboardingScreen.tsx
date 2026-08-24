@@ -113,13 +113,8 @@ export const OnboardingScreen: React.FC = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.safeContainer}>
-        {/* Top Header & Progress Indicator */}
+        {/* Top Progress Indicator */}
         <View style={styles.topBar}>
-          <View style={styles.brandRow}>
-            <AppLogo size={20} />
-            <Text style={styles.brandName}>Mova</Text>
-          </View>
-
           {/* Subtle Dots: ● ○ ○ ○ ○ */}
           <View style={styles.progressDots}>
             {[0, 1, 2, 3, 4].map((step) => {
@@ -308,7 +303,7 @@ export const OnboardingScreen: React.FC = () => {
                   One shake.{"\n"}One expense.
                 </Text>
                 <Text style={styles.displaySubtitle}>
-                  Mova makes recording an expense as simple as a shake.
+                  Expenza makes recording an expense as simple as a shake.
                 </Text>
               </View>
 
@@ -444,19 +439,9 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     marginBottom: 24,
-  },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  brandName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: theme.colors.textPrimary,
-    letterSpacing: -0.3,
+    minHeight: 20,
   },
   progressDots: {
     flexDirection: 'row',

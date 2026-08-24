@@ -31,7 +31,7 @@ function SplashScreen() {
   return (
     <View style={styles.splashContainer}>
       <AppLogo size="large" />
-      <Text style={styles.splashTitle}>Mova</Text>
+      <Text style={styles.splashTitle}>Expenza</Text>
       <Text style={styles.splashSubtitle}>Track your spending, effortlessly.</Text>
       <ActivityIndicator size="small" color={theme.colors.textSecondary} style={styles.splashSpinner} />
     </View>

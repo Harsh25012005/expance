@@ -356,7 +356,7 @@ export const SettingsScreen: React.FC = () => {
         <View style={styles.card}>
           <View style={styles.aboutBox}>
             <AppLogo size={44} style={styles.aboutLogo} />
-            <Text style={styles.appName}>Mova</Text>
+            <Text style={styles.appName}>Expenza</Text>
             <Text style={styles.appTagline}>Your personal expense tracker.</Text>
             <Text style={styles.appVersion}>Version 1.0.0 (Editorial Release)</Text>
           </View>

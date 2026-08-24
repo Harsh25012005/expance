@@ -1,27 +1,27 @@
 {
   "expo": {
-    "name": "Mova",
+    "name": "Expenza",
     "slug": "expense",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/logo.png",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "scheme": "movaapp",
+    "scheme": "expenza",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.harsh.mova",
       "infoPlist": {
-        "CFBundleDisplayName": "Mova",
-        "NSMotionUsageDescription": "Enable motion sensors to detect shake gestures and quickly log expenses in Mova."
+        "CFBundleDisplayName": "Expenza",
+        "NSMotionUsageDescription": "Enable motion sensors to detect shake gestures and quickly log expenses in Expenza."
       }
     },
     "android": {
       "package": "com.harsh.expense",
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
-        "foregroundImage": "./assets/logo.png",
+        "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/logo.png"
+        "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
@@ -36,7 +36,7 @@
       ]
     },
     "web": {
-      "favicon": "./assets/logo.png"
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-font",
