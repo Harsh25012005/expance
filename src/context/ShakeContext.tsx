@@ -155,17 +155,28 @@ export const ShakeProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
-    // Check if app was launched by tapping a notification
-    Notifications.getLastNotificationResponseAsync().then((response) => {
-      if (response && response.notification.request.content.data?.action === 'OPEN_SHAKE_MODAL') {
+    const handleNotificationAction = (response: Notifications.NotificationResponse) => {
+      const action = response.notification.request.content.data?.action;
+      const actionId = response.actionIdentifier;
+      if (
+        action === 'OPEN_SHAKE_MODAL' ||
+        actionId === 'OPEN_MODAL_ACTION' ||
+        actionId === 'SHAKE_TRIGGER_ACTION' ||
+        actionId === Notifications.DEFAULT_ACTION_IDENTIFIER
+      ) {
         setIsShakeModalOpen(true);
+      }
+    };
+
+    // Check if app was launched by tapping a notification or action button
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) {
+        handleNotificationAction(response);
       }
     });
 
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      if (response.notification.request.content.data?.action === 'OPEN_SHAKE_MODAL') {
-        setIsShakeModalOpen(true);
-      }
+      handleNotificationAction(response);
     });
 
     return () => subscription.remove();
