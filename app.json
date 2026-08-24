@@ -6,14 +6,18 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "scheme": "expenseapp",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.harsh.expense"
+      "bundleIdentifier": "com.harsh.expense",
+      "infoPlist": {
+        "NSMotionUsageDescription": "Enable motion sensors to detect shake gestures and quickly log expenses."
+      }
     },
     "android": {
       "package": "com.harsh.expense",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#F8FAFC",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -23,10 +27,11 @@
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
-        "android.permission.VIBRATE",
         "android.permission.WAKE_LOCK",
+        "android.permission.VIBRATE",
         "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.POST_NOTIFICATIONS"
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.USE_FULL_SCREEN_INTENT"
       ]
     },
     "web": {
