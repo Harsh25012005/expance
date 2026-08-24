@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,19 +9,29 @@ import {
   KeyboardAvoidingView,
   Platform,
   Animated,
+  Linking,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import {
   ArrowRight,
   Check,
-  Zap,
   Receipt,
+  Bell,
+  Activity,
+  Zap,
+  Info,
 } from 'lucide-react-native';
+import * as Notifications from 'expo-notifications';
+import { Accelerometer } from 'expo-sensors';
 import * as Haptics from 'expo-haptics';
 import { useExpenses } from '../context/ExpenseContext';
 import { SUPPORTED_CURRENCIES } from '../constants/categories';
 import { ShakeSensitivity } from '../types/expense';
 import { theme } from '../constants/theme';
 import { AppLogo } from '../components/AppLogo';
+
+type PermissionStatusType = 'granted' | 'denied' | 'undetermined' | 'checking';
 
 export const OnboardingScreen: React.FC = () => {
   const { completeOnboarding } = useExpenses();
@@ -31,29 +41,14 @@ export const OnboardingScreen: React.FC = () => {
   const [selectedCurrencyCode, setSelectedCurrencyCode] = useState<string>('INR');
   const [selectedSensitivity, setSelectedSensitivity] = useState<ShakeSensitivity>('low');
 
+  // Permissions state
+  const [notifStatus, setNotifStatus] = useState<PermissionStatusType>('checking');
+  const [motionStatus, setMotionStatus] = useState<PermissionStatusType>('checking');
+  const [bgStatus, setBgStatus] = useState<'enabled' | 'restricted' | 'available'>('available');
+
   // Animation values
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
-  const phoneShakeAnim = useRef(new Animated.Value(0)).current;
-
-  // Shake animation loop for step 3 (Screen 4)
-  useEffect(() => {
-    if (currentStep === 3) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(800),
-          Animated.timing(phoneShakeAnim, { toValue: 8, duration: 60, useNativeDriver: true }),
-          Animated.timing(phoneShakeAnim, { toValue: -8, duration: 60, useNativeDriver: true }),
-          Animated.timing(phoneShakeAnim, { toValue: 6, duration: 60, useNativeDriver: true }),
-          Animated.timing(phoneShakeAnim, { toValue: -6, duration: 60, useNativeDriver: true }),
-          Animated.timing(phoneShakeAnim, { toValue: 0, duration: 80, useNativeDriver: true }),
-          Animated.delay(1200),
-        ])
-      ).start();
-    } else {
-      phoneShakeAnim.setValue(0);
-    }
-  }, [currentStep]);
 
   const triggerHaptic = () => {
     try {
@@ -61,8 +56,94 @@ export const OnboardingScreen: React.FC = () => {
     } catch {}
   };
 
+  // Check actual native permission statuses
+  const checkAllPermissions = useCallback(async () => {
+    try {
+      // 1. Notification Permission Check
+      const notifPerm = await Notifications.getPermissionsAsync();
+      if (notifPerm.granted || notifPerm.status === 'granted') {
+        setNotifStatus('granted');
+      } else if (notifPerm.status === 'denied' && !notifPerm.canAskAgain) {
+        setNotifStatus('denied');
+      } else {
+        setNotifStatus('undetermined');
+      }
+    } catch {
+      setNotifStatus('undetermined');
+    }
+
+    try {
+      // 2. Motion / Sensor Check
+      const isAvailable = await Accelerometer.isAvailableAsync();
+      if (isAvailable) {
+        setMotionStatus('granted');
+      } else {
+        setMotionStatus('denied');
+      }
+    } catch {
+      setMotionStatus('granted');
+    }
+
+    // 3. Background Activity Check
+    if (Platform.OS === 'android') {
+      setBgStatus('enabled');
+    } else {
+      setBgStatus('restricted');
+    }
+  }, []);
+
+  useEffect(() => {
+    checkAllPermissions();
+
+    const appStateSub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (nextState === 'active') {
+        checkAllPermissions();
+      }
+    });
+
+    return () => {
+      appStateSub.remove();
+    };
+  }, [checkAllPermissions]);
+
+  const handleRequestNotification = async () => {
+    triggerHaptic();
+    try {
+      const { granted, status, canAskAgain } = await Notifications.requestPermissionsAsync();
+      if (granted || status === 'granted') {
+        setNotifStatus('granted');
+      } else if (status === 'denied' && !canAskAgain) {
+        setNotifStatus('denied');
+        Linking.openSettings().catch(() => {});
+      } else {
+        setNotifStatus('denied');
+      }
+    } catch (err) {
+      console.warn('Error requesting notification permission:', err);
+      setNotifStatus('denied');
+    }
+  };
+
+  const handleRequestMotion = async () => {
+    triggerHaptic();
+    try {
+      const isAvailable = await Accelerometer.isAvailableAsync();
+      if (isAvailable) {
+        setMotionStatus('granted');
+      } else {
+        setMotionStatus('denied');
+      }
+    } catch {
+      setMotionStatus('granted');
+    }
+  };
+
   const transitionToStep = (nextStep: number) => {
     triggerHaptic();
+    if (nextStep === 3) {
+      checkAllPermissions();
+    }
+
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 0,
@@ -113,9 +194,8 @@ export const OnboardingScreen: React.FC = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.safeContainer}>
-        {/* Top Progress Indicator */}
+        {/* Top Progress Indicator: 5 steps */}
         <View style={styles.topBar}>
-          {/* Subtle Dots: ● ○ ○ ○ ○ */}
           <View style={styles.progressDots}>
             {[0, 1, 2, 3, 4].map((step) => {
               const isActive = step === currentStep;
@@ -142,7 +222,7 @@ export const OnboardingScreen: React.FC = () => {
             },
           ]}
         >
-          {/* ──────────────── SCREEN 1: WELCOME ──────────────── */}
+          {/* ──────────────── SCREEN 1: WELCOME (Step 0) ──────────────── */}
           {currentStep === 0 && (
             <View style={styles.stepContainer}>
               <View style={styles.welcomeTopSection}>
@@ -196,7 +276,7 @@ export const OnboardingScreen: React.FC = () => {
             </View>
           )}
 
-          {/* ──────────────── SCREEN 2: NAME (UPWARD POSITIONED) ──────────────── */}
+          {/* ──────────────── SCREEN 2: NAME (Step 1) ──────────────── */}
           {currentStep === 1 && (
             <View style={styles.stepContainer}>
               <View style={styles.upperContent}>
@@ -237,7 +317,7 @@ export const OnboardingScreen: React.FC = () => {
             </View>
           )}
 
-          {/* ──────────────── SCREEN 3: CURRENCY ──────────────── */}
+          {/* ──────────────── SCREEN 3: CURRENCY (Step 2) ──────────────── */}
           {currentStep === 2 && (
             <View style={styles.stepContainer}>
               <View style={styles.editorialHeader}>
@@ -295,39 +375,136 @@ export const OnboardingScreen: React.FC = () => {
             </View>
           )}
 
-          {/* ──────────────── SCREEN 4: SHAKE FEATURE ──────────────── */}
+          {/* ──────────────── SCREEN 4: PERMISSIONS (Step 3 - NEW) ──────────────── */}
           {currentStep === 3 && (
             <View style={styles.stepContainer}>
-              <View style={styles.editorialHeader}>
-                <Text style={styles.displayHeadline}>
-                  One shake.{"\n"}One expense.
-                </Text>
-                <Text style={styles.displaySubtitle}>
-                  Expenza makes recording an expense as simple as a shake.
-                </Text>
-              </View>
+              <View style={styles.upperContent}>
+                <View style={styles.editorialHeader}>
+                  <Text style={styles.pageHeading}>
+                    Make Expenza work instantly
+                  </Text>
+                  <Text style={styles.pageSubtitle}>
+                    Allow the permissions Expenza needs to quickly capture expenses when you shake your phone.
+                  </Text>
+                </View>
 
-              <View style={styles.visualContainer}>
-                <Animated.View
-                  style={[
-                    styles.phoneMockupFrame,
-                    {
-                      transform: [{ translateX: phoneShakeAnim }],
-                    },
-                  ]}
-                >
-                  <View style={styles.phoneSpeaker} />
-                  <View style={styles.phoneInnerScreen}>
-                    <View style={styles.mockWaveBadge}>
-                      <Zap size={13} color={theme.colors.primary} strokeWidth={1.5} />
-                      <Text style={styles.mockWaveText}>Shake detected</Text>
+                {/* Clean Permission Rows Card */}
+                <View style={styles.permissionsCard}>
+                  {/* Row 1: Notifications */}
+                  <View style={styles.permissionRow}>
+                    <View style={styles.permissionIconCircle}>
+                      <Bell size={18} color={theme.colors.textPrimary} strokeWidth={1.5} />
                     </View>
-                    <View style={styles.mockSheetPreview}>
-                      <Text style={styles.mockSheetTitle}>Add expense</Text>
-                      <View style={styles.mockSheetInputPlaceholder} />
+                    <View style={styles.permissionTextCol}>
+                      <Text style={styles.permissionTitle}>Notifications</Text>
+                      <Text style={styles.permissionDesc}>
+                        Stay informed when an action needs your attention
+                      </Text>
+                    </View>
+                    <View style={styles.permissionActionCol}>
+                      {notifStatus === 'granted' ? (
+                        <View style={styles.allowedBadge}>
+                          <Check size={12} color={theme.colors.positive} strokeWidth={2.5} />
+                          <Text style={styles.allowedBadgeText}>Allowed ✓</Text>
+                        </View>
+                      ) : notifStatus === 'denied' ? (
+                        <TouchableOpacity
+                          style={styles.settingsButton}
+                          onPress={() => Linking.openSettings()}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.settingsButtonText}>Settings</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.allowButton}
+                          onPress={handleRequestNotification}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.allowButtonText}>Allow</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   </View>
-                </Animated.View>
+
+                  <View style={styles.permissionDivider} />
+
+                  {/* Row 2: Motion / Sensors */}
+                  <View style={styles.permissionRow}>
+                    <View style={styles.permissionIconCircle}>
+                      <Activity size={18} color={theme.colors.textPrimary} strokeWidth={1.5} />
+                    </View>
+                    <View style={styles.permissionTextCol}>
+                      <Text style={styles.permissionTitle}>Motion & Sensors</Text>
+                      <Text style={styles.permissionDesc}>
+                        Detect when you shake your phone
+                      </Text>
+                    </View>
+                    <View style={styles.permissionActionCol}>
+                      {motionStatus === 'granted' ? (
+                        <View style={styles.allowedBadge}>
+                          <Check size={12} color={theme.colors.positive} strokeWidth={2.5} />
+                          <Text style={styles.allowedBadgeText}>Allowed ✓</Text>
+                        </View>
+                      ) : motionStatus === 'denied' ? (
+                        <TouchableOpacity
+                          style={styles.settingsButton}
+                          onPress={() => Linking.openSettings()}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.settingsButtonText}>Settings</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.allowButton}
+                          onPress={handleRequestMotion}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.allowButtonText}>Allow</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={styles.permissionDivider} />
+
+                  {/* Row 3: Background Activity */}
+                  <View style={styles.permissionRow}>
+                    <View style={styles.permissionIconCircle}>
+                      <Zap size={18} color={theme.colors.textPrimary} strokeWidth={1.5} />
+                    </View>
+                    <View style={styles.permissionTextCol}>
+                      <Text style={styles.permissionTitle}>Background Activity</Text>
+                      <Text style={styles.permissionDesc}>
+                        {Platform.OS === 'android'
+                          ? 'Keep shake detection available when supported by your device'
+                          : 'iOS restricts background sensors; instant shake works whenever app is active'}
+                      </Text>
+                    </View>
+                    <View style={styles.permissionActionCol}>
+                      {Platform.OS === 'android' ? (
+                        <View style={styles.allowedBadge}>
+                          <Check size={12} color={theme.colors.positive} strokeWidth={2.5} />
+                          <Text style={styles.allowedBadgeText}>Enabled ✓</Text>
+                        </View>
+                      ) : (
+                        <View style={styles.infoBadge}>
+                          <Text style={styles.infoBadgeText}>Active in app</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                </View>
+
+                {/* Informative Note */}
+                <View style={styles.permissionNoteBox}>
+                  <Info size={14} color={theme.colors.textSecondary} strokeWidth={1.5} />
+                  <Text style={styles.permissionNoteText}>
+                    {motionStatus !== 'granted'
+                      ? 'Shake detection needs motion access to work.'
+                      : 'You can customize shake sensitivity and preferences anytime in Settings.'}
+                  </Text>
+                </View>
               </View>
 
               <View style={styles.bottomCtaContainer}>
@@ -336,14 +513,14 @@ export const OnboardingScreen: React.FC = () => {
                   onPress={() => transitionToStep(4)}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.primaryButtonText}>Set up shake</Text>
+                  <Text style={styles.primaryButtonText}>Continue</Text>
                   <ArrowRight size={16} color="#FFFFFF" strokeWidth={2} />
                 </TouchableOpacity>
               </View>
             </View>
           )}
 
-          {/* ──────────────── SCREEN 5: SENSITIVITY (UPWARD POSITIONED) ──────────────── */}
+          {/* ──────────────── SCREEN 5: SENSITIVITY (Step 4) ──────────────── */}
           {currentStep === 4 && (
             <View style={styles.stepContainer}>
               <View style={styles.upperContent}>
@@ -402,7 +579,7 @@ export const OnboardingScreen: React.FC = () => {
                       <Text style={styles.recommendationBadgeText}>✓ Recommended</Text>
                     </View>
                     <Text style={styles.recommendationBody}>
-                      Low sensitivity helps prevent accidental expense popups during normal movement.
+                      Low sensitivity helps prevent accidental expense popups during normal phone movement.
                     </Text>
                   </View>
                 </View>
@@ -414,7 +591,7 @@ export const OnboardingScreen: React.FC = () => {
                   onPress={handleFinish}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.primaryButtonText}>Finish Setup</Text>
+                  <Text style={styles.primaryButtonText}>Start Tracking</Text>
                   <ArrowRight size={16} color="#FFFFFF" strokeWidth={2} />
                 </TouchableOpacity>
               </View>
@@ -644,66 +821,121 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  phoneMockupFrame: {
-    width: 200,
-    height: 240,
+  /* Permissions Screen Styles */
+  permissionsCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 24,
+    borderRadius: 16,
+    paddingVertical: 4,
+    paddingHorizontal: 16,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    padding: 12,
-    alignItems: 'center',
   },
-  phoneSpeaker: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: theme.colors.border,
-    marginBottom: 16,
-  },
-  phoneInnerScreen: {
-    width: '100%',
-    flex: 1,
-    backgroundColor: theme.colors.background,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: theme.colors.borderSubtle,
-    padding: 10,
-    justifyContent: 'space-between',
-  },
-  mockWaveBadge: {
+  permissionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    backgroundColor: theme.colors.accentLight,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  permissionIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: theme.colors.backgroundSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  permissionTextCol: {
+    flex: 1,
+  },
+  permissionTitle: {
+    ...theme.typography.body,
+    fontWeight: '600',
+    color: theme.colors.textPrimary,
+    marginBottom: 2,
+  },
+  permissionDesc: {
+    ...theme.typography.caption,
+    color: theme.colors.textSecondary,
+    lineHeight: 15,
+  },
+  permissionActionCol: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  permissionDivider: {
+    height: 1,
+    backgroundColor: theme.colors.borderSubtle,
+  },
+  allowButton: {
+    backgroundColor: theme.colors.textPrimary,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  allowButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  settingsButton: {
+    backgroundColor: theme.colors.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  settingsButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: theme.colors.textSecondary,
+  },
+  allowedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: theme.colors.positiveLight,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
-    alignSelf: 'center',
   },
-  mockWaveText: {
-    fontSize: 10,
+  allowedBadgeText: {
+    fontSize: 12,
     fontWeight: '600',
-    color: theme.colors.primary,
+    color: theme.colors.positive,
   },
-  mockSheetPreview: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: 12,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  mockSheetTitle: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
-    marginBottom: 6,
-  },
-  mockSheetInputPlaceholder: {
-    height: 18,
+  infoBadge: {
     backgroundColor: theme.colors.backgroundSecondary,
-    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.borderSubtle,
   },
+  infoBadgeText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: theme.colors.textTertiary,
+  },
+  permissionNoteBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: theme.colors.backgroundSecondary,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.borderSubtle,
+  },
+  permissionNoteText: {
+    ...theme.typography.caption,
+    color: theme.colors.textSecondary,
+    flex: 1,
+    lineHeight: 16,
+  },
+  /* Sensitivity Screen Styles */
   sensitivityArea: {
     marginTop: 6,
   },
@@ -719,7 +951,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
     backgroundColor: theme.colors.surface,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: theme.colors.border,

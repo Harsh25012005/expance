@@ -38,10 +38,9 @@ import { theme } from '../constants/theme';
 import { AppLogo } from '../components/AppLogo';
 
 export const SettingsScreen: React.FC = () => {
-  const { settings, updateSettings, expenses, clearAllExpenses, resetOnboarding } = useExpenses();
+  const { settings, updateSettings, expenses, eraseAllData } = useExpenses();
 
-  const [showClearConfirm, setShowClearConfirm] = useState<boolean>(false);
-  const [showResetOnboardingConfirm, setShowResetOnboardingConfirm] = useState<boolean>(false);
+  const [showEraseAllConfirm, setShowEraseAllConfirm] = useState<boolean>(false);
   const [showCurrencyModal, setShowCurrencyModal] = useState<boolean>(false);
   const [showNameModal, setShowNameModal] = useState<boolean>(false);
   const [showExportModal, setShowExportModal] = useState<boolean>(false);
@@ -94,22 +93,12 @@ export const SettingsScreen: React.FC = () => {
     }
   };
 
-  const handleClearAllConfirm = async () => {
+  const handleEraseAllConfirm = async () => {
     try {
-      await clearAllExpenses();
-      setShowClearConfirm(false);
-      Alert.alert('Data Cleared', 'All local expense transactions have been deleted.');
+      setShowEraseAllConfirm(false);
+      await eraseAllData();
     } catch (e) {
-      console.error('Failed to clear data:', e);
-    }
-  };
-
-  const handleResetOnboardingConfirm = async () => {
-    try {
-      await resetOnboarding();
-      setShowResetOnboardingConfirm(false);
-    } catch (e) {
-      console.error('Failed to reset onboarding:', e);
+      console.error('Failed to erase all data:', e);
     }
   };
 
@@ -304,35 +293,12 @@ export const SettingsScreen: React.FC = () => {
 
           <View style={styles.divider} />
 
-          {/* Reset Onboarding */}
+          {/* Erase All Data */}
           <TouchableOpacity
             style={styles.row}
             onPress={() => {
               triggerHaptic();
-              setShowResetOnboardingConfirm(true);
-            }}
-            activeOpacity={0.7}
-          >
-            <View style={styles.rowLeft}>
-              <View style={styles.iconCircle}>
-                <RotateCcw size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
-              </View>
-              <View>
-                <Text style={styles.rowTitle}>Reset Onboarding</Text>
-                <Text style={styles.rowSubtitle}>Re-launch the introductory flow</Text>
-              </View>
-            </View>
-            <ChevronRight size={15} color={theme.colors.textTertiary} strokeWidth={1.5} />
-          </TouchableOpacity>
-
-          <View style={styles.divider} />
-
-          {/* Clear All Data */}
-          <TouchableOpacity
-            style={styles.row}
-            onPress={() => {
-              triggerHaptic();
-              setShowClearConfirm(true);
+              setShowEraseAllConfirm(true);
             }}
             activeOpacity={0.7}
           >
@@ -341,8 +307,8 @@ export const SettingsScreen: React.FC = () => {
                 <Trash2 size={15} color={theme.colors.negative} strokeWidth={1.5} />
               </View>
               <View>
-                <Text style={[styles.rowTitle, { color: theme.colors.negative }]}>Clear All Data</Text>
-                <Text style={styles.rowSubtitle}>Permanently erase all transaction records</Text>
+                <Text style={[styles.rowTitle, { color: theme.colors.negative }]}>Erase All Data</Text>
+                <Text style={styles.rowSubtitle}>Permanently delete expenses and reset setup</Text>
               </View>
             </View>
             <ChevronRight size={15} color={theme.colors.negative} strokeWidth={1.5} />
@@ -556,25 +522,16 @@ export const SettingsScreen: React.FC = () => {
         </View>
       </Modal>
 
-      {/* Clear All Confirmation Modal */}
+      {/* Erase All Data Confirmation Modal */}
       <ConfirmModal
-        visible={showClearConfirm}
-        title="Clear All Data?"
-        message="This will permanently delete all stored transactions. This action cannot be undone."
-        confirmText="Clear All Data"
+        visible={showEraseAllConfirm}
+        title="Erase all data?"
+        message="This will permanently delete your expenses and reset Expenza to its initial setup. This action cannot be undone."
+        confirmText="Erase Everything"
+        cancelText="Cancel"
         isDestructive
-        onConfirm={handleClearAllConfirm}
-        onCancel={() => setShowClearConfirm(false)}
-      />
-
-      {/* Reset Onboarding Confirmation Modal */}
-      <ConfirmModal
-        visible={showResetOnboardingConfirm}
-        title="Reset Onboarding?"
-        message="This will return you to the initial setup flow. Your expense transactions will remain safe."
-        confirmText="Reset Setup"
-        onConfirm={handleResetOnboardingConfirm}
-        onCancel={() => setShowResetOnboardingConfirm(false)}
+        onConfirm={handleEraseAllConfirm}
+        onCancel={() => setShowEraseAllConfirm(false)}
       />
     </ScrollView>
   );

@@ -89,30 +89,31 @@ export const CustomTabBar: React.FC<CustomTabBarProps> = ({ activeTab, onTabChan
 const styles = StyleSheet.create({
   wrapper: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 24 : 14,
-    left: 20,
-    right: 20,
+    bottom: Platform.OS === 'ios' ? 24 : 16,
+    left: 16,
+    right: 16,
     alignItems: 'center',
   },
   container: {
     flexDirection: 'row',
     backgroundColor: theme.colors.glassBackground,
     borderRadius: theme.borderRadius.container,
-    paddingVertical: 5,
-    paddingHorizontal: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
     borderWidth: 1,
     borderColor: theme.colors.border,
     width: '100%',
-    maxWidth: 360,
+    maxWidth: 380,
     justifyContent: 'space-between',
   },
   tabButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
     borderRadius: theme.borderRadius.md,
+    minHeight: 48,
   },
   activeTabButton: {
     backgroundColor: theme.colors.backgroundSecondary,
@@ -120,11 +121,11 @@ const styles = StyleSheet.create({
   iconWrap: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   tabLabel: {
     ...theme.typography.caption,
-    fontSize: 10,
+    fontSize: 11,
   },
   activeTabLabel: {
     fontWeight: '600',

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { AppState, AppStateStatus, Platform, Linking } from 'react-native';
 import { Accelerometer } from 'expo-sensors';
+import * as Notifications from 'expo-notifications';
 import * as Haptics from 'expo-haptics';
 import { useExpenses } from './ExpenseContext';
 import { Expense } from '../types/expense';
@@ -95,11 +96,11 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, []);
 
-  // Handle Deep Linking (from native Background ShakeService)
+  // Handle Deep Linking & Notification Click (from background native ShakeService / push)
   useEffect(() => {
     const handleDeepLink = (event: { url: string }) => {
       const url = event.url;
-      if (url && (url.includes('shake-open') || url.includes('add-expense'))) {
+      if (url && (url.includes('shake-open') || url.includes('add-expense') || url.includes('expenza://'))) {
         console.log('[ShakeContext] Deep link received:', url);
         triggerAddExpense(true);
       }
@@ -108,16 +109,31 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Check initial URL if app was launched via deep link
     Linking.getInitialURL()
       .then((url) => {
-        if (url && (url.includes('shake-open') || url.includes('add-expense'))) {
+        if (url && (url.includes('shake-open') || url.includes('add-expense') || url.includes('expenza://'))) {
           console.log('[ShakeContext] App launched via deep link:', url);
           triggerAddExpense(true);
         }
       })
       .catch(() => {});
 
-    const subscription = Linking.addEventListener('url', handleDeepLink);
+    const linkingSub = Linking.addEventListener('url', handleDeepLink);
+
+    // Also listen for expo-notifications click interactions
+    const notifSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      console.log('[ShakeContext] Notification response received:', response);
+      triggerAddExpense(true);
+    });
+
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) {
+        console.log('[ShakeContext] App opened from notification response:', response);
+        triggerAddExpense(true);
+      }
+    }).catch(() => {});
+
     return () => {
-      subscription.remove();
+      linkingSub.remove();
+      notifSub.remove();
     };
   }, [triggerAddExpense]);
 
@@ -126,11 +142,12 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     let sensorSubscription: { remove: () => void } | null = null;
 
     const setupAccelerometer = () => {
+      if (sensorSubscription) {
+        sensorSubscription.remove();
+        sensorSubscription = null;
+      }
+
       if (!settings.shakeEnabled) {
-        if (sensorSubscription) {
-          sensorSubscription.remove();
-          sensorSubscription = null;
-        }
         return;
       }
 

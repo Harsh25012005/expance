@@ -32,6 +32,7 @@ interface ExpenseContextType {
   updateExpense: (id: string, updates: Partial<{ name: string; category: CategoryType; amount: number; notes?: string; date?: string }>) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
   clearAllExpenses: () => Promise<void>;
+  eraseAllData: () => Promise<void>;
   updateSettings: (newSettings: Partial<AppSettings>) => Promise<void>;
   completeOnboarding: (onboardingData: { userName: string; currency: string; currencyCode: string; shakeSensitivity: ShakeSensitivity; trackingStyle?: string }) => Promise<void>;
   resetOnboarding: () => Promise<void>;
@@ -140,7 +141,19 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const clearAllExpenses = useCallback(async (): Promise<void> => {
     setExpenses([]);
-    await clearAllStoredData();
+    await saveStoredExpenses([]);
+  }, []);
+
+  const eraseAllData = useCallback(async (): Promise<void> => {
+    try {
+      shakeServiceBridge.stopService();
+      setExpenses([]);
+      setSettings(DEFAULT_SETTINGS);
+      await clearAllStoredData();
+    } catch (e) {
+      console.error('Error erasing all data:', e);
+      throw e;
+    }
   }, []);
 
   const updateSettings = useCallback(
@@ -297,6 +310,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         updateExpense,
         deleteExpense,
         clearAllExpenses,
+        eraseAllData,
         updateSettings,
         completeOnboarding,
         resetOnboarding,

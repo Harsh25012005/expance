@@ -32,11 +32,9 @@ export const Header: React.FC<HeaderProps> = ({
   const headerTitle = isHome ? `${getGreeting()}, ${displayName}` : title || 'Expenza';
   const headerSubtitle = isHome ? "Here's where your money went this month." : subtitle || 'Track your daily finances';
 
-  const userInitial = displayName.charAt(0).toUpperCase();
-
   return (
     <View style={styles.container}>
-      <View style={styles.left}>
+      <View style={[styles.left, !showAddButton && styles.leftFull]}>
         <Text style={styles.title} numberOfLines={1}>
           {headerTitle}
         </Text>
@@ -45,8 +43,8 @@ export const Header: React.FC<HeaderProps> = ({
         </Text>
       </View>
 
-      <View style={styles.right}>
-        {showAddButton && (
+      {showAddButton && (
+        <View style={styles.right}>
           <TouchableOpacity
             style={styles.addBtn}
             onPress={() => openQuickAddModal({ triggeredByShake: false })}
@@ -54,14 +52,10 @@ export const Header: React.FC<HeaderProps> = ({
             accessibilityLabel="Add expense"
             accessibilityRole="button"
           >
-            <Plus size={15} color="#FFFFFF" strokeWidth={2} />
+            <Plus size={16} color="#FFFFFF" strokeWidth={2} />
           </TouchableOpacity>
-        )}
-
-        <View style={styles.avatarCircle}>
-          <Text style={styles.avatarText}>{userInitial}</Text>
         </View>
-      </View>
+      )}
     </View>
   );
 };
@@ -80,6 +74,9 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 12,
   },
+  leftFull: {
+    marginRight: 0,
+  },
   title: {
     ...theme.typography.pageHeading,
     color: theme.colors.textPrimary,
@@ -92,7 +89,6 @@ const styles = StyleSheet.create({
   right: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
   addBtn: {
     width: 36,
@@ -101,20 +97,5 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.textPrimary,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  avatarCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: theme.colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  avatarText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
   },
 });

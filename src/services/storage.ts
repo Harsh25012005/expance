@@ -65,7 +65,7 @@ export async function saveStoredSettings(settings: AppSettings): Promise<void> {
 
 export async function clearAllStoredData(): Promise<void> {
   try {
-    await AsyncStorage.removeItem(EXPENSES_STORAGE_KEY);
+    await AsyncStorage.clear();
   } catch (error) {
     console.error('Error clearing stored data:', error);
     throw error;
