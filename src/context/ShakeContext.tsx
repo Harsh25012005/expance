@@ -33,41 +33,67 @@ const SENSITIVITY_THRESHOLDS: Record<ShakeSensitivity, number> = {
   high: 1.2,
 };
 
-// ─── Minimal silent tray notification (keep-alive for background) ─────────────
+// ─── Notification handler ─────────────────────────────────────────────────────
+// When the app is in FOREGROUND → suppress all notifications (modal opens directly)
+// When in BACKGROUND → allow the shake alert to show as a heads-up banner
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldPlaySound: false,
-    shouldSetBadge: false,
-    shouldShowBanner: false,
-    shouldShowList: false,
-  }),
+  handleNotification: async (notification) => {
+    const isForeground = AppState.currentState === 'active';
+    const isShakeAlert = notification.request.content.data?.action === 'SHAKE_ALERT';
+    return {
+      shouldPlaySound: !isForeground && isShakeAlert,
+      shouldSetBadge: false,
+      shouldShowBanner: !isForeground && isShakeAlert,
+      shouldShowList: !isForeground && isShakeAlert,
+    };
+  },
 });
 
 const TRAY_ID = 'shake-tray-keepalive';
+const SHAKE_ALERT_ID = 'shake-expense-alert';
 
-async function showTrayNotification(): Promise<void> {
+// ─── Channel setup ────────────────────────────────────────────────────────────
+async function setupChannels(): Promise<void> {
   if (Platform.OS !== 'android') return;
   try {
+    // Silent tray (just keeps the app "registered" in background)
     await Notifications.setNotificationChannelAsync('shake-tray', {
-      name: 'ShakeExpense Active',
+      name: 'ShakeExpense Background',
       importance: Notifications.AndroidImportance.LOW,
       enableVibrate: false,
       enableLights: false,
       showBadge: false,
     });
+
+    // Max-priority channel for the shake heads-up alert over other apps
+    await Notifications.setNotificationChannelAsync('shake-alert', {
+      name: 'Shake Expense Alert',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 150, 250],
+      enableVibrate: true,
+      enableLights: true,
+      lightColor: '#10b981',
+      showBadge: false,
+      bypassDnd: true,
+    });
+  } catch (_) {}
+}
+
+// ─── Tray notification — keeps JS runtime alive in background ─────────────────
+async function showTrayNotification(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  try {
     await Notifications.dismissNotificationAsync(TRAY_ID).catch(() => {});
     await Notifications.scheduleNotificationAsync({
       identifier: TRAY_ID,
       content: {
-        title: '⚡ ShakeExpense is listening…',
-        body: 'Shake phone anytime to log an expense',
+        title: '⚡ ShakeExpense is listening',
+        body: 'Shake your phone to log an expense instantly',
         data: { action: 'TRAY_TAP' },
         sticky: true,
         autoDismiss: false,
       },
       trigger: null,
-      // @ts-ignore — channelId is an Android-only field on the schedule request
-      channelId: 'shake-tray',
     });
   } catch (_) {}
 }
@@ -75,7 +101,39 @@ async function showTrayNotification(): Promise<void> {
 async function dismissTrayNotification(): Promise<void> {
   try {
     await Notifications.dismissNotificationAsync(TRAY_ID);
+    await Notifications.dismissNotificationAsync(SHAKE_ALERT_ID);
   } catch (_) {}
+}
+
+// ─── Shake alert notification — shown on top of other apps ───────────────────
+async function fireShakeAlertNotification(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  try {
+    await Notifications.dismissNotificationAsync(SHAKE_ALERT_ID).catch(() => {});
+
+    // Set notification category with "Add Expense" action button
+    await Notifications.setNotificationCategoryAsync('SHAKE_CATEGORY', [
+      {
+        identifier: 'OPEN_EXPENSE',
+        buttonTitle: '➕ Add Expense Now',
+        options: { opensAppToForeground: true },
+      },
+    ]).catch(() => {});
+
+    await Notifications.scheduleNotificationAsync({
+      identifier: SHAKE_ALERT_ID,
+      content: {
+        title: '📳 Shake Detected!',
+        body: 'Tap to open Quick Expense — Remark & Amount',
+        data: { action: 'SHAKE_ALERT' },
+        categoryIdentifier: 'SHAKE_CATEGORY',
+        autoDismiss: true,
+      },
+      trigger: null,
+    });
+  } catch (e) {
+    console.warn('[Shake] Failed to fire alert notification:', e);
+  }
 }
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
@@ -84,7 +142,7 @@ export const ShakeProvider = ({ children }: { children: ReactNode }) => {
   const [shakeSettings, setShakeSettings] = useState<ShakeSettings>(DEFAULT_SHAKE_SETTINGS);
   const [isSensorAvailable, setIsSensorAvailable] = useState<boolean>(false);
 
-  // ── Refs used inside accelerometer listener — always fresh, no stale closure
+  // All refs — never stale inside accelerometer callback
   const settingsRef = useRef<ShakeSettings>(DEFAULT_SHAKE_SETTINGS);
   const lastShakeTime = useRef<number>(0);
   const lastX = useRef<number>(0);
@@ -92,139 +150,150 @@ export const ShakeProvider = ({ children }: { children: ReactNode }) => {
   const lastZ = useRef<number>(0);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const pendingOpenModal = useRef<boolean>(false);
-  const setModalOpenRef = useRef<(v: boolean) => void>(setIsShakeModalOpen);
+  const setModalRef = useRef<(v: boolean) => void>(setIsShakeModalOpen);
 
-  // Keep setModalOpenRef in sync (so the accelerometer listener always has latest setter)
-  useEffect(() => {
-    setModalOpenRef.current = setIsShakeModalOpen;
-  }, [setIsShakeModalOpen]);
+  useEffect(() => { setModalRef.current = setIsShakeModalOpen; }, [setIsShakeModalOpen]);
+  useEffect(() => { settingsRef.current = shakeSettings; }, [shakeSettings]);
 
-  // Keep settingsRef in sync with state
+  // ── Init: load settings + request permissions + setup channels ─────────────
   useEffect(() => {
-    settingsRef.current = shakeSettings;
-  }, [shakeSettings]);
-
-  // ── Load settings on mount ────────────────────────────────────────────────
-  useEffect(() => {
-    StorageService.getShakeSettings()
-      .then((stored) => {
+    const init = async () => {
+      try {
+        const stored = await StorageService.getShakeSettings();
         setShakeSettings(stored);
         settingsRef.current = stored;
         console.log('[Shake] Settings loaded:', stored);
-      })
-      .catch((e) => console.warn('[Shake] Error loading settings:', e));
+
+        if (Platform.OS !== 'web') {
+          const { status } = await Notifications.getPermissionsAsync();
+          if (status !== 'granted') {
+            await Notifications.requestPermissionsAsync();
+          }
+          await setupChannels();
+        }
+      } catch (e) {
+        console.warn('[Shake] Init error:', e);
+      }
+    };
+    init();
   }, []);
 
-  // ── Core shake handler (uses refs — never stale) ─────────────────────────
+  // ── Core shake handler (only uses refs — NEVER stale) ────────────────────
   const handleShake = useCallback(() => {
     const now = Date.now();
-    if (now - lastShakeTime.current < 1200) return; // debounce
+    if (now - lastShakeTime.current < 1200) return;
     lastShakeTime.current = now;
 
-    console.log('[Shake] 🔔 Shake detected! appState:', appStateRef.current);
+    console.log('[Shake] 🔔 Shake! appState =', appStateRef.current);
 
-    // Haptic
     if (settingsRef.current.hapticFeedback && Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
     }
 
     if (appStateRef.current === 'active') {
-      console.log('[Shake] Opening modal directly (app is active)');
-      setModalOpenRef.current(true);
+      // App is in foreground: open modal DIRECTLY — no notification at all
+      console.log('[Shake] ✅ App active → opening modal directly');
+      setModalRef.current(true);
     } else {
-      console.log('[Shake] App in background — setting pending flag');
+      // App is in background: fire a heads-up notification that appears
+      // in front of whatever app is currently on screen
+      console.log('[Shake] 📳 App in background → firing heads-up notification');
       pendingOpenModal.current = true;
+      fireShakeAlertNotification();
     }
-  }, []); // empty deps — handleShake uses only refs
+  }, []);
 
-  // ── Accelerometer subscription ────────────────────────────────────────────
+  // ── Accelerometer subscription (stable — set up once, uses refs) ──────────
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
     let sub: ReturnType<typeof Accelerometer.addListener> | null = null;
 
-    const setup = async () => {
-      const available = await Accelerometer.isAvailableAsync().catch(() => false);
-      setIsSensorAvailable(available);
-
-      if (!available) {
-        console.warn('[Shake] Accelerometer not available on this device');
-        return;
-      }
-
-      console.log('[Shake] ✅ Accelerometer available, starting listener');
-      Accelerometer.setUpdateInterval(80); // ~12 samples/sec
-
-      sub = Accelerometer.addListener(({ x, y, z }) => {
-        // Only check shake if enabled (use ref, not state — never stale)
-        if (!settingsRef.current.enabled) return;
-
-        const dx = Math.abs(x - lastX.current);
-        const dy = Math.abs(y - lastY.current);
-        const dz = Math.abs(z - lastZ.current);
-        const totalDelta = dx + dy + dz;
-
-        const threshold =
-          SENSITIVITY_THRESHOLDS[settingsRef.current.sensitivity] ?? 1.8;
-
-        if (totalDelta > threshold) {
-          handleShake();
+    Accelerometer.isAvailableAsync()
+      .then((available) => {
+        setIsSensorAvailable(available);
+        if (!available) {
+          console.warn('[Shake] Accelerometer NOT available');
+          return;
         }
 
-        lastX.current = x;
-        lastY.current = y;
-        lastZ.current = z;
-      });
-    };
+        console.log('[Shake] ✅ Accelerometer available — listening');
+        Accelerometer.setUpdateInterval(80);
 
-    setup();
+        sub = Accelerometer.addListener(({ x, y, z }) => {
+          if (!settingsRef.current.enabled) return;
 
-    return () => {
-      sub?.remove();
-      console.log('[Shake] Accelerometer subscription removed');
-    };
-  }, [handleShake]); // handleShake is stable (useCallback with [])
+          const dx = Math.abs(x - lastX.current);
+          const dy = Math.abs(y - lastY.current);
+          const dz = Math.abs(z - lastZ.current);
+          const delta = dx + dy + dz;
+          const threshold = SENSITIVITY_THRESHOLDS[settingsRef.current.sensitivity] ?? 1.8;
+
+          if (delta > threshold) handleShake();
+
+          lastX.current = x;
+          lastY.current = y;
+          lastZ.current = z;
+        });
+      })
+      .catch((e) => console.warn('[Shake] Accelerometer setup error:', e));
+
+    return () => sub?.remove();
+  }, [handleShake]);
 
   // ── AppState listener ─────────────────────────────────────────────────────
   useEffect(() => {
-    const onStateChange = (nextState: AppStateStatus) => {
-      console.log('[Shake] AppState:', appStateRef.current, '→', nextState);
+    const onStateChange = (next: AppStateStatus) => {
+      const prev = appStateRef.current;
+      console.log('[Shake] AppState:', prev, '→', next);
 
-      const comingToForeground =
-        appStateRef.current.match(/inactive|background/) && nextState === 'active';
-
-      if (comingToForeground) {
+      if (next === 'active') {
         dismissTrayNotification();
         if (pendingOpenModal.current) {
           pendingOpenModal.current = false;
-          console.log('[Shake] Opening modal (was pending from background)');
+          console.log('[Shake] Opening modal from pending flag');
           setIsShakeModalOpen(true);
         }
       }
 
-      const goingToBackground =
-        appStateRef.current === 'active' &&
-        (nextState === 'background' || nextState === 'inactive');
-
-      if (goingToBackground && settingsRef.current.enabled && Platform.OS === 'android') {
-        showTrayNotification();
+      if (prev === 'active' && (next === 'background' || next === 'inactive')) {
+        if (settingsRef.current.enabled && Platform.OS === 'android') {
+          showTrayNotification();
+        }
       }
 
-      appStateRef.current = nextState;
+      appStateRef.current = next;
     };
 
     const sub = AppState.addEventListener('change', onStateChange);
     return () => sub.remove();
   }, []);
 
-  // ── Tray notification tap → open modal ───────────────────────────────────
+  // ── Notification response handler (user taps notification) ───────────────
   useEffect(() => {
     if (Platform.OS === 'web') return;
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      if (response.notification.request.content.data?.action === 'TRAY_TAP') {
+
+    // If app opened FROM a notification tap
+    Notifications.getLastNotificationResponseAsync().then((resp) => {
+      if (!resp) return;
+      const action = resp.notification.request.content.data?.action;
+      if (action === 'SHAKE_ALERT' || action === 'TRAY_TAP' ||
+          resp.actionIdentifier === 'OPEN_EXPENSE' ||
+          resp.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER) {
+        pendingOpenModal.current = false;
         setIsShakeModalOpen(true);
       }
     });
+
+    const sub = Notifications.addNotificationResponseReceivedListener((resp) => {
+      const action = resp.notification.request.content.data?.action;
+      if (action === 'SHAKE_ALERT' || action === 'TRAY_TAP' ||
+          resp.actionIdentifier === 'OPEN_EXPENSE') {
+        pendingOpenModal.current = false;
+        setIsShakeModalOpen(true);
+      }
+    });
+
     return () => sub.remove();
   }, []);
 
@@ -235,31 +304,19 @@ export const ShakeProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const closeShakeModal = useCallback(() => setIsShakeModalOpen(false), []);
-
   const simulateShake = useCallback(() => handleShake(), [handleShake]);
 
-  const updateShakeSettings = useCallback(
-    async (newSettings: Partial<ShakeSettings>) => {
-      const updated = { ...settingsRef.current, ...newSettings };
-      setShakeSettings(updated);
-      settingsRef.current = updated;
-      await StorageService.saveShakeSettings(updated);
-      if (!updated.enabled) dismissTrayNotification();
-    },
-    []
-  );
+  const updateShakeSettings = useCallback(async (patch: Partial<ShakeSettings>) => {
+    const updated = { ...settingsRef.current, ...patch };
+    setShakeSettings(updated);
+    settingsRef.current = updated;
+    await StorageService.saveShakeSettings(updated);
+    if (!updated.enabled) dismissTrayNotification();
+  }, []);
 
   return (
     <ShakeContext.Provider
-      value={{
-        isShakeModalOpen,
-        openShakeModal,
-        closeShakeModal,
-        shakeSettings,
-        updateShakeSettings,
-        simulateShake,
-        isSensorAvailable,
-      }}
+      value={{ isShakeModalOpen, openShakeModal, closeShakeModal, shakeSettings, updateShakeSettings, simulateShake, isSensorAvailable }}
     >
       {children}
     </ShakeContext.Provider>
