@@ -1,11 +1,10 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
-// Configure notification behavior
+// Configure notification behavior for Expo SDK 57
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
+    shouldPlaySound: false,
     shouldSetBadge: true,
     shouldShowBanner: true,
     shouldShowList: true,
@@ -27,7 +26,13 @@ export class NotificationService {
       let finalStatus = existingStatus;
 
       if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
+        const { status } = await Notifications.requestPermissionsAsync({
+          ios: {
+            allowAlert: true,
+            allowBadge: true,
+            allowSound: true,
+          },
+        });
         finalStatus = status;
       }
 
@@ -43,7 +48,6 @@ export class NotificationService {
           vibrationPattern: [0, 300, 150, 300],
           lightColor: '#10b981',
           showBadge: true,
-          sound: 'default',
           enableLights: true,
           enableVibrate: true,
         });
@@ -57,6 +61,17 @@ export class NotificationService {
           showBadge: false,
         });
       }
+
+      // Configure category actions so user can tap action directly
+      await Notifications.setNotificationCategoryAsync('EXPENSE_SHAKE_ACTION', [
+        {
+          identifier: 'OPEN_MODAL_ACTION',
+          buttonTitle: '➕ Add Expense',
+          options: {
+            opensAppToForeground: true,
+          },
+        },
+      ]).catch(() => {});
 
       return true;
     } catch (e) {
@@ -78,15 +93,15 @@ export class NotificationService {
       // Cancel previous alert if any
       await Notifications.dismissNotificationAsync(HEADS_UP_ALERT_ID).catch(() => {});
 
-      // Schedule instant Heads-Up notification
+      // Schedule instant Heads-Up notification on top of other apps
       await Notifications.scheduleNotificationAsync({
         identifier: HEADS_UP_ALERT_ID,
         content: {
           title: '⚡ Shake Detected! Log Expense',
           body: '👉 Tap here to open Remark & Amount popup and save to Google Sheet',
           data: { action: 'OPEN_SHAKE_MODAL', timestamp: Date.now() },
-          sound: true,
           badge: 1,
+          categoryIdentifier: 'EXPENSE_SHAKE_ACTION',
           autoDismiss: true,
           ...(Platform.OS === 'android' ? { channelId: 'shake-overlay-channel' } : {}),
         },
@@ -98,7 +113,7 @@ export class NotificationService {
   }
 
   /**
-   * Show persistent or quick-access background notification when app is minimized
+   * Show persistent or quick-access background notification when app is minimized or closed
    */
   static async showQuickAccessNotification(): Promise<void> {
     if (Platform.OS === 'web') return;
@@ -112,11 +127,11 @@ export class NotificationService {
       await Notifications.scheduleNotificationAsync({
         identifier: QUICK_ACCESS_NOTIFICATION_ID,
         content: {
-          title: '⚡ ShakeExpense Tracker Active',
-          body: 'Shake phone or tap here to popup Remark & Amount modal',
+          title: '⚡ ShakeExpense Tracker (Active)',
+          body: '👉 Tap anytime to open Remark & Amount popup in front of any app',
           data: { action: 'OPEN_SHAKE_MODAL' },
-          sound: false,
-          sticky: Platform.OS === 'android', // keep sticky on android notification drawer
+          categoryIdentifier: 'EXPENSE_SHAKE_ACTION',
+          sticky: Platform.OS === 'android', // persistent in android drawer
           autoDismiss: true,
           ...(Platform.OS === 'android' ? { channelId: 'quick-expense-channel' } : {}),
         },
