@@ -70,7 +70,13 @@ export const ShakeProvider = ({ children }: { children: ReactNode }) => {
       }
     }
 
-    setIsShakeModalOpen(true);
+    if (appState.current !== 'active' && Platform.OS !== 'web') {
+      // In background / outside app: pop up Heads-Up alert directly in front of other apps
+      NotificationService.triggerHeadsUpShakeAlert();
+    } else {
+      // Inside app: open modal directly
+      setIsShakeModalOpen(true);
+    }
   };
 
   // Accelerometer subscription
