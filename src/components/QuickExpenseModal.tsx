@@ -53,6 +53,9 @@ export const QuickExpenseModal: React.FC = () => {
 
   useEffect(() => {
     if (isQuickAddModalOpen) {
+      console.log('[ADD_EXPENSE] visible = true');
+      console.log('[ADD_EXPENSE] MODAL RENDERED');
+
       if (editingExpense) {
         setName(editingExpense.name);
         setAmount(editingExpense.amount.toString());
@@ -81,7 +84,7 @@ export const QuickExpenseModal: React.FC = () => {
           useNativeDriver: true,
         }),
       ]).start(() => {
-        // Auto-focus the name field
+        // Auto-focus the name field immediately
         setTimeout(() => {
           inputRef.current?.focus();
         }, 50);

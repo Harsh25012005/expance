@@ -2,11 +2,16 @@
  * Expo Config Plugin: withShakeService
  *
  * Injects the native Android ShakeService foreground service, ShakeServiceModule,
- * and ShakeServicePackage into the generated android/ directory during expo prebuild.
+ * ShakeServicePackage, and BootReceiver into the generated android/ directory during expo prebuild.
  *
- * This ensures background shake detection works reliably even when the app is minimized
- * or closed (swiped from recents), using a persistent Android Foreground Service
- * with SensorManager accelerometer listener and High-Priority FullScreen Intent.
+ * This ensures background shake detection works reliably across all Android lifecycle states:
+ * - App open / foreground
+ * - App backgrounded / minimized
+ * - App removed from recent tasks
+ * - Device boot / restart
+ *
+ * Direct bridge to React Native DeviceEventEmitter ("SHAKE_TO_ADD_EXPENSE")
+ * so physical shake opens the Add Expense popup immediately without notifications in foreground.
  */
 const {
   withAndroidManifest,
@@ -53,12 +58,12 @@ class ShakeService : Service(), SensorEventListener {
         private const val NOTIFICATION_ID = 9001
         private const val ALERT_NOTIFICATION_ID = 9002
         private const val SHAKE_DEBOUNCE_MS = 2000L
-        var shakeThreshold: Float = 24.0f
+        var shakeThreshold: Float = 20.0f
         var isRunning: Boolean = false
             private set
         var isAppInForeground: Boolean = true
 
-        fun start(context: Context, threshold: Float = 24.0f) {
+        fun start(context: Context, threshold: Float = 20.0f) {
             shakeThreshold = threshold
             val intent = Intent(context, ShakeService::class.java)
             try {
@@ -67,16 +72,18 @@ class ShakeService : Service(), SensorEventListener {
                 } else {
                     context.startService(intent)
                 }
+                Log.d(TAG, "[SHAKE DEBUG] Native ShakeService started with threshold=\$threshold")
             } catch (e: Exception) {
-                Log.e(TAG, "Error starting ShakeService", e)
+                Log.e(TAG, "[SHAKE DEBUG] Error starting ShakeService", e)
             }
         }
 
         fun stop(context: Context) {
             try {
                 context.stopService(Intent(context, ShakeService::class.java))
+                Log.d(TAG, "[SHAKE DEBUG] Native ShakeService stopped")
             } catch (e: Exception) {
-                Log.e(TAG, "Error stopping ShakeService", e)
+                Log.e(TAG, "[SHAKE DEBUG] Error stopping ShakeService", e)
             }
         }
     }
@@ -85,7 +92,7 @@ class ShakeService : Service(), SensorEventListener {
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "ShakeService onCreate: initializing persistent background sensor listener")
+        Log.d(TAG, "[SHAKE DEBUG] Sensor service started (native)")
         createNotificationChannels()
         startForeground(NOTIFICATION_ID, createOngoingNotification())
 
@@ -95,34 +102,46 @@ class ShakeService : Service(), SensorEventListener {
                 acquire()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error acquiring wake lock", e)
+            Log.e(TAG, "[SHAKE DEBUG] Error acquiring wake lock", e)
         }
 
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         if (accelerometer != null) {
             sensorManager?.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_UI)
-            Log.d(TAG, "Accelerometer registered (threshold=$shakeThreshold)")
+            Log.d(TAG, "[SHAKE DEBUG] Accelerometer registered (threshold=\$shakeThreshold)")
         } else {
-            Log.e(TAG, "No accelerometer sensor found on device")
+            Log.e(TAG, "[SHAKE DEBUG] No accelerometer sensor found on device")
         }
         isRunning = true
     }
 
     override fun onDestroy() {
-        Log.d(TAG, "ShakeService onDestroy")
+        Log.d(TAG, "[SHAKE DEBUG] ShakeService onDestroy")
         try {
             sensorManager?.unregisterListener(this)
             wakeLock?.let { if (it.isHeld) it.release() }
         } catch (e: Exception) {
-            Log.e(TAG, "Error in onDestroy cleanup", e)
+            Log.e(TAG, "[SHAKE DEBUG] Error in onDestroy cleanup", e)
         }
         isRunning = false
         super.onDestroy()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        Log.d(TAG, "App task removed from recents - maintaining service for background shake detection")
+        Log.d(TAG, "[SHAKE DEBUG] App task removed from recents - maintaining service for background shake detection")
+        try {
+            val restartServiceIntent = Intent(applicationContext, ShakeService::class.java).also {
+                it.setPackage(packageName)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(restartServiceIntent)
+            } else {
+                startService(restartServiceIntent)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "[SHAKE DEBUG] Error restarting service on task removed", e)
+        }
         super.onTaskRemoved(rootIntent)
     }
 
@@ -157,28 +176,47 @@ class ShakeService : Service(), SensorEventListener {
             val now = System.currentTimeMillis()
             if (now - lastShakeTime > SHAKE_DEBOUNCE_MS) {
                 lastShakeTime = now
-                Log.d(TAG, "Native shake detected! delta=$delta (threshold=$shakeThreshold)")
-                onShakeDetected()
+                Log.d(TAG, "[SHAKE DEBUG] Shake detected in native sensor (delta=\$delta, threshold=\$shakeThreshold)")
+
+                // FOREGROUND: open popup directly via JS event — NO notification
+                if (isAppInForeground) {
+                    Log.d(TAG, "[SHAKE] DETECTED")
+                    Log.d(TAG, "[SHAKE] APP_STATE: active (foreground)")
+                    Log.d(TAG, "[SHAKE] FOREGROUND PATH — emitting to JS, no notification")
+                    val emitted = ShakeServiceModule.emitShakeToJS()
+                    if (!emitted) {
+                        Log.e(TAG, "[SHAKE ERROR] Failed to emit to JS while foreground — React instance not ready")
+                    }
+                    // STOP — do NOT fall through to notification
+                    return
+                }
+
+                // BACKGROUND: app is not in foreground, use notification/intent fallback
+                Log.d(TAG, "[SHAKE] DETECTED")
+                Log.d(TAG, "[SHAKE] APP_STATE: background / inactive")
+                // Try to emit to JS first (app may still have active React instance)
+                val emittedToJS = ShakeServiceModule.emitShakeToJS()
+                if (emittedToJS) {
+                    Log.d(TAG, "[SHAKE] Emitted to JS from background — skipping notification")
+                    return
+                }
+                Log.d(TAG, "[SHAKE] Launching intent and notification fallback")
+                onShakeDetectedBackground()
             }
         }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
-    private fun onShakeDetected() {
-        if (isAppInForeground) {
-            Log.d(TAG, "App is in foreground - skipping native notification/intent so foreground UI modal opens directly")
-            return
-        }
-
+    private fun onShakeDetectedBackground() {
         try {
             val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             if (vibrator != null && vibrator.hasVibrator()) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(120, VibrationEffect.DEFAULT_AMPLITUDE))
+                    vibrator.vibrate(VibrationEffect.createOneShot(150, VibrationEffect.DEFAULT_AMPLITUDE))
                 } else {
                     @Suppress("DEPRECATION")
-                    vibrator.vibrate(120)
+                    vibrator.vibrate(150)
                 }
             }
         } catch (e: Exception) {
@@ -187,7 +225,7 @@ class ShakeService : Service(), SensorEventListener {
 
         val shakeIntent = Intent(this, MainActivity::class.java).apply {
             action = Intent.ACTION_VIEW
-            data = Uri.parse("expenza://shake-open")
+            data = Uri.parse("expenza://add-expense")
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
 
@@ -199,13 +237,21 @@ class ShakeService : Service(), SensorEventListener {
 
         val fullScreenPendingIntent = PendingIntent.getActivity(this, 101, shakeIntent, pendingIntentFlags)
 
+        // Try direct startActivity to bring app to foreground
+        try {
+            startActivity(shakeIntent)
+            Log.d(TAG, "[SHAKE DEBUG] Direct startActivity called to bring Expenza to foreground")
+        } catch (e: Exception) {
+            Log.d(TAG, "[SHAKE DEBUG] Direct startActivity restricted by OS, falling back to FullScreen notification", e)
+        }
+
         try {
             val iconRes = resources.getIdentifier("notification_icon", "drawable", packageName)
             val icon = if (iconRes != 0) iconRes else android.R.drawable.ic_input_add
 
             val alertNotification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
                 .setSmallIcon(icon)
-                .setContentTitle("⚡ Shake Detected!")
+                .setContentTitle("Shake Detected")
                 .setContentText("Tap to quickly log an expense")
                 .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
@@ -213,19 +259,13 @@ class ShakeService : Service(), SensorEventListener {
                 .setContentIntent(fullScreenPendingIntent)
                 .setAutoCancel(true)
                 .setVibrate(longArrayOf(0, 150, 80, 150))
-                .addAction(android.R.drawable.ic_input_add, "➕ Add Expense", fullScreenPendingIntent)
+                .addAction(android.R.drawable.ic_input_add, "Add Expense", fullScreenPendingIntent)
                 .build()
 
             val notificationManager = getSystemService(NotificationManager::class.java)
             notificationManager?.notify(ALERT_NOTIFICATION_ID, alertNotification)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to post alert notification", e)
-        }
-
-        try {
-            startActivity(shakeIntent)
-        } catch (e: Exception) {
-            Log.d(TAG, "Direct startActivity deferred to FullScreen notification")
         }
     }
 
@@ -274,7 +314,7 @@ class ShakeService : Service(), SensorEventListener {
         val icon = if (iconRes != 0) iconRes else android.R.drawable.ic_dialog_info
 
         return NotificationCompat.Builder(this, ONGOING_CHANNEL_ID)
-            .setContentTitle("⚡ Shake to Add Active")
+            .setContentTitle("Shake to Add Active")
             .setContentText("Shake your phone anytime to log an expense")
             .setSmallIcon(icon)
             .setContentIntent(pendingIntent)
@@ -286,6 +326,29 @@ class ShakeService : Service(), SensorEventListener {
 }
 `;
 
+// ─── BootReceiver.kt source ──────────────────────────────────────────────────
+const BOOT_RECEIVER_KT = `package {{PACKAGE}}
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.util.Log
+
+class BootReceiver : BroadcastReceiver() {
+    companion object {
+        private const val TAG = "BootReceiver"
+    }
+
+    override fun onReceive(context: Context, intent: Intent) {
+        val action = intent.action
+        if (action == Intent.ACTION_BOOT_COMPLETED || action == "android.intent.action.QUICKBOOT_POWERON" || action == "com.htc.intent.action.QUICKBOOT_POWERON") {
+            Log.d(TAG, "[SHAKE DEBUG] Device booted (\$action) - starting ShakeService")
+            ShakeService.start(context)
+        }
+    }
+}
+`;
+
 // ─── ShakeServiceModule.kt source ────────────────────────────────────────────
 const SHAKE_SERVICE_MODULE_KT = `package {{PACKAGE}}
 
@@ -293,11 +356,35 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.Promise
+import com.facebook.react.modules.core.DeviceEventManagerModule
 import android.util.Log
 
 class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
     companion object {
         private const val TAG = "ShakeServiceModule"
+        var reactContextInstance: ReactApplicationContext? = null
+
+        fun emitShakeToJS(): Boolean {
+            return try {
+                val ctx = reactContextInstance
+                if (ctx != null && ctx.hasActiveReactInstance()) {
+                    Log.d(TAG, "[SHAKE DEBUG] Native emitting SHAKE_TO_ADD_EXPENSE to React Native DeviceEventEmitter")
+                    ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                        .emit("SHAKE_TO_ADD_EXPENSE", null)
+                    true
+                } else {
+                    Log.d(TAG, "[SHAKE DEBUG] React instance not active yet for emit")
+                    false
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "[SHAKE DEBUG] Error emitting to JS", e)
+                false
+            }
+        }
+    }
+
+    init {
+        reactContextInstance = reactContext
     }
 
     override fun getName(): String = "ShakeServiceModule"
@@ -305,37 +392,37 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
     @ReactMethod
     fun startService(sensitivity: String) {
         val threshold = when (sensitivity.lowercase()) {
-            "low" -> 24.0f
-            "medium" -> 16.0f
-            "high" -> 10.0f
-            else -> 24.0f
+            "low" -> 28.0f
+            "medium" -> 20.0f
+            "high" -> 14.0f
+            else -> 28.0f
         }
-        Log.d(TAG, "Starting ShakeService with sensitivity=\$sensitivity (threshold=\$threshold)")
+        Log.d(TAG, "[SHAKE DEBUG] Starting ShakeService with sensitivity=\$sensitivity (threshold=\$threshold)")
         ShakeService.start(reactApplicationContext, threshold)
     }
 
     @ReactMethod
     fun stopService() {
-        Log.d(TAG, "Stopping ShakeService")
+        Log.d(TAG, "[SHAKE DEBUG] Stopping ShakeService")
         ShakeService.stop(reactApplicationContext)
     }
 
     @ReactMethod
     fun updateSensitivity(sensitivity: String) {
         val threshold = when (sensitivity.lowercase()) {
-            "low" -> 24.0f
-            "medium" -> 16.0f
-            "high" -> 10.0f
-            else -> 24.0f
+            "low" -> 28.0f
+            "medium" -> 20.0f
+            "high" -> 14.0f
+            else -> 28.0f
         }
         ShakeService.shakeThreshold = threshold
-        Log.d(TAG, "Updated ShakeService threshold to \$threshold")
+        Log.d(TAG, "[SHAKE DEBUG] Updated ShakeService threshold to \$threshold")
     }
 
     @ReactMethod
     fun setAppForeground(isForeground: Boolean) {
         ShakeService.isAppInForeground = isForeground
-        Log.d(TAG, "Updated ShakeService isAppInForeground to \$isForeground")
+        Log.d(TAG, "[SHAKE DEBUG] Updated ShakeService isAppInForeground to \$isForeground")
     }
 
     @ReactMethod
@@ -388,6 +475,7 @@ function withShakeServiceFiles(config) {
 
       const files = {
         "ShakeService.kt": SHAKE_SERVICE_KT,
+        "BootReceiver.kt": BOOT_RECEIVER_KT,
         "ShakeServiceModule.kt": SHAKE_SERVICE_MODULE_KT,
         "ShakeServicePackage.kt": SHAKE_SERVICE_PACKAGE_KT,
       };
@@ -434,6 +522,33 @@ function withShakeServiceManifest(config) {
       });
       app.service = services;
       console.log("[withShakeService] Registered ShakeService in AndroidManifest.xml");
+    }
+
+    // Register BootReceiver
+    const receivers = app.receiver || [];
+    const receiverExists = receivers.some(
+      (r) => r.$?.["android:name"] === ".BootReceiver"
+    );
+
+    if (!receiverExists) {
+      receivers.push({
+        $: {
+          "android:name": ".BootReceiver",
+          "android:enabled": "true",
+          "android:exported": "true",
+        },
+        "intent-filter": [
+          {
+            action: [
+              { $: { "android:name": "android.intent.action.BOOT_COMPLETED" } },
+              { $: { "android:name": "android.intent.action.QUICKBOOT_POWERON" } },
+              { $: { "android:name": "com.htc.intent.action.QUICKBOOT_POWERON" } },
+            ],
+          },
+        ],
+      });
+      app.receiver = receivers;
+      console.log("[withShakeService] Registered BootReceiver in AndroidManifest.xml");
     }
 
     const permissions = manifest.manifest["uses-permission"] || [];
@@ -501,6 +616,11 @@ function withShakeServiceMainActivity(config) {
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
+    val uri = intent.dataString
+    if (uri != null && (uri.contains("add-expense") || uri.contains("shake-open"))) {
+      Log.d("MainActivity", "[SHAKE DEBUG] onNewIntent received add-expense intent: \$uri")
+      ShakeServiceModule.emitShakeToJS()
+    }
   }`;
         contents =
           contents.slice(0, insertPos) +

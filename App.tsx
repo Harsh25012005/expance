@@ -128,11 +128,7 @@ function RootApp() {
     );
   }
 
-  return (
-    <ShakeProvider>
-      <MainApp />
-    </ShakeProvider>
-  );
+  return <MainApp />;
 }
 
 export default function App() {
@@ -151,7 +147,9 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <ExpenseProvider>
-        <RootApp />
+        <ShakeProvider>
+          <RootApp />
+        </ShakeProvider>
       </ExpenseProvider>
     </SafeAreaProvider>
   );

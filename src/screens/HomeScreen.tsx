@@ -33,7 +33,7 @@ interface HomeScreenProps {
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToExpenses }) => {
   const { expenses, stats, settings, deleteExpense } = useExpenses();
-  const { openQuickAddModal } = useShake();
+  const { openQuickAddModal, openAddExpenseFromShake } = useShake();
 
   const [deletingExpense, setDeletingExpense] = useState<Expense | null>(null);
 
@@ -161,6 +161,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToExpenses }) 
           <Text style={styles.manualAddBtnText}>Add manually</Text>
         </TouchableOpacity>
       </View>
+
+      {/* DEV TEST: Temporary test button — remove after verifying shake popup works */}
+      <TouchableOpacity
+        style={styles.devTestButton}
+        onPress={() => {
+          console.log('[DEV TEST] TEST SHAKE POPUP button pressed');
+          openAddExpenseFromShake();
+        }}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.devTestButtonText}>TEST SHAKE POPUP</Text>
+      </TouchableOpacity>
 
       {/* 3. Spending Overview (Only when real data exists) */}
       {hasExpenses && (
@@ -609,5 +621,20 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     includeFontPadding: false,
     textAlignVertical: 'center',
+  },
+  devTestButton: {
+    backgroundColor: '#FF6B00',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  devTestButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
   },
 });
