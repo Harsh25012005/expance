@@ -7,12 +7,12 @@ import React, {
   useCallback,
   ReactNode,
 } from 'react';
-import { Platform, AppState, AppStateStatus } from 'react-native';
+import { Platform, AppState, AppStateStatus, Linking } from 'react-native';
 import { Accelerometer } from 'expo-sensors';
 import * as Haptics from 'expo-haptics';
-import * as Notifications from 'expo-notifications';
 import { ShakeSettings, ShakeSensitivity } from '../types/expense';
 import { StorageService, DEFAULT_SHAKE_SETTINGS } from '../services/storage';
+import { ShakeServiceBridge } from '../services/shakeServiceBridge';
 
 interface ShakeContextType {
   isShakeModalOpen: boolean;
@@ -26,115 +26,12 @@ interface ShakeContextType {
 
 const ShakeContext = createContext<ShakeContextType | undefined>(undefined);
 
-// Sensitivity thresholds — total acceleration delta between frames
+// Sensitivity thresholds for JS-side (expo-sensors, values in g-force)
 const SENSITIVITY_THRESHOLDS: Record<ShakeSensitivity, number> = {
   low: 2.5,
   medium: 1.8,
   high: 1.2,
 };
-
-// ─── Notification handler ─────────────────────────────────────────────────────
-// When the app is in FOREGROUND → suppress all notifications (modal opens directly)
-// When in BACKGROUND → allow the shake alert to show as a heads-up banner
-Notifications.setNotificationHandler({
-  handleNotification: async (notification) => {
-    const isForeground = AppState.currentState === 'active';
-    const isShakeAlert = notification.request.content.data?.action === 'SHAKE_ALERT';
-    return {
-      shouldPlaySound: !isForeground && isShakeAlert,
-      shouldSetBadge: false,
-      shouldShowBanner: !isForeground && isShakeAlert,
-      shouldShowList: !isForeground && isShakeAlert,
-    };
-  },
-});
-
-const TRAY_ID = 'shake-tray-keepalive';
-const SHAKE_ALERT_ID = 'shake-expense-alert';
-
-// ─── Channel setup ────────────────────────────────────────────────────────────
-async function setupChannels(): Promise<void> {
-  if (Platform.OS !== 'android') return;
-  try {
-    // Silent tray (just keeps the app "registered" in background)
-    await Notifications.setNotificationChannelAsync('shake-tray', {
-      name: 'ShakeExpense Background',
-      importance: Notifications.AndroidImportance.LOW,
-      enableVibrate: false,
-      enableLights: false,
-      showBadge: false,
-    });
-
-    // Max-priority channel for the shake heads-up alert over other apps
-    await Notifications.setNotificationChannelAsync('shake-alert', {
-      name: 'Shake Expense Alert',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 150, 250],
-      enableVibrate: true,
-      enableLights: true,
-      lightColor: '#10b981',
-      showBadge: false,
-      bypassDnd: true,
-    });
-  } catch (_) {}
-}
-
-// ─── Tray notification — keeps JS runtime alive in background ─────────────────
-async function showTrayNotification(): Promise<void> {
-  if (Platform.OS !== 'android') return;
-  try {
-    await Notifications.dismissNotificationAsync(TRAY_ID).catch(() => {});
-    await Notifications.scheduleNotificationAsync({
-      identifier: TRAY_ID,
-      content: {
-        title: '⚡ ShakeExpense is listening',
-        body: 'Shake your phone to log an expense instantly',
-        data: { action: 'TRAY_TAP' },
-        sticky: true,
-        autoDismiss: false,
-      },
-      trigger: null,
-    });
-  } catch (_) {}
-}
-
-async function dismissTrayNotification(): Promise<void> {
-  try {
-    await Notifications.dismissNotificationAsync(TRAY_ID);
-    await Notifications.dismissNotificationAsync(SHAKE_ALERT_ID);
-  } catch (_) {}
-}
-
-// ─── Shake alert notification — shown on top of other apps ───────────────────
-async function fireShakeAlertNotification(): Promise<void> {
-  if (Platform.OS === 'web') return;
-  try {
-    await Notifications.dismissNotificationAsync(SHAKE_ALERT_ID).catch(() => {});
-
-    // Set notification category with "Add Expense" action button
-    await Notifications.setNotificationCategoryAsync('SHAKE_CATEGORY', [
-      {
-        identifier: 'OPEN_EXPENSE',
-        buttonTitle: '➕ Add Expense Now',
-        options: { opensAppToForeground: true },
-      },
-    ]).catch(() => {});
-
-    await Notifications.scheduleNotificationAsync({
-      identifier: SHAKE_ALERT_ID,
-      content: {
-        title: '📳 Shake Detected!',
-        body: 'Tap to open Quick Expense — Remark & Amount',
-        data: { action: 'SHAKE_ALERT' },
-        categoryIdentifier: 'SHAKE_CATEGORY',
-        autoDismiss: true,
-      },
-      trigger: null,
-    });
-  } catch (e) {
-    console.warn('[Shake] Failed to fire alert notification:', e);
-  }
-}
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 export const ShakeProvider = ({ children }: { children: ReactNode }) => {
@@ -142,68 +39,51 @@ export const ShakeProvider = ({ children }: { children: ReactNode }) => {
   const [shakeSettings, setShakeSettings] = useState<ShakeSettings>(DEFAULT_SHAKE_SETTINGS);
   const [isSensorAvailable, setIsSensorAvailable] = useState<boolean>(false);
 
-  // All refs — never stale inside accelerometer callback
+  // Refs — used inside accelerometer callback to avoid stale closures
   const settingsRef = useRef<ShakeSettings>(DEFAULT_SHAKE_SETTINGS);
   const lastShakeTime = useRef<number>(0);
   const lastX = useRef<number>(0);
   const lastY = useRef<number>(0);
   const lastZ = useRef<number>(0);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
-  const pendingOpenModal = useRef<boolean>(false);
   const setModalRef = useRef<(v: boolean) => void>(setIsShakeModalOpen);
+  const nativeServiceStarted = useRef<boolean>(false);
 
   useEffect(() => { setModalRef.current = setIsShakeModalOpen; }, [setIsShakeModalOpen]);
   useEffect(() => { settingsRef.current = shakeSettings; }, [shakeSettings]);
 
-  // ── Init: load settings + request permissions + setup channels ─────────────
+  // ── Load settings on mount ────────────────────────────────────────────────
   useEffect(() => {
-    const init = async () => {
-      try {
-        const stored = await StorageService.getShakeSettings();
+    StorageService.getShakeSettings()
+      .then((stored) => {
         setShakeSettings(stored);
         settingsRef.current = stored;
-        console.log('[Shake] Settings loaded:', stored);
-
-        if (Platform.OS !== 'web') {
-          const { status } = await Notifications.getPermissionsAsync();
-          if (status !== 'granted') {
-            await Notifications.requestPermissionsAsync();
-          }
-          await setupChannels();
-        }
-      } catch (e) {
-        console.warn('[Shake] Init error:', e);
-      }
-    };
-    init();
+        console.log('[Shake] Settings loaded:', JSON.stringify(stored));
+      })
+      .catch((e) => console.warn('[Shake] Error loading settings:', e));
   }, []);
 
-  // ── Core shake handler (only uses refs — NEVER stale) ────────────────────
+  // ── JS-side shake handler (foreground only, uses refs) ────────────────────
   const handleShake = useCallback(() => {
     const now = Date.now();
     if (now - lastShakeTime.current < 1200) return;
     lastShakeTime.current = now;
 
-    console.log('[Shake] 🔔 Shake! appState =', appStateRef.current);
+    console.log('[Shake] 🔔 JS shake detected! appState =', appStateRef.current);
 
     if (settingsRef.current.hapticFeedback && Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
     }
 
+    // Only open modal if app is in foreground
+    // (background shakes are handled by the native ShakeService)
     if (appStateRef.current === 'active') {
-      // App is in foreground: open modal DIRECTLY — no notification at all
-      console.log('[Shake] ✅ App active → opening modal directly');
+      console.log('[Shake] ✅ Opening modal (JS foreground)');
       setModalRef.current(true);
-    } else {
-      // App is in background: fire a heads-up notification that appears
-      // in front of whatever app is currently on screen
-      console.log('[Shake] 📳 App in background → firing heads-up notification');
-      pendingOpenModal.current = true;
-      fireShakeAlertNotification();
     }
   }, []);
 
-  // ── Accelerometer subscription (stable — set up once, uses refs) ──────────
+  // ── JS Accelerometer (foreground shake detection) ─────────────────────────
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
@@ -213,11 +93,11 @@ export const ShakeProvider = ({ children }: { children: ReactNode }) => {
       .then((available) => {
         setIsSensorAvailable(available);
         if (!available) {
-          console.warn('[Shake] Accelerometer NOT available');
+          console.warn('[Shake] Accelerometer not available');
           return;
         }
 
-        console.log('[Shake] ✅ Accelerometer available — listening');
+        console.log('[Shake] ✅ JS Accelerometer started');
         Accelerometer.setUpdateInterval(80);
 
         sub = Accelerometer.addListener(({ x, y, z }) => {
@@ -236,70 +116,90 @@ export const ShakeProvider = ({ children }: { children: ReactNode }) => {
           lastZ.current = z;
         });
       })
-      .catch((e) => console.warn('[Shake] Accelerometer setup error:', e));
+      .catch((e) => console.warn('[Shake] Accelerometer error:', e));
 
     return () => sub?.remove();
   }, [handleShake]);
 
-  // ── AppState listener ─────────────────────────────────────────────────────
+  // ── Native ShakeService (background shake detection) ──────────────────────
+  // Start/stop the native foreground service based on app state and settings
   useEffect(() => {
+    if (!ShakeServiceBridge.isAvailable || !settingsRef.current.enabled) return;
+
     const onStateChange = (next: AppStateStatus) => {
       const prev = appStateRef.current;
       console.log('[Shake] AppState:', prev, '→', next);
-
-      if (next === 'active') {
-        dismissTrayNotification();
-        if (pendingOpenModal.current) {
-          pendingOpenModal.current = false;
-          console.log('[Shake] Opening modal from pending flag');
-          setIsShakeModalOpen(true);
-        }
-      }
+      appStateRef.current = next;
 
       if (prev === 'active' && (next === 'background' || next === 'inactive')) {
-        if (settingsRef.current.enabled && Platform.OS === 'android') {
-          showTrayNotification();
+        // App going to background → start native service
+        if (settingsRef.current.backgroundAccess) {
+          console.log('[Shake] Starting native ShakeService');
+          ShakeServiceBridge.start(settingsRef.current.sensitivity);
+          nativeServiceStarted.current = true;
         }
+      } else if (next === 'active' && nativeServiceStarted.current) {
+        // App returning to foreground → stop native service (JS takes over)
+        console.log('[Shake] Stopping native ShakeService (JS takes over)');
+        ShakeServiceBridge.stop();
+        nativeServiceStarted.current = false;
       }
-
-      appStateRef.current = next;
     };
 
     const sub = AppState.addEventListener('change', onStateChange);
     return () => sub.remove();
-  }, []);
+  }, [shakeSettings.enabled, shakeSettings.backgroundAccess, shakeSettings.sensitivity]);
 
-  // ── Notification response handler (user taps notification) ───────────────
+  // ── Deep link listener: native ShakeService → JS ──────────────────────────
+  // When the native service detects a shake, it launches the app with the
+  // deep link "exp+expense://shake-open". We listen for that here.
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
-    // If app opened FROM a notification tap
-    Notifications.getLastNotificationResponseAsync().then((resp) => {
-      if (!resp) return;
-      const action = resp.notification.request.content.data?.action;
-      if (action === 'SHAKE_ALERT' || action === 'TRAY_TAP' ||
-          resp.actionIdentifier === 'OPEN_EXPENSE' ||
-          resp.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER) {
-        pendingOpenModal.current = false;
-        setIsShakeModalOpen(true);
+    const handleDeepLink = (event: { url: string }) => {
+      console.log('[Shake] Deep link received:', event.url);
+      if (event.url && event.url.includes('shake-open')) {
+        console.log('[Shake] ✅ Opening modal from native shake');
+        // Small delay to let the app fully come to foreground
+        setTimeout(() => {
+          if (settingsRef.current.hapticFeedback) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
+          }
+          setIsShakeModalOpen(true);
+        }, 300);
       }
-    });
+    };
 
-    const sub = Notifications.addNotificationResponseReceivedListener((resp) => {
-      const action = resp.notification.request.content.data?.action;
-      if (action === 'SHAKE_ALERT' || action === 'TRAY_TAP' ||
-          resp.actionIdentifier === 'OPEN_EXPENSE') {
-        pendingOpenModal.current = false;
-        setIsShakeModalOpen(true);
+    // Check if app was launched from a shake deep link (cold start)
+    Linking.getInitialURL()
+      .then((url) => {
+        if (url && url.includes('shake-open')) {
+          console.log('[Shake] App launched from shake deep link:', url);
+          setTimeout(() => setIsShakeModalOpen(true), 500);
+        }
+      })
+      .catch(() => {});
+
+    // Listen for deep links while app is running (warm start)
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+
+    return () => subscription.remove();
+  }, []);
+
+  // ── Cleanup native service when component unmounts ────────────────────────
+  useEffect(() => {
+    return () => {
+      if (nativeServiceStarted.current) {
+        ShakeServiceBridge.stop();
       }
-    });
-
-    return () => sub.remove();
+    };
   }, []);
 
   // ── Public API ────────────────────────────────────────────────────────────
   const openShakeModal = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
     setIsShakeModalOpen(true);
   }, []);
 
@@ -311,12 +211,30 @@ export const ShakeProvider = ({ children }: { children: ReactNode }) => {
     setShakeSettings(updated);
     settingsRef.current = updated;
     await StorageService.saveShakeSettings(updated);
-    if (!updated.enabled) dismissTrayNotification();
+
+    // If background access was turned off, stop the native service
+    if (patch.backgroundAccess === false || patch.enabled === false) {
+      ShakeServiceBridge.stop();
+      nativeServiceStarted.current = false;
+    }
+    // If background access was turned on and app is in background, start service
+    if (patch.backgroundAccess === true && appStateRef.current !== 'active' && updated.enabled) {
+      ShakeServiceBridge.start(updated.sensitivity);
+      nativeServiceStarted.current = true;
+    }
   }, []);
 
   return (
     <ShakeContext.Provider
-      value={{ isShakeModalOpen, openShakeModal, closeShakeModal, shakeSettings, updateShakeSettings, simulateShake, isSensorAvailable }}
+      value={{
+        isShakeModalOpen,
+        openShakeModal,
+        closeShakeModal,
+        shakeSettings,
+        updateShakeSettings,
+        simulateShake,
+        isSensorAvailable,
+      }}
     >
       {children}
     </ShakeContext.Provider>

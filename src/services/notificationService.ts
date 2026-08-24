@@ -1,6 +1,10 @@
-// NotificationService is intentionally minimal.
-// All notification behavior is now handled inside ShakeContext.tsx.
-// The app uses a LOW-priority tray notification only as a keep-alive
-// so the accelerometer can detect shake when the app is in the background.
-// Shake ALWAYS opens a direct modal popup — never a notification popup.
+/**
+ * NotificationService — intentionally empty.
+ *
+ * Background shake detection is now handled by a native Android ForegroundService
+ * (ShakeService.kt) that runs the accelerometer at the OS level.
+ *
+ * The native service communicates with JS via deep links (Linking API),
+ * not notifications. See ShakeContext.tsx and shakeServiceBridge.ts.
+ */
 export class NotificationService {}
