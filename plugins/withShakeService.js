@@ -2,8 +2,8 @@
  * Expo Config Plugin: withShakeService
  *
  * Injects the native Android ShakeService foreground service, ShakeServiceModule,
- * ShakeServicePackage, BootReceiver, ReminderReceiver, WidgetChartUtils, and exactly 5 Home Screen AppWidgets:
- * 1. Budget Gauge & Controls (BudgetWidgetProvider - Ref 1)
+ * ShakeServicePackage, BootReceiver, ReminderReceiver, WidgetChartUtils, and all 5 Home Screen AppWidgets:
+ * 1. Budget Usage & Controls (BudgetWidgetProvider - Ref 1)
  * 2. Monthly Total Spent (QuickAddWidgetProvider - Ref 2)
  * 3. Today's Spending (TodaySpendingWidgetProvider - Ref 3)
  * 4. Where Did It Go? Concentric Rings (WhereDidItGoWidgetProvider - Ref 4)
@@ -603,356 +603,6 @@ object WidgetChartUtils {
 }
 `;
 
-// ─── ShakeServiceModule.kt source ────────────────────────────────────────────
-const SHAKE_SERVICE_MODULE_KT = `package {{PACKAGE}}
-
-import com.facebook.react.bridge.ReactApplicationContext
-import com.facebook.react.bridge.ReactContextBaseJavaModule
-import com.facebook.react.bridge.ReactMethod
-import com.facebook.react.bridge.Promise
-import com.facebook.react.modules.core.DeviceEventManagerModule
-import android.util.Log
-
-class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
-    companion object {
-        private const val TAG = "ShakeServiceModule"
-        var reactContextInstance: ReactApplicationContext? = null
-        const val PREFS_NAME = "expenza_widget_data"
-
-        fun emitShakeToJS(): Boolean {
-            return try {
-                val ctx = reactContextInstance
-                if (ctx != null && ctx.hasActiveReactInstance()) {
-                    Log.d(TAG, "Emitting SHAKE_TO_ADD_EXPENSE to React Native DeviceEventEmitter")
-                    ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-                        .emit("SHAKE_TO_ADD_EXPENSE", null)
-                    true
-                } else {
-                    Log.d(TAG, "React instance not active for direct JS emit")
-                    false
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error emitting to JS", e)
-                false
-            }
-        }
-
-        fun updateAllWidgets(context: android.content.Context) {
-            try {
-                TodaySpendingWidgetProvider.updateAllWidgets(context)
-                QuickAddWidgetProvider.updateAllWidgets(context)
-                BudgetWidgetProvider.updateAllWidgets(context)
-                WhereDidItGoWidgetProvider.updateAllWidgets(context)
-                BudgetProgressWidgetProvider.updateAllWidgets(context)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error triggering updateAllWidgets", e)
-            }
-        }
-    }
-
-    init {
-        reactContextInstance = reactContext
-    }
-
-    override fun getName(): String = "ShakeServiceModule"
-
-    @ReactMethod
-    fun startService(sensitivity: String) {
-        val threshold = when (sensitivity.lowercase()) {
-            "low" -> 32.0f
-            "medium" -> 24.0f
-            "high" -> 16.0f
-            else -> 32.0f
-        }
-        Log.d(TAG, "startService called with sensitivity=$sensitivity (threshold=$threshold)")
-        ShakeService.start(reactApplicationContext, threshold)
-    }
-
-    @ReactMethod
-    fun stopService() {
-        Log.d(TAG, "stopService called")
-        ShakeService.stop(reactApplicationContext)
-    }
-
-    @ReactMethod
-    fun updateSensitivity(sensitivity: String) {
-        val threshold = when (sensitivity.lowercase()) {
-            "low" -> 32.0f
-            "medium" -> 24.0f
-            "high" -> 16.0f
-            else -> 32.0f
-        }
-        ShakeService.shakeThreshold = threshold
-        Log.d(TAG, "updateSensitivity updated threshold to $threshold")
-    }
-
-    @ReactMethod
-    fun setAppForeground(isForeground: Boolean) {
-        ShakeService.isAppInForeground = isForeground
-        Log.d(TAG, "setAppForeground called with isForeground=$isForeground")
-    }
-
-    @ReactMethod
-    fun requestAppResume() {
-        try {
-            val context = reactApplicationContext
-            val intent = android.content.Intent(context, MainActivity::class.java).apply {
-                action = "ADD_EXPENSE"
-                data = android.net.Uri.parse("expenza://add-expense")
-                putExtra("action", "ADD_EXPENSE")
-                addFlags(
-                    android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
-                    android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                    android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                )
-            }
-            context.startActivity(intent)
-            Log.d(TAG, "requestAppResume started MainActivity")
-        } catch (e: Exception) {
-            Log.e(TAG, "requestAppResume failed", e)
-        }
-    }
-
-    @ReactMethod
-    fun isRunning(promise: Promise) {
-        promise.resolve(ShakeService.isRunning)
-    }
-
-    @ReactMethod
-    fun updateWidgetData(
-        todaySpent: Double,
-        todayCount: Double,
-        todayBars: String,
-        monthlyBudget: Double,
-        monthSpent: Double,
-        monthName: String,
-        currency: String,
-        cat1Name: String,
-        cat1Pct: Double,
-        cat1Color: String,
-        cat2Name: String,
-        cat2Pct: Double,
-        cat2Color: String,
-        cat3Name: String,
-        cat3Pct: Double,
-        cat3Color: String,
-        cat4Name: String,
-        cat4Pct: Double,
-        cat4Color: String,
-        cat5Name: String,
-        cat5Pct: Double,
-        cat5Color: String
-    ) {
-        try {
-            val context = reactApplicationContext
-            val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
-            prefs.edit().apply {
-                putFloat(TodaySpendingWidgetProvider.KEY_TODAY_SPENT, todaySpent.toFloat())
-                putInt(TodaySpendingWidgetProvider.KEY_TODAY_COUNT, todayCount.toInt())
-                putString(BudgetProgressWidgetProvider.KEY_TODAY_BARS, todayBars)
-                putString(TodaySpendingWidgetProvider.KEY_CURRENCY, currency)
-
-                putFloat(BudgetWidgetProvider.KEY_MONTHLY_BUDGET, monthlyBudget.toFloat())
-                putFloat(BudgetWidgetProvider.KEY_MONTH_SPENT, monthSpent.toFloat())
-                putFloat(QuickAddWidgetProvider.KEY_MONTH_SPENT, monthSpent.toFloat())
-
-                putString(WhereDidItGoWidgetProvider.KEY_CAT1_NAME, cat1Name)
-                putInt(WhereDidItGoWidgetProvider.KEY_CAT1_PCT, cat1Pct.toInt())
-                putString(WhereDidItGoWidgetProvider.KEY_CAT1_COLOR, cat1Color)
-
-                putString(WhereDidItGoWidgetProvider.KEY_CAT2_NAME, cat2Name)
-                putInt(WhereDidItGoWidgetProvider.KEY_CAT2_PCT, cat2Pct.toInt())
-                putString(WhereDidItGoWidgetProvider.KEY_CAT2_COLOR, cat2Color)
-
-                putString(WhereDidItGoWidgetProvider.KEY_CAT3_NAME, cat3Name)
-                putInt(WhereDidItGoWidgetProvider.KEY_CAT3_PCT, cat3Pct.toInt())
-                putString(WhereDidItGoWidgetProvider.KEY_CAT3_COLOR, cat3Color)
-
-                putString(WhereDidItGoWidgetProvider.KEY_CAT4_NAME, cat4Name)
-                putInt(WhereDidItGoWidgetProvider.KEY_CAT4_PCT, cat4Pct.toInt())
-                putString(WhereDidItGoWidgetProvider.KEY_CAT4_COLOR, cat4Color)
-
-                apply()
-            }
-            updateAllWidgets(context)
-            Log.d(TAG, "Successfully synced 5-widget data: today=$todaySpent, month=$monthSpent, budget=$monthlyBudget")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error updating widget data", e)
-        }
-    }
-
-    @ReactMethod
-    fun scheduleDailyReminder(hour: Double, minute: Double) {
-        try {
-            ReminderReceiver.scheduleAlarm(reactApplicationContext, hour.toInt(), minute.toInt())
-            Log.d(TAG, "Native scheduled exact alarm for \${hour.toInt()}:\${minute.toInt()}")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error scheduling native reminder alarm", e)
-        }
-    }
-
-    @ReactMethod
-    fun cancelDailyReminder() {
-        try {
-            ReminderReceiver.cancelAlarm(reactApplicationContext)
-            Log.d(TAG, "Native cancelled reminder alarm")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error cancelling native reminder alarm", e)
-        }
-    }
-}
-`;
-
-// ─── ReminderReceiver.kt source ─────────────────────────────────────────────
-const REMINDER_RECEIVER_KT = `package {{PACKAGE}}
-
-import android.app.AlarmManager
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.util.Log
-import androidx.core.app.NotificationCompat
-import java.util.Calendar
-
-class ReminderReceiver : BroadcastReceiver() {
-    companion object {
-        const val TAG = "ReminderReceiver"
-        const val CHANNEL_ID = "expense_reminders_channel"
-        const val NOTIFICATION_ID = 8801
-        const val PENDING_INTENT_REQUEST_CODE = 8800
-
-        fun scheduleAlarm(context: Context, hour: Int, minute: Int) {
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-            val intent = Intent(context, ReminderReceiver::class.java).apply {
-                action = "com.harsh.expense.ACTION_TRIGGER_REMINDER"
-                putExtra("hour", hour)
-                putExtra("minute", minute)
-            }
-            val pendingIntent = PendingIntent.getBroadcast(
-                context,
-                PENDING_INTENT_REQUEST_CODE,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-
-            val calendar = Calendar.getInstance().apply {
-                timeInMillis = System.currentTimeMillis()
-                set(Calendar.HOUR_OF_DAY, hour)
-                set(Calendar.MINUTE, minute)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-                if (timeInMillis <= System.currentTimeMillis()) {
-                    add(Calendar.DAY_OF_YEAR, 1)
-                }
-            }
-
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    alarmManager.setExactAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        calendar.timeInMillis,
-                        pendingIntent
-                    )
-                } else {
-                    alarmManager.setExact(
-                        AlarmManager.RTC_WAKEUP,
-                        calendar.timeInMillis,
-                        pendingIntent
-                    )
-                }
-                Log.d(TAG, "[REMINDER] Exact alarm scheduled for " + calendar.time)
-            } catch (e: Exception) {
-                Log.e(TAG, "[REMINDER] Error setting exact alarm", e)
-            }
-        }
-
-        fun cancelAlarm(context: Context) {
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-            val intent = Intent(context, ReminderReceiver::class.java).apply {
-                action = "com.harsh.expense.ACTION_TRIGGER_REMINDER"
-            }
-            val pendingIntent = PendingIntent.getBroadcast(
-                context,
-                PENDING_INTENT_REQUEST_CODE,
-                intent,
-                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
-            )
-            if (pendingIntent != null) {
-                alarmManager.cancel(pendingIntent)
-                Log.d(TAG, "[REMINDER] Cancelled reminder alarm")
-            }
-        }
-    }
-
-    override fun onReceive(context: Context, intent: Intent) {
-        Log.d(TAG, "[REMINDER] onReceive triggered at " + java.util.Date())
-
-        val hour = intent.getIntExtra("hour", 20)
-        val minute = intent.getIntExtra("minute", 0)
-
-        scheduleAlarm(context, hour, minute)
-
-        val prefs = context.getSharedPreferences(ShakeServiceModule.PREFS_NAME, Context.MODE_PRIVATE)
-        val todayCount = prefs.getInt(TodaySpendingWidgetProvider.KEY_TODAY_COUNT, 0)
-
-        if (todayCount > 0) {
-            Log.d(TAG, "[REMINDER] User has already logged $todayCount expenses today. Skipping reminder notification.")
-            return
-        }
-
-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Expense Reminders",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Daily reminders to record today's spending."
-                enableVibration(true)
-                vibrationPattern = longArrayOf(0, 150, 80, 150)
-                enableLights(true)
-                lightColor = 0xFF4F46E5.toInt()
-            }
-            notificationManager.createNotificationChannel(channel)
-        }
-
-        val openAppIntent = Intent(context, MainActivity::class.java).apply {
-            action = "ADD_EXPENSE"
-            data = Uri.parse("expenza://add-expense")
-            putExtra("action", "ADD_EXPENSE")
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
-
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            8802,
-            openAppIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("Add today's expense")
-            .setContentText("You haven't recorded an expense today. Add anything you spent today.")
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .setDefaults(NotificationCompat.DEFAULT_ALL)
-            .setContentIntent(pendingIntent)
-            .addAction(android.R.drawable.ic_input_add, "Add Expense", pendingIntent)
-            .build()
-
-        notificationManager.notify(NOTIFICATION_ID, notification)
-        Log.d(TAG, "[REMINDER] Posted daily reminder notification successfully")
-    }
-}
-`;
-
 // ─── TodaySpendingWidgetProvider.kt source ──────────────────────────────────
 const TODAY_SPENDING_WIDGET_PROVIDER_KT = `package {{PACKAGE}}
 
@@ -1474,6 +1124,862 @@ class ShakeServicePackage : ReactPackage {
 }
 `;
 
+// ─── ShakeServiceModule.kt source ────────────────────────────────────────────
+const SHAKE_SERVICE_MODULE_KT = `package {{PACKAGE}}
+
+import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.bridge.ReactContextBaseJavaModule
+import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.Promise
+import com.facebook.react.modules.core.DeviceEventManagerModule
+import android.util.Log
+
+class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
+    companion object {
+        private const val TAG = "ShakeServiceModule"
+        var reactContextInstance: ReactApplicationContext? = null
+        const val PREFS_NAME = "expenza_widget_data"
+
+        fun emitShakeToJS(): Boolean {
+            return try {
+                val ctx = reactContextInstance
+                if (ctx != null && ctx.hasActiveReactInstance()) {
+                    Log.d(TAG, "Emitting SHAKE_TO_ADD_EXPENSE to React Native DeviceEventEmitter")
+                    ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                        .emit("SHAKE_TO_ADD_EXPENSE", null)
+                    true
+                } else {
+                    Log.d(TAG, "React instance not active for direct JS emit")
+                    false
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error emitting to JS", e)
+                false
+            }
+        }
+
+        fun updateAllWidgets(context: android.content.Context) {
+            try {
+                TodaySpendingWidgetProvider.updateAllWidgets(context)
+                QuickAddWidgetProvider.updateAllWidgets(context)
+                BudgetWidgetProvider.updateAllWidgets(context)
+                WhereDidItGoWidgetProvider.updateAllWidgets(context)
+                BudgetProgressWidgetProvider.updateAllWidgets(context)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error triggering updateAllWidgets", e)
+            }
+        }
+    }
+
+    init {
+        reactContextInstance = reactContext
+    }
+
+    override fun getName(): String = "ShakeServiceModule"
+
+    @ReactMethod
+    fun startService(sensitivity: String) {
+        val threshold = when (sensitivity.lowercase()) {
+            "low" -> 32.0f
+            "medium" -> 24.0f
+            "high" -> 16.0f
+            else -> 32.0f
+        }
+        Log.d(TAG, "startService called with sensitivity=$sensitivity (threshold=$threshold)")
+        ShakeService.start(reactApplicationContext, threshold)
+    }
+
+    @ReactMethod
+    fun stopService() {
+        Log.d(TAG, "stopService called")
+        ShakeService.stop(reactApplicationContext)
+    }
+
+    @ReactMethod
+    fun updateSensitivity(sensitivity: String) {
+        val threshold = when (sensitivity.lowercase()) {
+            "low" -> 32.0f
+            "medium" -> 24.0f
+            "high" -> 16.0f
+            else -> 32.0f
+        }
+        ShakeService.shakeThreshold = threshold
+        Log.d(TAG, "updateSensitivity updated threshold to $threshold")
+    }
+
+    @ReactMethod
+    fun setAppForeground(isForeground: Boolean) {
+        ShakeService.isAppInForeground = isForeground
+        Log.d(TAG, "setAppForeground called with isForeground=$isForeground")
+    }
+
+    @ReactMethod
+    fun requestAppResume() {
+        try {
+            val context = reactApplicationContext
+            val intent = android.content.Intent(context, MainActivity::class.java).apply {
+                action = "ADD_EXPENSE"
+                data = android.net.Uri.parse("expenza://add-expense")
+                putExtra("action", "ADD_EXPENSE")
+                addFlags(
+                    android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                    android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                )
+            }
+            context.startActivity(intent)
+            Log.d(TAG, "requestAppResume started MainActivity")
+        } catch (e: Exception) {
+            Log.e(TAG, "requestAppResume failed", e)
+        }
+    }
+
+    @ReactMethod
+    fun isRunning(promise: Promise) {
+        promise.resolve(ShakeService.isRunning)
+    }
+
+    @ReactMethod
+    fun updateWidgetData(
+        todaySpent: Double,
+        todayCount: Double,
+        todayBars: String,
+        monthlyBudget: Double,
+        monthSpent: Double,
+        monthName: String,
+        currency: String,
+        cat1Name: String,
+        cat1Pct: Double,
+        cat1Color: String,
+        cat2Name: String,
+        cat2Pct: Double,
+        cat2Color: String,
+        cat3Name: String,
+        cat3Pct: Double,
+        cat3Color: String,
+        cat4Name: String,
+        cat4Pct: Double,
+        cat4Color: String,
+        cat5Name: String,
+        cat5Pct: Double,
+        cat5Color: String
+    ) {
+        try {
+            val context = reactApplicationContext
+            val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+            prefs.edit().apply {
+                putFloat(TodaySpendingWidgetProvider.KEY_TODAY_SPENT, todaySpent.toFloat())
+                putInt(TodaySpendingWidgetProvider.KEY_TODAY_COUNT, todayCount.toInt())
+                putString(BudgetProgressWidgetProvider.KEY_TODAY_BARS, todayBars)
+                putString(TodaySpendingWidgetProvider.KEY_CURRENCY, currency)
+
+                putFloat(BudgetWidgetProvider.KEY_MONTHLY_BUDGET, monthlyBudget.toFloat())
+                putFloat(BudgetWidgetProvider.KEY_MONTH_SPENT, monthSpent.toFloat())
+                putFloat(QuickAddWidgetProvider.KEY_MONTH_SPENT, monthSpent.toFloat())
+
+                putString(WhereDidItGoWidgetProvider.KEY_CAT1_NAME, cat1Name)
+                putInt(WhereDidItGoWidgetProvider.KEY_CAT1_PCT, cat1Pct.toInt())
+                putString(WhereDidItGoWidgetProvider.KEY_CAT1_COLOR, cat1Color)
+
+                putString(WhereDidItGoWidgetProvider.KEY_CAT2_NAME, cat2Name)
+                putInt(WhereDidItGoWidgetProvider.KEY_CAT2_PCT, cat2Pct.toInt())
+                putString(WhereDidItGoWidgetProvider.KEY_CAT2_COLOR, cat2Color)
+
+                putString(WhereDidItGoWidgetProvider.KEY_CAT3_NAME, cat3Name)
+                putInt(WhereDidItGoWidgetProvider.KEY_CAT3_PCT, cat3Pct.toInt())
+                putString(WhereDidItGoWidgetProvider.KEY_CAT3_COLOR, cat3Color)
+
+                putString(WhereDidItGoWidgetProvider.KEY_CAT4_NAME, cat4Name)
+                putInt(WhereDidItGoWidgetProvider.KEY_CAT4_PCT, cat4Pct.toInt())
+                putString(WhereDidItGoWidgetProvider.KEY_CAT4_COLOR, cat4Color)
+
+                apply()
+            }
+            updateAllWidgets(context)
+            Log.d(TAG, "Successfully synced 5-widget data: today=$todaySpent, month=$monthSpent, budget=$monthlyBudget")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating widget data", e)
+        }
+    }
+
+    @ReactMethod
+    fun scheduleDailyReminder(hour: Double, minute: Double) {
+        try {
+            ReminderReceiver.scheduleAlarm(reactApplicationContext, hour.toInt(), minute.toInt())
+            Log.d(TAG, "Native scheduled exact alarm for \${hour.toInt()}:\${minute.toInt()}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error scheduling native reminder alarm", e)
+        }
+    }
+
+    @ReactMethod
+    fun cancelDailyReminder() {
+        try {
+            ReminderReceiver.cancelAlarm(reactApplicationContext)
+            Log.d(TAG, "Native cancelled reminder alarm")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cancelling native reminder alarm", e)
+        }
+    }
+}
+`;
+
+// ─── ReminderReceiver.kt source ─────────────────────────────────────────────
+const REMINDER_RECEIVER_KT = `package {{PACKAGE}}
+
+import android.app.AlarmManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.util.Log
+import androidx.core.app.NotificationCompat
+import java.util.Calendar
+
+class ReminderReceiver : BroadcastReceiver() {
+    companion object {
+        const val TAG = "ReminderReceiver"
+        const val CHANNEL_ID = "expense_reminders_channel"
+        const val NOTIFICATION_ID = 8801
+        const val PENDING_INTENT_REQUEST_CODE = 8800
+
+        fun scheduleAlarm(context: Context, hour: Int, minute: Int) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val intent = Intent(context, ReminderReceiver::class.java).apply {
+                action = "com.harsh.expense.ACTION_TRIGGER_REMINDER"
+                putExtra("hour", hour)
+                putExtra("minute", minute)
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                PENDING_INTENT_REQUEST_CODE,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val calendar = Calendar.getInstance().apply {
+                timeInMillis = System.currentTimeMillis()
+                set(Calendar.HOUR_OF_DAY, hour)
+                set(Calendar.MINUTE, minute)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+                if (timeInMillis <= System.currentTimeMillis()) {
+                    add(Calendar.DAY_OF_YEAR, 1)
+                }
+            }
+
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        calendar.timeInMillis,
+                        pendingIntent
+                    )
+                } else {
+                    alarmManager.setExact(
+                        AlarmManager.RTC_WAKEUP,
+                        calendar.timeInMillis,
+                        pendingIntent
+                    )
+                }
+                Log.d(TAG, "[REMINDER] Exact alarm scheduled for " + calendar.time)
+            } catch (e: Exception) {
+                Log.e(TAG, "[REMINDER] Error setting exact alarm", e)
+            }
+        }
+
+        fun cancelAlarm(context: Context) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val intent = Intent(context, ReminderReceiver::class.java).apply {
+                action = "com.harsh.expense.ACTION_TRIGGER_REMINDER"
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                PENDING_INTENT_REQUEST_CODE,
+                intent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (pendingIntent != null) {
+                alarmManager.cancel(pendingIntent)
+                Log.d(TAG, "[REMINDER] Cancelled reminder alarm")
+            }
+        }
+    }
+
+    override fun onReceive(context: Context, intent: Intent) {
+        Log.d(TAG, "[REMINDER] onReceive triggered at " + java.util.Date())
+
+        val hour = intent.getIntExtra("hour", 20)
+        val minute = intent.getIntExtra("minute", 0)
+
+        scheduleAlarm(context, hour, minute)
+
+        val prefs = context.getSharedPreferences(ShakeServiceModule.PREFS_NAME, Context.MODE_PRIVATE)
+        val todayCount = prefs.getInt(TodaySpendingWidgetProvider.KEY_TODAY_COUNT, 0)
+
+        if (todayCount > 0) {
+            Log.d(TAG, "[REMINDER] User has already logged $todayCount expenses today. Skipping reminder notification.")
+            return
+        }
+
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Expense Reminders",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Daily reminders to record today's spending."
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 150, 80, 150)
+                enableLights(true)
+                lightColor = 0xFF4F46E5.toInt()
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val openAppIntent = Intent(context, MainActivity::class.java).apply {
+            action = "ADD_EXPENSE"
+            data = Uri.parse("expenza://add-expense")
+            putExtra("action", "ADD_EXPENSE")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            8802,
+            openAppIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("Add today's expense")
+            .setContentText("You haven't recorded an expense today. Add anything you spent today.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setContentIntent(pendingIntent)
+            .addAction(android.R.drawable.ic_input_add, "Add Expense", pendingIntent)
+            .build()
+
+        notificationManager.notify(NOTIFICATION_ID, notification)
+        Log.d(TAG, "[REMINDER] Posted daily reminder notification successfully")
+    }
+}
+`;
+
+// ─── Layout & Drawable XMLs ──────────────────────────────────────────────────
+const XML_WIDGET_BUDGET = `<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_budget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_navy_gradient_bg"
+    android:padding="16dp"
+    android:gravity="center_horizontal">
+
+    <TextView
+        android:id="@+id/widget_budget_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="BUDGET USAGE"
+        android:textColor="#8AB4F8"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.08" />
+
+    <FrameLayout
+        android:layout_width="170dp"
+        android:layout_height="115dp"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="2dp">
+
+        <ImageView
+            android:id="@+id/widget_budget_gauge"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="fitCenter" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:layout_marginTop="10dp">
+
+            <TextView
+                android:id="@+id/widget_budget_pct"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="61%"
+                android:textColor="#FFFFFF"
+                android:textSize="34sp"
+                android:textStyle="bold"
+                android:includeFontPadding="false" />
+
+            <TextView
+                android:id="@+id/widget_budget_sub"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="₹18,450 spent"
+                android:textColor="#8AB4F8"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:layout_marginTop="1dp" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="8dp">
+
+        <FrameLayout
+            android:id="@+id/widget_budget_btn_minus"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/widget_pill_navy_btn"
+            android:layout_marginEnd="6dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="−"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/widget_budget_btn_add"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1.2"
+            android:background="@drawable/widget_pill_accent_btn"
+            android:layout_marginEnd="6dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="⚡"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/widget_budget_btn_more"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/widget_pill_navy_btn">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="+"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+        </FrameLayout>
+    </LinearLayout>
+</LinearLayout>
+`;
+
+const XML_WIDGET_QUICK_ADD = `<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_quick_add_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_blue_gradient_bg"
+    android:padding="20dp"
+    android:gravity="center_horizontal">
+
+    <TextView
+        android:id="@+id/widget_quick_add_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="MONTHLY SPENT"
+        android:textColor="#D1E9FF"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.1" />
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <TextView
+            android:id="@+id/widget_quick_add_amount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="₹18,450"
+            android:textColor="#FFFFFF"
+            android:textSize="36sp"
+            android:textStyle="bold"
+            android:letterSpacing="-0.02" />
+
+        <TextView
+            android:id="@+id/widget_quick_add_trend"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="↑ 4.2% vs last month"
+            android:textColor="#00FF66"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:layout_marginTop="2dp" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/widget_quick_add_btn"
+        android:layout_width="match_parent"
+        android:layout_height="46dp"
+        android:background="@drawable/widget_pill_blue_btn">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="+ Add Expense"
+            android:textColor="#FFFFFF"
+            android:textSize="14.5sp"
+            android:textStyle="bold" />
+    </FrameLayout>
+</LinearLayout>
+`;
+
+const XML_WIDGET_TODAY = `<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_today_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_midnight_gradient_bg"
+    android:padding="20dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/widget_today_app_name"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Expenza"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <ImageView
+            android:id="@+id/widget_today_mini_ring"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:scaleType="fitCenter" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <TextView
+            android:id="@+id/widget_today_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="TODAY\'S SPENT"
+            android:textColor="#9CA3AF"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08" />
+
+        <TextView
+            android:id="@+id/widget_today_amount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="₹ 780"
+            android:textColor="#FFFFFF"
+            android:textSize="36sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.04"
+            android:layout_marginTop="2dp" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/widget_today_btn"
+        android:layout_width="match_parent"
+        android:layout_height="46dp"
+        android:background="@drawable/widget_pill_accent_btn">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="+ QUICK ADD"
+            android:textColor="#FFFFFF"
+            android:textSize="14.5sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.04" />
+    </FrameLayout>
+</LinearLayout>
+`;
+
+const XML_WIDGET_BREAKDOWN = `<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_breakdown_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_purple_gradient_bg"
+    android:padding="16dp"
+    android:gravity="center_horizontal">
+
+    <TextView
+        android:id="@+id/widget_breakdown_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="WHERE DID IT GO?"
+        android:textColor="#A78BFA"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.08" />
+
+    <ImageView
+        android:id="@+id/widget_breakdown_rings"
+        android:layout_width="106dp"
+        android:layout_height="106dp"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="4dp"
+        android:scaleType="fitCenter" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="8dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <TextView
+                android:id="@+id/widget_cat1_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="FOOD"
+                android:textColor="#A78BFA"
+                android:textSize="8.5sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_cat1_pct"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="26%"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <TextView
+                android:id="@+id/widget_cat2_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="SHOP"
+                android:textColor="#A78BFA"
+                android:textSize="8.5sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_cat2_pct"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="19%"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <TextView
+                android:id="@+id/widget_cat3_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="TRANS"
+                android:textColor="#A78BFA"
+                android:textSize="8.5sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_cat3_pct"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="15%"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <TextView
+                android:id="@+id/widget_cat4_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="BILLS"
+                android:textColor="#A78BFA"
+                android:textSize="8.5sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_cat4_pct"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="13%"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/widget_breakdown_btn"
+        android:layout_width="match_parent"
+        android:layout_height="42dp"
+        android:background="@drawable/widget_pill_purple_btn">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="View Breakdown ↗"
+            android:textColor="#FFFFFF"
+            android:textSize="13.5sp"
+            android:textStyle="bold" />
+    </FrameLayout>
+</LinearLayout>
+`;
+
+const XML_WIDGET_EQUALIZER = `<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_budget_prog_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_forest_green_bg"
+    android:paddingTop="20dp"
+    android:paddingStart="18dp"
+    android:paddingEnd="18dp"
+    android:gravity="center_horizontal">
+
+    <TextView
+        android:id="@+id/widget_budget_prog_month"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="25.08"
+        android:textColor="#9AE600"
+        android:textSize="12.5sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.04" />
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:layout_marginTop="6dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="TODAY\'S SPENDING"
+            android:textColor="#9AE600"
+            android:textSize="10.5sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.1" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="bottom"
+            android:layout_marginTop="2dp">
+
+            <TextView
+                android:id="@+id/widget_budget_prog_remaining"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="780"
+                android:textColor="#F7FCEB"
+                android:textSize="40sp"
+                android:textStyle="bold"
+                android:letterSpacing="-0.02"
+                android:includeFontPadding="false" />
+
+            <TextView
+                android:id="@+id/widget_budget_prog_target"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" ₹"
+                android:textColor="#9AE600"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="4dp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/widget_budget_prog_gauge"
+        android:layout_width="match_parent"
+        android:layout_height="68dp"
+        android:scaleType="fitXY" />
+</LinearLayout>
+`;
+
 // ─── Helper: resolve package directory path ──────────────────────────────────
 function getPackageDirPath(config) {
   const pkg = config.android?.package || "com.harsh.expense";
@@ -1481,7 +1987,7 @@ function getPackageDirPath(config) {
   return { pkg, pkgDir };
 }
 
-// ─── 1. Write Kotlin and Resource files during prebuild ──────────────────────
+// ─── 1. Write Kotlin, Layouts, Drawables and XML files during prebuild ───────
 function withShakeServiceFiles(config) {
   return withDangerousMod(config, [
     "android",
@@ -1510,6 +2016,7 @@ function withShakeServiceFiles(config) {
       fs.mkdirSync(path.join(resDir, "values"), { recursive: true });
       fs.mkdirSync(path.join(resDir, "values-night"), { recursive: true });
 
+      // Kotlin Source Files
       const files = {
         "ShakeService.kt": SHAKE_SERVICE_KT,
         "BootReceiver.kt": BOOT_RECEIVER_KT,
@@ -1528,6 +2035,62 @@ function withShakeServiceFiles(config) {
         const filepath = path.join(javaDir, filename);
         fs.writeFileSync(filepath, content.replace(/\{\{PACKAGE\}\}/g, pkg));
       }
+
+      // Layout XMLs
+      fs.writeFileSync(path.join(resDir, "layout", "widget_budget.xml"), XML_WIDGET_BUDGET);
+      fs.writeFileSync(path.join(resDir, "layout", "widget_quick_add.xml"), XML_WIDGET_QUICK_ADD);
+      fs.writeFileSync(path.join(resDir, "layout", "widget_today_spending.xml"), XML_WIDGET_TODAY);
+      fs.writeFileSync(path.join(resDir, "layout", "widget_where_did_it_go.xml"), XML_WIDGET_BREAKDOWN);
+      fs.writeFileSync(path.join(resDir, "layout", "widget_budget_progress.xml"), XML_WIDGET_EQUALIZER);
+
+      // Widget Provider Info XMLs
+      const makeWidgetInfoXml = (layoutName, descRes) => `<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="160dp"
+    android:minHeight="160dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="1800000"
+    android:description="${descRes}"
+    android:previewImage="@mipmap/ic_launcher"
+    android:initialLayout="@layout/${layoutName}"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen" />
+`;
+
+      fs.writeFileSync(path.join(resDir, "xml", "budget_widget_info.xml"), makeWidgetInfoXml("widget_budget", "@string/widget_budget_description"));
+      fs.writeFileSync(path.join(resDir, "xml", "quick_add_widget_info.xml"), makeWidgetInfoXml("widget_quick_add", "@string/widget_quick_add_description"));
+      fs.writeFileSync(path.join(resDir, "xml", "today_spending_widget_info.xml"), makeWidgetInfoXml("widget_today_spending", "@string/widget_today_spending_description"));
+      fs.writeFileSync(path.join(resDir, "xml", "where_did_it_go_widget_info.xml"), makeWidgetInfoXml("widget_where_did_it_go", "@string/widget_breakdown_description"));
+      fs.writeFileSync(path.join(resDir, "xml", "budget_progress_widget_info.xml"), makeWidgetInfoXml("widget_budget_progress", "@string/widget_budget_progress_description"));
+
+      // Drawables
+      const drawables = {
+        "widget_navy_gradient_bg.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android"><gradient android:type="linear" android:angle="270" android:startColor="#11325A" android:endColor="#061930"/><corners android:radius="26dp"/><stroke android:width="1dp" android:color="#1E4472"/></shape>`,
+        "widget_blue_gradient_bg.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android"><gradient android:type="linear" android:angle="315" android:startColor="#20A2F7" android:endColor="#0057FF"/><corners android:radius="26dp"/></shape>`,
+        "widget_midnight_gradient_bg.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android"><gradient android:type="linear" android:angle="270" android:startColor="#0C335F" android:endColor="#000103"/><corners android:radius="26dp"/><stroke android:width="1dp" android:color="#1A4068"/></shape>`,
+        "widget_purple_gradient_bg.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android"><gradient android:type="linear" android:angle="270" android:startColor="#2B1865" android:endColor="#190B44"/><corners android:radius="26dp"/><stroke android:width="1dp" android:color="#3D267E"/></shape>`,
+        "widget_forest_green_bg.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android"><solid android:color="#193102"/><corners android:radius="26dp"/><stroke android:width="1dp" android:color="#2D5208"/></shape>`,
+        "widget_pill_navy_btn.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android"><solid android:color="#0E488F"/><corners android:radius="14dp"/></shape>`,
+        "widget_pill_accent_btn.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android"><solid android:color="#0075FF"/><corners android:radius="14dp"/></shape>`,
+        "widget_pill_blue_btn.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android"><solid android:color="#0075FF"/><corners android:radius="24dp"/><stroke android:width="1.5dp" android:color="#4DA6FF"/></shape>`,
+        "widget_pill_purple_btn.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android"><solid android:color="#6D4DE3"/><corners android:radius="24dp"/><stroke android:width="1dp" android:color="#8B6EF3"/></shape>`,
+      };
+
+      for (const [filename, content] of Object.entries(drawables)) {
+        fs.writeFileSync(path.join(resDir, "drawable", filename), content);
+      }
+
+      // Colors with theme primary colors
+      const colorsXml = `<resources>
+  <color name="colorPrimary">#4F46E5</color>
+  <color name="colorPrimaryDark">#4338CA</color>
+  <color name="colorAccent">#6366F1</color>
+  <color name="splashscreen_background">#FFFFFF</color>
+  <color name="iconBackground">#FFFFFF</color>
+</resources>`;
+      fs.writeFileSync(path.join(resDir, "values", "colors.xml"), colorsXml);
+      fs.writeFileSync(path.join(resDir, "values-night", "colors.xml"), colorsXml);
 
       return config;
     },
