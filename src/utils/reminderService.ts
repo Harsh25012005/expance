@@ -2,9 +2,47 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { AppSettings, Expense } from '../types/expense';
 import { toLocalDateString } from './analyticsHelpers';
+import { shakeServiceBridge } from '../services/shakeServiceBridge';
 
 const REMINDER_NOTIFICATION_ID = 'daily_expense_reminder';
 const REMINDER_CHANNEL_ID = 'expense_reminders_channel';
+
+/**
+ * Configure global foreground notification presentation
+ */
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
+
+/**
+ * Request notification permissions from user
+ */
+export async function requestReminderPermissions(): Promise<boolean> {
+  try {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync({
+        ios: {
+          allowAlert: true,
+          allowBadge: true,
+          allowSound: true,
+        },
+      });
+      finalStatus = status;
+    }
+    return finalStatus === 'granted';
+  } catch (e) {
+    console.warn('[ReminderService] Error requesting notification permissions:', e);
+    return false;
+  }
+}
 
 /**
  * Setup Android notification channel for daily reminders
@@ -17,11 +55,12 @@ export async function setupReminderChannel(): Promise<void> {
         description: "Daily reminders to record today's spending.",
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 150, 80, 150],
-        lightColor: '#2563EB',
+        lightColor: '#4F46E5',
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
         showBadge: true,
         enableLights: true,
         enableVibrate: true,
+        sound: 'default',
       });
     } catch (err) {
       console.warn('[ReminderService] Error setting up reminder channel:', err);
@@ -37,68 +76,72 @@ export async function syncDailyReminder(
   expenses: Expense[]
 ): Promise<void> {
   try {
-    // 1. Cancel existing scheduled reminder
+    // 1. Cancel existing scheduled reminders (both Expo and Native Android Alarm)
     await Notifications.cancelScheduledNotificationAsync(REMINDER_NOTIFICATION_ID).catch(() => {});
+    shakeServiceBridge.cancelDailyReminder();
 
     if (!settings.dailyReminderEnabled) {
+      console.log('[ReminderService] Daily reminder is disabled in settings');
       return;
     }
 
-    // 2. Parse preferred time (default 20:00 / 8:00 PM)
+    // 2. Request permission if needed
+    const granted = await requestReminderPermissions();
+    if (!granted) {
+      console.warn('[ReminderService] Notification permission not granted');
+    }
+
+    // 3. Parse preferred time (default 20:00 / 8:00 PM)
     const timeStr = settings.reminderTime || '20:00';
     const [hStr, mStr] = timeStr.split(':');
     const hour = parseInt(hStr, 10) || 20;
     const minute = parseInt(mStr, 10) || 0;
 
-    // 3. Check if user already recorded an expense today
-    const todayStr = toLocalDateString(new Date());
-    const hasExpenseToday = expenses.some((exp) => {
-      return toLocalDateString(new Date(exp.createdAt)) === todayStr;
-    });
-
-    if (hasExpenseToday) {
-      // If user has already recorded an expense today, we don't spam them today!
-      // Schedule daily recurring for future days
-      console.log('[ReminderService] Expense already recorded today, ensuring future schedule');
-    }
-
     await setupReminderChannel();
 
-    // 4. Schedule daily notification
-    if (Platform.OS === 'android') {
-      await Notifications.scheduleNotificationAsync({
-        identifier: REMINDER_NOTIFICATION_ID,
-        content: {
-          title: "Add today's expense",
-          body: "You haven't recorded an expense today. Add anything you spent today.",
-          data: { action: 'ADD_EXPENSE', url: 'expenza://add-expense' },
-          categoryIdentifier: 'shake_expense_category',
-          sound: true,
-          priority: Notifications.AndroidNotificationPriority.HIGH,
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DAILY,
-          hour,
-          minute,
-          channelId: REMINDER_CHANNEL_ID,
-        },
-      });
-    } else {
-      await Notifications.scheduleNotificationAsync({
-        identifier: REMINDER_NOTIFICATION_ID,
-        content: {
-          title: "Add today's expense",
-          body: "You haven't recorded an expense today. Add anything you spent today.",
-          data: { action: 'ADD_EXPENSE', url: 'expenza://add-expense' },
-          categoryIdentifier: 'shake_expense_category',
-          sound: true,
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DAILY,
-          hour,
-          minute,
-        },
-      });
+    // 4. Native Android Exact Alarm (Fires reliably via AlarmManager.setExactAndAllowWhileIdle)
+    shakeServiceBridge.scheduleDailyReminder(hour, minute);
+
+    // 5. Expo Notifications Schedule (Secondary layer)
+    try {
+      if (Platform.OS === 'android') {
+        await Notifications.scheduleNotificationAsync({
+          identifier: REMINDER_NOTIFICATION_ID,
+          content: {
+            title: "Add today's expense",
+            body: "You haven't recorded an expense today. Add anything you spent today.",
+            data: { action: 'ADD_EXPENSE', url: 'expenza://add-expense' },
+            categoryIdentifier: 'shake_expense_category',
+            sound: 'default',
+            priority: Notifications.AndroidNotificationPriority.HIGH,
+            ...({ channelId: REMINDER_CHANNEL_ID } as any),
+          },
+          trigger: {
+            hour,
+            minute,
+            repeats: true,
+            channelId: REMINDER_CHANNEL_ID,
+          } as any,
+        });
+      } else {
+        await Notifications.scheduleNotificationAsync({
+          identifier: REMINDER_NOTIFICATION_ID,
+          content: {
+            title: "Add today's expense",
+            body: "You haven't recorded an expense today. Add anything you spent today.",
+            data: { action: 'ADD_EXPENSE', url: 'expenza://add-expense' },
+            categoryIdentifier: 'shake_expense_category',
+            sound: true,
+          },
+          trigger: {
+            hour,
+            minute,
+            repeats: true,
+          } as any,
+        });
+      }
+    } catch (schedErr) {
+      console.warn('[ReminderService] Expo scheduler warning:', schedErr);
     }
 
     console.log(`[ReminderService] Daily reminder scheduled for ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);

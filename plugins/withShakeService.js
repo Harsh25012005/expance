@@ -491,6 +491,168 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
             Log.e("ShakeServiceModule", "[WIDGET] Error updating widget data", e)
         }
     }
+
+    @ReactMethod
+    fun scheduleDailyReminder(hour: Double, minute: Double) {
+        try {
+            ReminderReceiver.scheduleAlarm(reactApplicationContext, hour.toInt(), minute.toInt())
+            Log.d("ShakeServiceModule", "[REMINDER] Native scheduled alarm for $hour:$minute")
+        } catch (e: Exception) {
+            Log.e("ShakeServiceModule", "[REMINDER] Error scheduling native reminder alarm", e)
+        }
+    }
+
+    @ReactMethod
+    fun cancelDailyReminder() {
+        try {
+            ReminderReceiver.cancelAlarm(reactApplicationContext)
+            Log.d("ShakeServiceModule", "[REMINDER] Native cancelled reminder alarm")
+        } catch (e: Exception) {
+            Log.e("ShakeServiceModule", "[REMINDER] Error cancelling native reminder alarm", e)
+        }
+    }
+}
+`;
+
+// ─── ReminderReceiver.kt source ─────────────────────────────────────────────
+const REMINDER_RECEIVER_KT = `package {{PACKAGE}}
+
+import android.app.AlarmManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.util.Log
+import androidx.core.app.NotificationCompat
+import java.util.Calendar
+
+class ReminderReceiver : BroadcastReceiver() {
+    companion object {
+        const val TAG = "ReminderReceiver"
+        const val CHANNEL_ID = "expense_reminders_channel"
+        const val NOTIFICATION_ID = 8801
+        const val PENDING_INTENT_REQUEST_CODE = 8800
+
+        fun scheduleAlarm(context: Context, hour: Int, minute: Int) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val intent = Intent(context, ReminderReceiver::class.java).apply {
+                action = "com.harsh.expense.ACTION_TRIGGER_REMINDER"
+                putExtra("hour", hour)
+                putExtra("minute", minute)
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                PENDING_INTENT_REQUEST_CODE,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val calendar = Calendar.getInstance().apply {
+                timeInMillis = System.currentTimeMillis()
+                set(Calendar.HOUR_OF_DAY, hour)
+                set(Calendar.MINUTE, minute)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+                if (timeInMillis <= System.currentTimeMillis()) {
+                    add(Calendar.DAY_OF_YEAR, 1)
+                }
+            }
+
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        calendar.timeInMillis,
+                        pendingIntent
+                    )
+                } else {
+                    alarmManager.setExact(
+                        AlarmManager.RTC_WAKEUP,
+                        calendar.timeInMillis,
+                        pendingIntent
+                    )
+                }
+                Log.d(TAG, "[REMINDER] Exact alarm scheduled for " + calendar.time)
+            } catch (e: Exception) {
+                Log.e(TAG, "[REMINDER] Error setting exact alarm", e)
+            }
+        }
+
+        fun cancelAlarm(context: Context) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val intent = Intent(context, ReminderReceiver::class.java).apply {
+                action = "com.harsh.expense.ACTION_TRIGGER_REMINDER"
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                PENDING_INTENT_REQUEST_CODE,
+                intent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (pendingIntent != null) {
+                alarmManager.cancel(pendingIntent)
+                Log.d(TAG, "[REMINDER] Cancelled reminder alarm")
+            }
+        }
+    }
+
+    override fun onReceive(context: Context, intent: Intent) {
+        Log.d(TAG, "[REMINDER] onReceive triggered at " + java.util.Date())
+
+        val hour = intent.getIntExtra("hour", 20)
+        val minute = intent.getIntExtra("minute", 0)
+
+        // Reschedule recurring alarm for tomorrow
+        scheduleAlarm(context, hour, minute)
+
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Expense Reminders",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Daily reminders to record today's spending."
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 150, 80, 150)
+                enableLights(true)
+                lightColor = 0xFF4F46E5.toInt()
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val openAppIntent = Intent(context, MainActivity::class.java).apply {
+            action = "com.harsh.expense.ACTION_ADD_EXPENSE"
+            data = Uri.parse("expenza://add-expense")
+            putExtra("action", "ADD_EXPENSE")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            8802,
+            openAppIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("Add today's expense")
+            .setContentText("You haven't recorded an expense today. Add anything you spent today.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setContentIntent(pendingIntent)
+            .addAction(0, "+ Add Expense", pendingIntent)
+            .build()
+
+        notificationManager.notify(NOTIFICATION_ID, notification)
+        Log.d(TAG, "[REMINDER] Posted reminder notification successfully")
+    }
 }
 `;
 
@@ -603,6 +765,172 @@ class ExpenzaAppWidgetProvider : AppWidgetProvider() {
 }
 `;
 
+// ─── Widget XML Sources ──────────────────────────────────────────────────────
+const WIDGET_BACKGROUND_XML = `<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FFFFFF" />
+    <corners android:radius="18dp" />
+    <stroke
+        android:width="1dp"
+        android:color="#E7E7E4" />
+</shape>`;
+
+const WIDGET_BTN_BG_XML = `<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#4F46E5" />
+    <corners android:radius="8dp" />
+</shape>`;
+
+const WIDGET_ICON_BADGE_XML = `<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#EEF2FF" />
+    <corners android:radius="6dp" />
+</shape>`;
+
+const WIDGET_INFO_XML = `<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="220dp"
+    android:minHeight="90dp"
+    android:targetCellWidth="3"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="1800000"
+    android:initialLayout="@layout/widget_expenza"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen">
+</appwidget-provider>`;
+
+const WIDGET_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_background"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/widget_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Expenza"
+                android:textColor="#171717"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_date"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Today"
+                android:textColor="#737373"
+                android:textSize="11sp"
+                android:layout_marginTop="1dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/widget_btn_add"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_btn_bg"
+            android:gravity="center"
+            android:paddingStart="12dp"
+            android:paddingTop="7dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="7dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="+ Add"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="14dp"
+        android:gravity="center_vertical">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="TODAY'S SPENT"
+                android:textColor="#737373"
+                android:textSize="10sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_today_spent"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="₹0.00"
+                android:textColor="#171717"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:layout_marginTop="2dp" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="32dp"
+            android:background="#E7E7E4"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/widget_budget_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="MONTHLY BUDGET"
+                android:textColor="#737373"
+                android:textSize="10sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_budget_value"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="No target set"
+                android:textColor="#4F46E5"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:layout_marginTop="2dp" />
+        </LinearLayout>
+    </LinearLayout>
+
+</LinearLayout>`;
+
 // ─── ShakeServicePackage.kt source ───────────────────────────────────────────
 const SHAKE_SERVICE_PACKAGE_KT = `package {{PACKAGE}}
 
@@ -660,12 +988,27 @@ function withShakeServiceFiles(config) {
         "ShakeServiceModule.kt": SHAKE_SERVICE_MODULE_KT,
         "ShakeServicePackage.kt": SHAKE_SERVICE_PACKAGE_KT,
         "ExpenzaAppWidgetProvider.kt": EXPENZA_APP_WIDGET_PROVIDER_KT,
+        "ReminderReceiver.kt": REMINDER_RECEIVER_KT,
       };
 
       for (const [filename, content] of Object.entries(files)) {
         const filepath = path.join(javaDir, filename);
         fs.writeFileSync(filepath, content.replace(/\{\{PACKAGE\}\}/g, pkg));
         console.log(`[withShakeService] Wrote ${filepath}`);
+      }
+
+      // Write layout, xml and drawable files
+      const resFiles = [
+        { path: path.join(resDir, "xml", "expenza_widget_info.xml"), content: WIDGET_INFO_XML },
+        { path: path.join(resDir, "layout", "widget_expenza.xml"), content: WIDGET_LAYOUT_XML },
+        { path: path.join(resDir, "drawable", "widget_background.xml"), content: WIDGET_BACKGROUND_XML },
+        { path: path.join(resDir, "drawable", "widget_btn_bg.xml"), content: WIDGET_BTN_BG_XML },
+        { path: path.join(resDir, "drawable", "widget_icon_badge.xml"), content: WIDGET_ICON_BADGE_XML },
+      ];
+
+      for (const { path: rPath, content } of resFiles) {
+        fs.writeFileSync(rPath, content);
+        console.log(`[withShakeService] Wrote resource ${rPath}`);
       }
 
       return config;
@@ -764,6 +1107,29 @@ function withShakeServiceManifest(config) {
       console.log("[withShakeService] Registered ExpenzaAppWidgetProvider in AndroidManifest.xml");
     }
 
+    // Register ReminderReceiver
+    const reminderReceiverExists = receivers.some(
+      (r) => r.$?.["android:name"] === ".ReminderReceiver"
+    );
+
+    if (!reminderReceiverExists) {
+      receivers.push({
+        $: {
+          "android:name": ".ReminderReceiver",
+          "android:exported": "false",
+        },
+        "intent-filter": [
+          {
+            action: [
+              { $: { "android:name": "com.harsh.expense.ACTION_TRIGGER_REMINDER" } },
+            ],
+          },
+        ],
+      });
+      app.receiver = receivers;
+      console.log("[withShakeService] Registered ReminderReceiver in AndroidManifest.xml");
+    }
+
     const permissions = manifest.manifest["uses-permission"] || [];
     const requiredPermissions = [
       "android.permission.FOREGROUND_SERVICE",
@@ -774,6 +1140,8 @@ function withShakeServiceManifest(config) {
       "android.permission.POST_NOTIFICATIONS",
       "android.permission.SYSTEM_ALERT_WINDOW",
       "android.permission.RECEIVE_BOOT_COMPLETED",
+      "android.permission.SCHEDULE_EXACT_ALARM",
+      "android.permission.USE_EXACT_ALARM",
     ];
 
     for (const perm of requiredPermissions) {

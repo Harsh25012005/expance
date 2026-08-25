@@ -1,5 +1,5 @@
 import './global.css';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -18,6 +18,7 @@ import { Header } from './src/components/Header';
 import { CustomTabBar } from './src/components/CustomTabBar';
 import { QuickExpenseModal } from './src/components/QuickExpenseModal';
 import { AppLogo } from './src/components/AppLogo';
+import { setupReminderChannel } from './src/utils/reminderService';
 
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -136,6 +137,10 @@ export default function App() {
     PlusJakartaSans_700Bold,
     PlusJakartaSans_800ExtraBold,
   });
+
+  useEffect(() => {
+    setupReminderChannel().catch(() => {});
+  }, []);
 
   if (!fontsLoaded) {
     return <SplashScreen />;

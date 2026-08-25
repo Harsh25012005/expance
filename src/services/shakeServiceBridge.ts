@@ -94,4 +94,30 @@ export const shakeServiceBridge = {
     }
     return false;
   },
+
+  scheduleDailyReminder(hour: number, minute: number): void {
+    if (this.isSupported()) {
+      try {
+        if (ShakeServiceModule.scheduleDailyReminder) {
+          ShakeServiceModule.scheduleDailyReminder(hour, minute);
+          console.log(`[ShakeServiceBridge] Scheduled native daily reminder for ${hour}:${minute}`);
+        }
+      } catch (err) {
+        console.warn('[ShakeServiceBridge] Failed to schedule native daily reminder:', err);
+      }
+    }
+  },
+
+  cancelDailyReminder(): void {
+    if (this.isSupported()) {
+      try {
+        if (ShakeServiceModule.cancelDailyReminder) {
+          ShakeServiceModule.cancelDailyReminder();
+          console.log('[ShakeServiceBridge] Cancelled native daily reminder');
+        }
+      } catch (err) {
+        console.warn('[ShakeServiceBridge] Failed to cancel native daily reminder:', err);
+      }
+    }
+  },
 };

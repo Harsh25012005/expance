@@ -42,6 +42,7 @@ import { SetBudgetModal } from '../components/SetBudgetModal';
 import { CustomTimePickerModal } from '../components/CustomTimePickerModal';
 import { exportExpenses, ExportFormat } from '../services/exportService';
 import { formatCurrency, formatTimeDisplay } from '../utils/formatters';
+import { requestReminderPermissions } from '../utils/reminderService';
 import { theme } from '../constants/theme';
 import { AppLogo } from '../components/AppLogo';
 
@@ -320,8 +321,11 @@ export const SettingsScreen: React.FC = () => {
             </View>
             <Switch
               value={settings.dailyReminderEnabled || false}
-              onValueChange={(val) => {
+              onValueChange={async (val) => {
                 triggerHaptic();
+                if (val) {
+                  await requestReminderPermissions();
+                }
                 updateSettings({ dailyReminderEnabled: val });
               }}
               trackColor={{ false: theme.colors.border, true: theme.colors.textPrimary }}
