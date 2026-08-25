@@ -7,13 +7,14 @@ import { Expense } from '../types/expense';
 import { shakeServiceBridge } from '../services/shakeServiceBridge';
 import { addShakeListener, emitShakeEvent } from '../utils/shakeEvents';
 
-interface OpenModalOptions {
+export interface OpenModalOptions {
   triggeredByShake?: boolean;
   initialExpense?: Expense;
 }
 
-interface ShakeContextType {
+export interface ShakeContextType {
   isQuickAddModalOpen: boolean;
+  openAddExpensePopup: (options?: OpenModalOptions) => void;
   openQuickAddModal: (options?: OpenModalOptions) => void;
   closeQuickAddModal: () => void;
   triggeredByShake: boolean;
@@ -25,7 +26,7 @@ interface ShakeContextType {
 
 const ShakeContext = createContext<ShakeContextType | undefined>(undefined);
 
-const SHAKE_COOLDOWN_MS = 2000;
+const SHAKE_COOLDOWN_MS = 1500;
 
 export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { settings } = useExpenses();
@@ -46,9 +47,6 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     isModalOpenRef.current = isQuickAddModalOpen;
-    if (isQuickAddModalOpen) {
-      console.log('[ADD_EXPENSE] visible = true');
-    }
   }, [isQuickAddModalOpen]);
 
   useEffect(() => {
@@ -64,76 +62,61 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   /**
-   * openAddExpenseFromShake — THE single function that opens the popup from shake.
-   * This is the ONLY entry point for shake → popup. No notifications involved.
-   * Works in both foreground and when resuming from background (via deep link/intent).
+   * openAddExpensePopup — The single authoritative function that opens the Add Expense popup.
+   * Directly updates global modal state with required debug logs.
    */
-  const openAddExpenseFromShake = useCallback(() => {
-    const currentAppState = appStateRef.current;
-    console.log('[SHAKE] DETECTED');
-    console.log(`[SHAKE] APP_STATE: ${currentAppState}`);
-    console.log('[SHAKE] FOREGROUND PATH');
-
-    const now = Date.now();
-    if (now - lastShakeTimeRef.current < SHAKE_COOLDOWN_MS) {
-      console.log('[SHAKE] Cooldown active, ignoring');
-      return; // Within debounce cooldown — STOP
-    }
-    lastShakeTimeRef.current = now;
-    setLastShakeTimestamp(now);
-
-    console.log('[SHAKE] OPENING ADD EXPENSE');
-
-    if (settingsRef.current.hapticsEnabled) {
-      try {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      } catch {}
-    }
-
-    // Only open if not already open
-    if (!isModalOpenRef.current) {
-      setTriggeredByShake(true);
-      setEditingExpense(null);
-      setIsQuickAddModalOpen(true);
-    }
-  }, []);
-
-  const triggerAddExpense = useCallback((fromShake: boolean = true) => {
-    if (fromShake) {
-      openAddExpenseFromShake();
-      return;
-    }
-
-    // Non-shake manual trigger (e.g., from a button)
-    const now = Date.now();
-    lastShakeTimeRef.current = now;
-    setLastShakeTimestamp(now);
-
-    if (settingsRef.current.hapticsEnabled) {
-      try {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      } catch {}
-    }
-
-    if (!isModalOpenRef.current) {
-      setTriggeredByShake(false);
-      setEditingExpense(null);
-      setIsQuickAddModalOpen(true);
-    }
-  }, [openAddExpenseFromShake]);
-
-  const openQuickAddModal = useCallback((options?: OpenModalOptions) => {
-    console.log('[SHAKE DEBUG] Programmatic openQuickAddModal called');
+  const openAddExpensePopup = useCallback((options?: OpenModalOptions) => {
+    console.log('[ADD EXPENSE] openAddExpensePopup() called');
+    console.log('[ADD EXPENSE] setting visible = true');
     setTriggeredByShake(options?.triggeredByShake ?? false);
     setEditingExpense(options?.initialExpense ?? null);
     setIsQuickAddModalOpen(true);
   }, []);
+
+  /**
+   * openQuickAddModal — Alias for openAddExpensePopup for backward compatibility across components.
+   */
+  const openQuickAddModal = openAddExpensePopup;
 
   const closeQuickAddModal = useCallback(() => {
     setIsQuickAddModalOpen(false);
     setTriggeredByShake(false);
     setEditingExpense(null);
   }, []);
+
+  /**
+   * handleShakeDetected / openAddExpenseFromShake —
+   * Authoritative foreground shake handler:
+   * Shake detected -> Log state -> Call openAddExpensePopup() -> STOP (no notification code).
+   */
+  const handleShakeDetected = useCallback(() => {
+    const currentAppState = appStateRef.current;
+    console.log('[SHAKE] DETECTED');
+    if (currentAppState === 'active') {
+      console.log('[SHAKE] APP STATE: active');
+    } else {
+      console.log(`[SHAKE] APP STATE: ${currentAppState}`);
+    }
+
+    const now = Date.now();
+    if (now - lastShakeTimeRef.current < SHAKE_COOLDOWN_MS) {
+      console.log('[SHAKE] Cooldown active, ignoring');
+      return;
+    }
+    lastShakeTimeRef.current = now;
+    setLastShakeTimestamp(now);
+
+    if (settingsRef.current.hapticsEnabled) {
+      try {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      } catch {}
+    }
+
+    console.log('[SHAKE] CALLING openAddExpensePopup()');
+    openAddExpensePopup({ triggeredByShake: true });
+  }, [openAddExpensePopup]);
+
+  const openAddExpenseFromShake = handleShakeDetected;
 
   const simulateShake = useCallback(() => {
     console.log('[SHAKE DEBUG] simulateShake called');
@@ -143,12 +126,12 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // 1. Global Shake Event Bus listener (receives events from Native Android bridge & JS)
   useEffect(() => {
     const sub = addShakeListener(() => {
-      openAddExpenseFromShake();
+      handleShakeDetected();
     });
     return () => {
       sub.remove();
     };
-  }, [openAddExpenseFromShake]);
+  }, [handleShakeDetected]);
 
   // 2. Sync foreground state with native ShakeService
   useEffect(() => {
@@ -159,7 +142,7 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   // 3. Handle Deep Linking (from background native ShakeService intent)
-  //    NO notification listeners here — notifications are removed from foreground path
+  //    Directly opens the popup when resumed via deep link
   useEffect(() => {
     const handleDeepLink = (event: { url: string }) => {
       const url = event.url;
@@ -169,7 +152,7 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     };
 
-    // Check initial URL if app was launched via deep link
+    // Check initial URL if app was cold started via deep link
     Linking.getInitialURL()
       .then((url) => {
         if (url && (url.includes('shake-open') || url.includes('add-expense') || url.includes('expenza://'))) {
@@ -201,7 +184,7 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
 
       console.log('[SHAKE DEBUG] Sensor service started (JS Accelerometer)');
-      // 20Hz update rate
+      // 20Hz update rate (50ms interval)
       Accelerometer.setUpdateInterval(50);
 
       sensorSubscription = Accelerometer.addListener((data) => {
@@ -226,18 +209,19 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         lastYRef.current = y;
         lastZRef.current = z;
 
-        // Calibrated G-force thresholds — higher = requires stronger shake
-        // Low sensitivity = hardest to trigger (firm deliberate shake only)
+        // Calibrated G-force thresholds:
+        // low: firm deliberate shake (default)
+        // medium: moderate shake
+        // high: light shake
         const threshold =
           settingsRef.current.shakeSensitivity === 'low'
-            ? 3.0 // Low sensitivity: requires a firm deliberate physical shake
+            ? 2.6
             : settingsRef.current.shakeSensitivity === 'high'
-            ? 1.5 // High sensitivity
-            : 2.2; // Medium sensitivity
+            ? 1.3
+            : 1.8;
 
         if (delta > threshold) {
           console.log(`[SHAKE] Accelerometer delta=${delta.toFixed(2)}, threshold=${threshold}`);
-          // Emit event → goes to the global listener → calls openAddExpenseFromShake()
           emitShakeEvent();
         }
       });
@@ -278,6 +262,7 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     <ShakeContext.Provider
       value={{
         isQuickAddModalOpen,
+        openAddExpensePopup,
         openQuickAddModal,
         closeQuickAddModal,
         triggeredByShake,

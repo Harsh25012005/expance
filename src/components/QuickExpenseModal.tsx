@@ -53,8 +53,7 @@ export const QuickExpenseModal: React.FC = () => {
 
   useEffect(() => {
     if (isQuickAddModalOpen) {
-      console.log('[ADD_EXPENSE] visible = true');
-      console.log('[ADD_EXPENSE] MODAL RENDERED');
+      console.log('[ADD EXPENSE] POPUP VISIBLE');
 
       if (editingExpense) {
         setName(editingExpense.name);

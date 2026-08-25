@@ -405,7 +405,7 @@ export const OnboardingScreen: React.FC = () => {
                       {notifStatus === 'granted' ? (
                         <View style={styles.allowedBadge}>
                           <Check size={12} color={theme.colors.positive} strokeWidth={2.5} />
-                          <Text style={styles.allowedBadgeText}>Allowed ✓</Text>
+                          <Text style={styles.allowedBadgeText}>Allowed</Text>
                         </View>
                       ) : notifStatus === 'denied' ? (
                         <TouchableOpacity
@@ -444,7 +444,7 @@ export const OnboardingScreen: React.FC = () => {
                       {motionStatus === 'granted' ? (
                         <View style={styles.allowedBadge}>
                           <Check size={12} color={theme.colors.positive} strokeWidth={2.5} />
-                          <Text style={styles.allowedBadgeText}>Allowed ✓</Text>
+                          <Text style={styles.allowedBadgeText}>Allowed</Text>
                         </View>
                       ) : motionStatus === 'denied' ? (
                         <TouchableOpacity
@@ -485,7 +485,7 @@ export const OnboardingScreen: React.FC = () => {
                       {Platform.OS === 'android' ? (
                         <View style={styles.allowedBadge}>
                           <Check size={12} color={theme.colors.positive} strokeWidth={2.5} />
-                          <Text style={styles.allowedBadgeText}>Enabled ✓</Text>
+                          <Text style={styles.allowedBadgeText}>Enabled</Text>
                         </View>
                       ) : (
                         <View style={styles.infoBadge}>
@@ -576,7 +576,8 @@ export const OnboardingScreen: React.FC = () => {
                   {/* Recommendation Card directly below */}
                   <View style={styles.recommendationCard}>
                     <View style={styles.recommendationBadge}>
-                      <Text style={styles.recommendationBadgeText}>✓ Recommended</Text>
+                      <Check size={11} color={theme.colors.primary} strokeWidth={2} />
+                      <Text style={styles.recommendationBadgeText}>Recommended</Text>
                     </View>
                     <Text style={styles.recommendationBody}>
                       Low sensitivity helps prevent accidental expense popups during normal phone movement.
@@ -981,6 +982,9 @@ const styles = StyleSheet.create({
   },
   recommendationBadge: {
     alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     backgroundColor: theme.colors.accentLight,
     paddingHorizontal: 8,
     paddingVertical: 3,
