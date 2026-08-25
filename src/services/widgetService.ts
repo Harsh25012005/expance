@@ -4,12 +4,30 @@ import { toLocalDateString } from '../utils/analyticsHelpers';
 
 const { ShakeServiceModule } = NativeModules;
 
-// 4 Concentric Ring Colors matching Reference 4
-const RING_COLORS = ['#A78BFA', '#60A5FA', '#22D3EE', '#FB923C'];
+import { CATEGORIES } from '../constants/categories';
+
+const CATEGORY_COLOR_MAP: Record<string, string> = {
+  Food: '#F59E0B',
+  Transport: '#38BDF8',
+  Shopping: '#EC4899',
+  Bills: '#A78BFA',
+  Entertainment: '#FB923C',
+  Health: '#F43F5E',
+  Travel: '#2DD4BF',
+  Education: '#6366F1',
+  Other: '#94A3B8',
+};
+
+const DEFAULT_CAT_CONFIGS = [
+  { name: 'FOOD', pct: 52, color: '#F59E0B' },
+  { name: 'SHOP', pct: 32, color: '#EC4899' },
+  { name: 'TRANS', pct: 15, color: '#38BDF8' },
+  { name: 'BILLS', pct: 77, color: '#A78BFA' },
+];
 
 export const widgetService = {
   /**
-   * Synchronize spending data with the 5 redesigned Android Home-Screen widgets
+   * Synchronize spending data with the Category Android Home-Screen widget
    */
   syncWidget(expenses: Expense[], settings: AppSettings): void {
     if (Platform.OS !== 'android' || !ShakeServiceModule?.updateWidgetData) {
@@ -27,7 +45,7 @@ export const widgetService = {
 
       let todaySpent = 0;
       let todayCount = 0;
-      const todayHourlyBuckets: number[] = new Array(20).fill(0); // 20 equalizer bars
+      const todayHourlyBuckets: number[] = new Array(20).fill(0);
 
       let monthSpent = 0;
       const monthCategoryMap: Record<string, number> = {};
@@ -37,7 +55,6 @@ export const widgetService = {
         const expDate = new Date(exp.createdAt);
         const cat = exp.category || 'Other';
 
-        // Check if created today
         if (toLocalDateString(expDate) === todayStr) {
           todaySpent += amount;
           todayCount += 1;
@@ -46,14 +63,12 @@ export const widgetService = {
           todayHourlyBuckets[bucketIndex] += amount;
         }
 
-        // Check if created in current month
         if (expDate.getFullYear() === currentYear && expDate.getMonth() === currentMonth) {
           monthSpent += amount;
           monthCategoryMap[cat] = (monthCategoryMap[cat] || 0) + amount;
         }
       }
 
-      // Format dynamic 20-bar equalizer heights string
       const maxBucket = Math.max(...todayHourlyBuckets, 1);
       const todayBars = todayHourlyBuckets
         .map((b) => (b > 0 ? (b / maxBucket).toFixed(2) : '0.15'))
@@ -67,11 +82,11 @@ export const widgetService = {
         if (index < monthSortedCats.length) {
           const [name, amt] = monthSortedCats[index];
           const pct = Math.max(1, Math.round((amt / totalMonthCatSpent) * 100));
-          const color = RING_COLORS[index] || '#A78BFA';
+          const catInfo = CATEGORIES.find((c) => c.id.toLowerCase() === name.toLowerCase() || c.label.toLowerCase() === name.toLowerCase());
+          const color = catInfo?.color || CATEGORY_COLOR_MAP[name] || DEFAULT_CAT_CONFIGS[index]?.color || '#A78BFA';
           return { name, pct, color };
         }
-        const defaultNames = ['FOOD', 'SHOP', 'TRANS', 'BILLS'];
-        return { name: defaultNames[index] || '', pct: 25 - index * 5, color: RING_COLORS[index] || '#A78BFA' };
+        return DEFAULT_CAT_CONFIGS[index] || { name: 'OTHER', pct: 10, color: '#94A3B8' };
       };
 
       const cat1 = getCatData(0);

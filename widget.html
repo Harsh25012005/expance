@@ -4,10 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Expenza — Android Home-Screen Widgets Showcase</title>
+    <title>Expenza — Category Widget (Color Coded)</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         * {
             box-sizing: border-box;
@@ -21,768 +21,165 @@
             background-color: #060913;
             color: #FFFFFF;
             min-height: 100vh;
-            padding: 40px 20px 80px 20px;
+            padding: 40px 20px;
             display: flex;
             flex-direction: column;
             align-items: center;
+            justify-content: center;
         }
 
         .header {
             text-align: center;
-            margin-bottom: 40px;
-            max-width: 800px;
+            margin-bottom: 30px;
         }
 
         .badge {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            background: rgba(99, 102, 241, 0.15);
-            color: #818CF8;
-            border: 1px solid rgba(99, 102, 241, 0.3);
+            background: rgba(245, 158, 11, 0.15);
+            color: #F59E0B;
+            border: 1px solid rgba(245, 158, 11, 0.3);
             padding: 6px 14px;
             border-radius: 999px;
             font-size: 12px;
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            margin-bottom: 14px;
+            margin-bottom: 12px;
         }
 
         h1 {
             font-family: 'Outfit', sans-serif;
-            font-size: 36px;
+            font-size: 32px;
             font-weight: 800;
-            letter-spacing: -0.02em;
-            background: linear-gradient(135deg, #FFFFFF 0%, #94A3B8 100%);
+            background: linear-gradient(135deg, #FFFFFF 0%, #C4B5FD 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
         }
 
         .subtitle {
             color: #94A3B8;
-            font-size: 15px;
-            line-height: 1.5;
+            font-size: 14px;
         }
 
-        .section-title {
-            font-family: 'Outfit', sans-serif;
-            font-size: 22px;
-            font-weight: 700;
-            color: #F8FAFC;
-            margin: 40px 0 20px 0;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            width: 100%;
-            max-width: 1240px;
-        }
-
-        .section-title::after {
-            content: '';
-            flex: 1;
-            height: 1px;
-            background: rgba(255, 255, 255, 0.1);
-        }
-
-        .widget-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 28px;
-            width: 100%;
-            max-width: 1240px;
-        }
-
-        .card-wrapper {
+        /* ─── Android Home Screen Widget Mockup (1:1 Ratio) ─── */
+        .widget-stage {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px dashed rgba(255, 255, 255, 0.1);
+            border-radius: 36px;
+            padding: 30px;
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 12px;
+            gap: 16px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
         }
 
-        .card-label {
-            font-size: 13px;
-            font-weight: 700;
-            color: #94A3B8;
-            letter-spacing: 0.04em;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            width: 250px;
-        }
-
-        .pill {
-            background: rgba(255, 255, 255, 0.08);
-            color: #E2E8F0;
-            padding: 2px 8px;
-            border-radius: 6px;
-            font-size: 11px;
-            font-family: 'JetBrains Mono', monospace;
-        }
-
-        /* Base 2x2 Square Widget Container (250px x 250px) */
-        .widget-card {
+        .widget-category-card {
             width: 250px;
             height: 250px;
+            background: linear-gradient(180deg, #241568 0%, #150B3D 100%);
             border-radius: 28px;
-            padding: 20px;
-            position: relative;
-            box-shadow: 0 16px 36px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+            padding: 20px 16px 18px 16px;
             display: flex;
             flex-direction: column;
+            align-items: center;
             justify-content: space-between;
-            overflow: hidden;
+            box-shadow: 0 16px 36px -8px rgba(10, 4, 30, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.08);
             user-select: none;
-            transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s ease;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            cursor: pointer;
         }
 
-        .widget-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 24px 48px -10px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.15);
+        .widget-category-card:hover {
+            transform: translateY(-4px) scale(1.02);
+            box-shadow: 0 24px 48px -10px rgba(10, 4, 30, 1), 0 0 0 1px rgba(196, 181, 253, 0.25);
         }
 
-        /* ─── 1. Climate Style Widget (Deep Navy) ─── */
-        .w-climate {
-            background: linear-gradient(180deg, #11325A 0%, #061930 100%);
-            border: 1px solid rgba(30, 68, 114, 0.8);
-            align-items: center;
-            text-align: center;
-            padding: 16px;
-        }
-
-        .w-climate .top-title {
-            font-size: 11px;
-            font-weight: 700;
-            letter-spacing: 0.08em;
-            color: #8AB4F8;
-        }
-
-        .w-climate .gauge-box {
-            position: relative;
-            width: 170px;
-            height: 120px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .w-climate .gauge-box svg {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-        }
-
-        .w-climate .gauge-center {
-            z-index: 2;
-            margin-top: 14px;
-        }
-
-        .w-climate .gauge-val {
-            font-size: 32px;
-            font-weight: 800;
-            line-height: 1;
-            color: #FFFFFF;
-            font-family: 'Outfit', sans-serif;
-        }
-
-        .w-climate .gauge-sub {
-            font-size: 11px;
-            font-weight: 700;
-            color: #8AB4F8;
-            margin-top: 2px;
-        }
-
-        .w-climate .controls-row {
-            display: flex;
-            gap: 8px;
-            width: 100%;
-        }
-
-        .w-climate .ctrl-btn {
-            flex: 1;
-            height: 42px;
-            border-radius: 14px;
-            background: #0E488F;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        .widget-title {
             font-size: 20px;
-            font-weight: 700;
-            color: #FFFFFF;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .w-climate .ctrl-btn.active {
-            flex: 1.2;
-            background: #0075FF;
-            box-shadow: 0 0 16px rgba(0, 117, 255, 0.4);
-        }
-
-        .w-climate .ctrl-btn:hover {
-            opacity: 0.9;
-        }
-
-        /* ─── 2. Impressions Style Widget (Blue Gradient) ─── */
-        .w-impressions {
-            background: linear-gradient(135deg, #20A2F7 0%, #0057FF 100%);
-            color: #FFFFFF;
-            align-items: center;
-            text-align: center;
-            padding: 20px;
-        }
-
-        .w-impressions .logo-icon {
-            width: 24px;
-            height: 24px;
-            fill: #FFFFFF;
-        }
-
-        .w-impressions .metric-label {
-            font-size: 11px;
             font-weight: 800;
-            letter-spacing: 0.1em;
-            color: #D1E9FF;
-        }
-
-        .w-impressions .big-amount {
-            font-family: 'Outfit', sans-serif;
-            font-size: 34px;
-            font-weight: 800;
-            line-height: 1.1;
-            letter-spacing: -0.02em;
-        }
-
-        .w-impressions .trend {
-            font-size: 12px;
-            font-weight: 800;
-            color: #00FF66;
-        }
-
-        .w-impressions .pill-action {
-            width: 100%;
-            height: 44px;
-            border-radius: 24px;
-            background: #0075FF;
-            border: 1.5px solid #4DA6FF;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
-            font-weight: 700;
-            box-shadow: 0 8px 16px rgba(0, 50, 150, 0.3);
-            cursor: pointer;
-        }
-
-        /* ─── 3. Auth Code Style Widget (Midnight Slate) ─── */
-        .w-auth {
-            background: linear-gradient(180deg, #0C335F 0%, #000103 100%);
-            border: 1px solid rgba(26, 64, 104, 0.8);
-            padding: 20px;
-        }
-
-        .w-auth .top-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .w-auth .app-name {
-            font-size: 15px;
-            font-weight: 700;
-            color: #FFFFFF;
-        }
-
-        .w-auth .mini-ring {
-            width: 32px;
-            height: 32px;
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .w-auth .mini-ring svg {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            transform: rotate(-90deg);
-        }
-
-        .w-auth .mini-ring span {
-            font-size: 11px;
-            font-weight: 800;
-            color: #FFFFFF;
-            z-index: 1;
-        }
-
-        .w-auth .center-content {
-            text-align: center;
-            margin: auto 0;
-        }
-
-        .w-auth .service-name {
-            font-size: 11.5px;
-            font-weight: 700;
-            color: #9CA3AF;
-            letter-spacing: 0.08em;
-            margin-bottom: 2px;
-        }
-
-        .w-auth .code-digits {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 32px;
-            font-weight: 800;
-            color: #FFFFFF;
-            letter-spacing: 0.04em;
-        }
-
-        .w-auth .copy-btn {
-            width: 100%;
-            height: 44px;
-            border-radius: 22px;
-            background: #0075FF;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
-            font-weight: 700;
-            color: #FFFFFF;
-            cursor: pointer;
-        }
-
-        /* ─── 4. Concentric Rings Style Widget (Deep Purple) ─── */
-        .w-sleep {
-            background: linear-gradient(180deg, #2B1865 0%, #190B44 100%);
-            border: 1px solid rgba(61, 38, 126, 0.8);
-            align-items: center;
-            text-align: center;
-            padding: 16px;
-        }
-
-        .w-sleep .top-title {
-            font-size: 11px;
-            font-weight: 700;
-            letter-spacing: 0.08em;
-            color: #A78BFA;
-        }
-
-        .w-sleep .rings-wrap {
-            width: 106px;
-            height: 106px;
-            margin: 4px 0;
-        }
-
-        .w-sleep .rings-wrap svg {
-            width: 100%;
-            height: 100%;
-            transform: rotate(-90deg);
-        }
-
-        .w-sleep .stat-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            width: 100%;
-            gap: 4px;
-        }
-
-        .w-sleep .stat-col {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .w-sleep .stat-label {
-            font-size: 8.5px;
-            font-weight: 700;
-            color: #A78BFA;
-        }
-
-        .w-sleep .stat-val {
-            font-size: 12px;
-            font-weight: 800;
-            color: #FFFFFF;
-        }
-
-        .w-sleep .detail-btn {
-            width: 100%;
-            height: 40px;
-            border-radius: 20px;
-            background: #6D4DE3;
-            border: 1px solid #8B6EF3;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 13px;
-            font-weight: 700;
-            color: #FFFFFF;
-            cursor: pointer;
-        }
-
-        /* ─── 5. Equalizer Activity Style Widget (Dark Green) ─── */
-        .w-equalizer {
-            background: #193102;
-            border: 1px solid rgba(45, 82, 8, 0.8);
-            padding: 18px 18px 0 18px;
-            text-align: center;
-            align-items: center;
-        }
-
-        .w-equalizer .top-date {
-            font-size: 12.5px;
-            font-weight: 800;
-            color: #9AE600;
-        }
-
-        .w-equalizer .center-text {
-            margin: auto 0 8px 0;
-        }
-
-        .w-equalizer .center-subtitle {
-            font-size: 10.5px;
-            font-weight: 700;
-            color: #9AE600;
-            letter-spacing: 0.1em;
-        }
-
-        .w-equalizer .huge-calories {
-            font-family: 'Outfit', sans-serif;
-            font-size: 38px;
-            font-weight: 800;
-            color: #F7FCEB;
-            line-height: 1;
-        }
-
-        .w-equalizer .huge-calories .unit {
-            font-size: 18px;
-            color: #9AE600;
-            margin-left: 2px;
-        }
-
-        .w-equalizer .bars-histogram {
-            display: flex;
-            align-items: flex-end;
-            justify-content: space-between;
-            width: 100%;
-            height: 68px;
-        }
-
-        .w-equalizer .h-bar {
-            width: 6.5px;
-            background: #84CC16;
-            border-radius: 4px 4px 0 0;
-        }
-
-        /* ═══════════════════════════════════════════════════════════════════════
-           NEW DESIGN CONCEPTS (SECTION 2)
-           ═══════════════════════════════════════════════════════════════════════ */
-
-        /* ─── Concept 1: Daily Velocity Speedometer ─── */
-        .w-velocity {
-            background: linear-gradient(180deg, #0D1117 0%, #161B22 100%);
-            border: 1px solid rgba(56, 189, 248, 0.25);
-            padding: 16px;
-            align-items: center;
-            text-align: center;
-        }
-
-        .w-velocity .speed-wrap {
-            position: relative;
-            width: 170px;
-            height: 110px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .w-velocity .speed-wrap svg {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-        }
-
-        .w-velocity .speed-center {
-            z-index: 2;
-            margin-top: 14px;
-        }
-
-        .w-velocity .speed-amt {
-            font-family: 'Outfit', sans-serif;
-            font-size: 30px;
-            font-weight: 800;
-            color: #FFFFFF;
-            line-height: 1;
-        }
-
-        .w-velocity .speed-limit {
-            font-size: 11px;
-            font-weight: 700;
-            color: #38BDF8;
-            margin-top: 2px;
-        }
-
-        .w-velocity .status-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 3px 10px;
-            background: rgba(16, 185, 129, 0.15);
-            border: 1px solid rgba(16, 185, 129, 0.4);
-            color: #10B981;
-            border-radius: 999px;
-            font-size: 10.5px;
-            font-weight: 700;
-            margin-bottom: 8px;
-        }
-
-        .w-velocity .presets-row {
-            display: flex;
-            gap: 6px;
-            width: 100%;
-        }
-
-        .w-velocity .preset-btn {
-            flex: 1;
-            height: 36px;
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            color: #FFFFFF;
-            font-size: 12px;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .w-velocity .preset-btn:hover {
-            background: rgba(56, 189, 248, 0.2);
-            border-color: #38BDF8;
-        }
-
-        /* ─── Concept 2: Safe-To-Spend & Payday ─── */
-        .w-safespend {
-            background: linear-gradient(135deg, #1E1B4B 0%, #312E81 100%);
-            border: 1px solid rgba(129, 140, 248, 0.4);
-            padding: 20px;
-            align-items: center;
-            text-align: center;
-        }
-
-        .w-safespend .safe-amt {
-            font-family: 'Outfit', sans-serif;
-            font-size: 38px;
-            font-weight: 800;
-            color: #FFFFFF;
-            line-height: 1;
-            letter-spacing: -0.02em;
-        }
-
-        .w-safespend .safe-label {
-            font-size: 11px;
-            font-weight: 800;
-            color: #A5B4FC;
-            letter-spacing: 0.08em;
-            margin-top: 4px;
-        }
-
-        .w-safespend .progress-box {
-            width: 100%;
-            margin: auto 0;
-        }
-
-        .w-safespend .progress-bar {
-            width: 100%;
-            height: 8px;
-            background: rgba(255, 255, 255, 0.15);
-            border-radius: 999px;
-            overflow: hidden;
-            margin-bottom: 6px;
-        }
-
-        .w-safespend .progress-fill {
-            height: 100%;
-            width: 65%;
-            background: linear-gradient(90deg, #38BDF8, #818CF8);
-            border-radius: 999px;
-        }
-
-        .w-safespend .progress-sub {
-            font-size: 11.5px;
-            font-weight: 600;
-            color: #C7D2FE;
-        }
-
-        .w-safespend .safe-btn {
-            width: 100%;
-            height: 42px;
-            border-radius: 21px;
-            background: #4F46E5;
-            border: 1px solid #818CF8;
-            color: #FFFFFF;
-            font-size: 13.5px;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            box-shadow: 0 8px 16px rgba(79, 70, 229, 0.3);
-        }
-
-        /* ─── Concept 3: Weekly Neon Waveform ─── */
-        .w-wave {
-            background: linear-gradient(180deg, #1F0833 0%, #0B0114 100%);
-            border: 1px solid rgba(168, 85, 247, 0.35);
-            padding: 16px;
-            position: relative;
-        }
-
-        .w-wave .peak-tag {
-            position: absolute;
-            top: 14px;
-            right: 14px;
-            background: rgba(168, 85, 247, 0.25);
-            border: 1px solid rgba(168, 85, 247, 0.5);
-            padding: 3px 8px;
-            border-radius: 8px;
-            text-align: right;
-        }
-
-        .w-wave .peak-tag .p-label {
-            font-size: 8px;
-            font-weight: 700;
-            color: #C084FC;
+            color: #C4B5FD;
+            letter-spacing: 0.05em;
             text-transform: uppercase;
         }
 
-        .w-wave .peak-tag .p-val {
-            font-size: 11px;
-            font-weight: 800;
-            color: #FFFFFF;
+        /* 4 Concentric Rings */
+        .rings-container {
+            width: 120px;
+            height: 120px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
-        .w-wave .wave-chart {
-            width: 100%;
-            height: 105px;
-            margin-top: 24px;
-        }
-
-        .w-wave .wave-chart svg {
+        .rings-container svg {
             width: 100%;
             height: 100%;
+            transform: rotate(-90deg);
         }
 
-        .w-wave .days-row {
-            display: flex;
-            justify-content: space-between;
-            font-size: 9.5px;
-            font-weight: 600;
-            color: #94A3B8;
-            margin-top: 2px;
-            margin-bottom: 8px;
+        /* Stat Row (4 Columns) */
+        .stat-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            width: 100%;
+            gap: 2px;
+            text-align: center;
         }
 
-        .w-wave .days-row .active-day {
-            color: #A855F7;
-            font-weight: 800;
-        }
-
-        .w-wave .bottom-spent {
-            font-family: 'Outfit', sans-serif;
-            font-size: 20px;
-            font-weight: 800;
-            color: #FFFFFF;
-        }
-
-        .w-wave .bottom-spent span {
-            font-size: 11.5px;
-            font-weight: 600;
-            color: #A855F7;
-            margin-left: 4px;
-        }
-
-        /* ─── Concept 4: Category 3-Tile Matrix ─── */
-        .w-matrix {
-            background: #0F172A;
-            border: 1px solid rgba(51, 65, 85, 0.8);
-            padding: 14px;
+        .stat-col {
             display: flex;
             flex-direction: column;
-            gap: 8px;
-        }
-
-        .w-matrix .cat-capsule {
-            flex: 1;
-            background: rgba(30, 41, 59, 0.8);
-            border: 1px solid rgba(56, 189, 248, 0.3);
-            border-radius: 18px;
-            padding: 8px 12px;
-            display: flex;
             align-items: center;
-            justify-content: space-between;
-            transition: all 0.2s ease;
         }
 
-        .w-matrix .cat-capsule:hover {
-            border-color: #38BDF8;
-            background: rgba(30, 41, 59, 1);
-        }
-
-        .w-matrix .cat-left {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .w-matrix .cat-icon-box {
-            width: 34px;
-            height: 34px;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 16px;
-        }
-
-        .w-matrix .cat-info .c-name {
+        .stat-label {
             font-size: 11px;
             font-weight: 700;
-            color: #94A3B8;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
         }
 
-        .w-matrix .cat-info .c-amt {
-            font-family: 'Outfit', sans-serif;
-            font-size: 15px;
+        .stat-value {
+            font-size: 17px;
             font-weight: 800;
             color: #FFFFFF;
+            margin-top: 1px;
         }
 
-        .w-matrix .cat-add-btn {
-            width: 32px;
-            height: 32px;
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.08);
+        /* Category Color Specifics */
+        .cat-food { color: #F59E0B; }
+        .cat-shop { color: #EC4899; }
+        .cat-trans { color: #38BDF8; }
+        .cat-bills { color: #A78BFA; }
+
+        /* ─── Control Bar ─── */
+        .control-bar {
+            margin-top: 24px;
             display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 16px;
+            gap: 12px;
+        }
+
+        .toggle-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #E2E8F0;
+            padding: 8px 18px;
+            border-radius: 12px;
+            font-size: 13px;
             font-weight: 700;
-            color: #FFFFFF;
             cursor: pointer;
             transition: all 0.2s ease;
         }
 
-        .w-matrix .cat-add-btn:hover {
-            background: #0075FF;
+        .toggle-btn:hover, .toggle-btn.active {
+            background: #8B7CF6;
+            color: #FFFFFF;
+            border-color: #8B7CF6;
         }
     </style>
 </head>
@@ -790,322 +187,122 @@
 <body>
 
     <div class="header">
-        <div class="badge">✦ Expenza Design Studio</div>
-        <h1>Android Widgets System</h1>
-        <p class="subtitle">Interactive previews for both the active 5 reference styles and the next-generation concept designs.</p>
+        <div class="badge">✦ Category-Coded Colors</div>
+        <h1>Category Concentric Widget</h1>
+        <p class="subtitle">Each ring and stat label is rendered in its category's color.</p>
     </div>
 
-    <!-- ═══════════════════════════════════════════════════════════════════════
-         SECTION 1: ACTIVE 5 REFERENCE WIDGETS
-         ═══════════════════════════════════════════════════════════════════════ -->
-    <div class="section-title">
-        <span>Active Reference Designs (Current Build)</span>
-    </div>
+    <div class="widget-stage">
+        <!-- 1:1 Native Android Widget Card -->
+        <div class="widget-category-card" id="widgetCard">
+            <!-- Title -->
+            <div class="widget-title">CATEGORY</div>
 
-    <div class="widget-grid">
+            <!-- Rings image (Rendered via SVG exactly matching RingRenderer.kt) -->
+            <div class="rings-container">
+                <svg viewBox="0 0 120 120">
+                    <!-- Ring 1 (Food - Amber #F59E0B) -->
+                    <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(245, 158, 11, 0.22)" stroke-width="6.6" />
+                    <circle id="ring1" cx="60" cy="60" r="50" fill="none" stroke="#F59E0B" stroke-width="6.6" stroke-dasharray="314" stroke-dashoffset="150" stroke-linecap="round" />
 
-        <!-- 1. Budget Usage & Action Controls (Reference 1 Style) -->
-        <div class="card-wrapper">
-            <div class="card-label">
-                <span>1. Budget Controls</span>
-                <span class="pill">2x2</span>
-            </div>
-            <div class="widget-card w-climate">
-                <div class="top-title">BUDGET USAGE</div>
-                <div class="gauge-box">
-                    <svg viewBox="0 0 170 120">
-                        <defs>
-                            <linearGradient id="climateGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" stop-color="#38BDF8" />
-                                <stop offset="50%" stop-color="#818CF8" />
-                                <stop offset="100%" stop-color="#FB7185" />
-                            </linearGradient>
-                        </defs>
-                        <path d="M 25 105 A 60 60 0 1 1 145 105" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="12" stroke-linecap="round" />
-                        <path d="M 25 105 A 60 60 0 1 1 145 105" fill="none" stroke="url(#climateGrad)" stroke-width="12" stroke-linecap="round" stroke-dasharray="280" stroke-dashoffset="110" />
-                        <circle cx="140" cy="85" r="4.5" fill="#FFFFFF" />
-                    </svg>
-                    <div class="gauge-center">
-                        <div class="gauge-val">61%</div>
-                        <div class="gauge-sub">₹18,450 spent</div>
-                    </div>
-                </div>
-                <div class="controls-row">
-                    <div class="ctrl-btn">−</div>
-                    <div class="ctrl-btn active">⚡</div>
-                    <div class="ctrl-btn">+</div>
-                </div>
-            </div>
-        </div>
+                    <!-- Ring 2 (Shopping - Rose Pink #EC4899) -->
+                    <circle cx="60" cy="60" r="40" fill="none" stroke="rgba(236, 72, 153, 0.22)" stroke-width="6.6" />
+                    <circle id="ring2" cx="60" cy="60" r="40" fill="none" stroke="#EC4899" stroke-width="6.6" stroke-dasharray="251" stroke-dashoffset="170" stroke-linecap="round" />
 
-        <!-- 2. Monthly Total Spent (Reference 2 Style) -->
-        <div class="card-wrapper">
-            <div class="card-label">
-                <span>2. Total Spent & Action</span>
-                <span class="pill">2x2</span>
-            </div>
-            <div class="widget-card w-impressions">
-                <svg class="logo-icon" viewBox="0 0 24 24">
-                    <path d="M21 3L3 10.53v.98l6.84 2.65L12.48 21h.98L21 3z" />
+                    <!-- Ring 3 (Transport - Cyan #38BDF8) -->
+                    <circle cx="60" cy="60" r="30" fill="none" stroke="rgba(56, 189, 248, 0.22)" stroke-width="6.6" />
+                    <circle id="ring3" cx="60" cy="60" r="30" fill="none" stroke="#38BDF8" stroke-width="6.6" stroke-dasharray="188" stroke-dashoffset="160" stroke-linecap="round" />
+
+                    <!-- Ring 4 (Bills - Violet #A78BFA) -->
+                    <circle cx="60" cy="60" r="20" fill="none" stroke="rgba(167, 139, 250, 0.22)" stroke-width="6.6" />
+                    <circle id="ring4" cx="60" cy="60" r="20" fill="none" stroke="#A78BFA" stroke-width="6.6" stroke-dasharray="125" stroke-dashoffset="28" stroke-linecap="round" />
                 </svg>
-                <div class="metric-label">MONTHLY SPENT</div>
-                <div class="big-amount">₹18,450</div>
-                <div class="trend">
-                    <span>↑ 4.2%</span>
-                    <span style="color: rgba(255,255,255,0.7); font-size: 11px; font-weight: 500;">vs last month</span>
-                </div>
-                <div class="pill-action">+ Add Expense</div>
             </div>
-        </div>
 
-        <!-- 3. Today's Spending (Reference 3 Style) -->
-        <div class="card-wrapper">
-            <div class="card-label">
-                <span>3. Today's Spending</span>
-                <span class="pill">2x2</span>
-            </div>
-            <div class="widget-card w-auth">
-                <div class="top-row">
-                    <div class="app-name">Expenza</div>
-                    <div class="mini-ring">
-                        <svg viewBox="0 0 32 32">
-                            <circle cx="16" cy="16" r="13" fill="none" stroke="#1E3A5F" stroke-width="3" />
-                            <circle cx="16" cy="16" r="13" fill="none" stroke="#0075FF" stroke-width="3" stroke-dasharray="81" stroke-dashoffset="30" stroke-linecap="round" />
-                        </svg>
-                        <span>3</span>
-                    </div>
+            <!-- Stat Row: 4 Columns -->
+            <div class="stat-row">
+                <div class="stat-col">
+                    <span class="stat-label cat-food" id="lbl1">FOOD</span>
+                    <span class="stat-value" id="val1">52%</span>
                 </div>
-                <div class="center-content">
-                    <div class="service-name">TODAY'S SPENT</div>
-                    <div class="code-digits">₹ 780</div>
+                <div class="stat-col">
+                    <span class="stat-label cat-shop" id="lbl2">SHOP</span>
+                    <span class="stat-value" id="val2">32%</span>
                 </div>
-                <div class="copy-btn">+ QUICK ADD</div>
-            </div>
-        </div>
-
-        <!-- 4. Where Did It Go? Concentric Rings (Reference 4 Style) -->
-        <div class="card-wrapper">
-            <div class="card-label">
-                <span>4. Category Breakdown</span>
-                <span class="pill">2x2</span>
-            </div>
-            <div class="widget-card w-sleep">
-                <div class="top-title">WHERE DID IT GO?</div>
-                <div class="rings-wrap">
-                    <svg viewBox="0 0 110 110">
-                        <circle cx="55" cy="55" r="46" fill="none" stroke="rgba(139, 92, 246, 0.2)" stroke-width="6" />
-                        <circle cx="55" cy="55" r="46" fill="none" stroke="#A78BFA" stroke-width="6" stroke-dasharray="289" stroke-dashoffset="120" stroke-linecap="round" />
-                        
-                        <circle cx="55" cy="55" r="36" fill="none" stroke="rgba(96, 165, 250, 0.2)" stroke-width="6" />
-                        <circle cx="55" cy="55" r="36" fill="none" stroke="#60A5FA" stroke-width="6" stroke-dasharray="226" stroke-dashoffset="95" stroke-linecap="round" />
-                        
-                        <circle cx="55" cy="55" r="26" fill="none" stroke="rgba(34, 211, 238, 0.2)" stroke-width="6" />
-                        <circle cx="55" cy="55" r="26" fill="none" stroke="#22D3EE" stroke-width="6" stroke-dasharray="163" stroke-dashoffset="80" stroke-linecap="round" />
-                        
-                        <circle cx="55" cy="55" r="16" fill="none" stroke="rgba(251, 146, 60, 0.2)" stroke-width="6" />
-                        <circle cx="55" cy="55" r="16" fill="none" stroke="#FB923C" stroke-width="6" stroke-dasharray="100" stroke-dashoffset="65" stroke-linecap="round" />
-                    </svg>
+                <div class="stat-col">
+                    <span class="stat-label cat-trans" id="lbl3">TRANS</span>
+                    <span class="stat-value" id="val3">15%</span>
                 </div>
-                <div class="stat-grid">
-                    <div class="stat-col">
-                        <span class="stat-label">FOOD</span>
-                        <span class="stat-val">26%</span>
-                    </div>
-                    <div class="stat-col">
-                        <span class="stat-label">SHOP</span>
-                        <span class="stat-val">19%</span>
-                    </div>
-                    <div class="stat-col">
-                        <span class="stat-label">TRANS</span>
-                        <span class="stat-val">15%</span>
-                    </div>
-                    <div class="stat-col">
-                        <span class="stat-label">BILLS</span>
-                        <span class="stat-val">13%</span>
-                    </div>
-                </div>
-                <div class="detail-btn">View Breakdown ↗</div>
-            </div>
-        </div>
-
-        <!-- 5. Daily Activity Equalizer (Reference 5 Style) -->
-        <div class="card-wrapper">
-            <div class="card-label">
-                <span>5. Activity Equalizer</span>
-                <span class="pill">2x2</span>
-            </div>
-            <div class="widget-card w-equalizer">
-                <div class="top-date">25.08</div>
-                <div class="center-text">
-                    <div class="center-subtitle">TODAY'S SPENDING</div>
-                    <div class="huge-calories">780<span class="unit">₹</span></div>
-                </div>
-                <div class="bars-histogram">
-                    <div class="h-bar" style="height: 18px;"></div>
-                    <div class="h-bar" style="height: 48px;"></div>
-                    <div class="h-bar" style="height: 32px;"></div>
-                    <div class="h-bar" style="height: 40px;"></div>
-                    <div class="h-bar" style="height: 22px;"></div>
-                    <div class="h-bar" style="height: 52px;"></div>
-                    <div class="h-bar" style="height: 38px;"></div>
-                    <div class="h-bar" style="height: 14px;"></div>
-                    <div class="h-bar" style="height: 8px;"></div>
-                    <div class="h-bar" style="height: 26px;"></div>
-                    <div class="h-bar" style="height: 42px;"></div>
-                    <div class="h-bar" style="height: 22px;"></div>
-                    <div class="h-bar" style="height: 40px;"></div>
-                    <div class="h-bar" style="height: 64px;"></div>
-                    <div class="h-bar" style="height: 60px;"></div>
-                    <div class="h-bar" style="height: 45px;"></div>
-                    <div class="h-bar" style="height: 35px;"></div>
-                    <div class="h-bar" style="height: 45px;"></div>
-                    <div class="h-bar" style="height: 62px;"></div>
-                    <div class="h-bar" style="height: 50px;"></div>
-                    <div class="h-bar" style="height: 72px;"></div>
+                <div class="stat-col">
+                    <span class="stat-label cat-bills" id="lbl4">BILLS</span>
+                    <span class="stat-value" id="val4">77%</span>
                 </div>
             </div>
         </div>
-
     </div>
 
-    <!-- ═══════════════════════════════════════════════════════════════════════
-         SECTION 2: NEXT-GENERATION CONCEPT DESIGNS
-         ═══════════════════════════════════════════════════════════════════════ -->
-    <div class="section-title">
-        <span>Next-Generation Concepts (New Design Proposals)</span>
+    <!-- Quick Preview Data Switcher -->
+    <div class="control-bar">
+        <button class="toggle-btn active" onclick="setMode('expense')">Category Coded Colors</button>
+        <button class="toggle-btn" onclick="setMode('sleep')">Sleep Reference Palette (Monochrome Purple)</button>
     </div>
 
-    <div class="widget-grid">
+    <script>
+        function setMode(mode) {
+            const btns = document.querySelectorAll('.toggle-btn');
+            btns.forEach(b => b.classList.remove('active'));
 
-        <!-- Concept 1: Daily Spending Velocity Speedometer -->
-        <div class="card-wrapper">
-            <div class="card-label">
-                <span>Concept 1: Pace Speedometer</span>
-                <span class="pill">2x2</span>
-            </div>
-            <div class="widget-card w-velocity">
-                <div class="status-pill">● Safe Spending Pace</div>
-                <div class="speed-wrap">
-                    <svg viewBox="0 0 170 110">
-                        <defs>
-                            <linearGradient id="speedGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" stop-color="#06B6D4" />
-                                <stop offset="70%" stop-color="#3B82F6" />
-                                <stop offset="100%" stop-color="#EC4899" />
-                            </linearGradient>
-                        </defs>
-                        <path d="M 25 95 A 60 60 0 1 1 145 95" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="12" stroke-linecap="round" />
-                        <path d="M 25 95 A 60 60 0 1 1 145 95" fill="none" stroke="url(#speedGrad)" stroke-width="12" stroke-linecap="round" stroke-dasharray="270" stroke-dashoffset="140" />
-                    </svg>
-                    <div class="speed-center">
-                        <div class="speed-amt">₹420</div>
-                        <div class="speed-limit">/ ₹1,000 allowance</div>
-                    </div>
-                </div>
-                <div class="presets-row">
-                    <div class="preset-btn">+₹50</div>
-                    <div class="preset-btn">+₹150</div>
-                    <div class="preset-btn">+₹300</div>
-                </div>
-            </div>
-        </div>
+            if (mode === 'expense') {
+                btns[0].classList.add('active');
+                document.getElementById('lbl1').textContent = 'FOOD';
+                document.getElementById('lbl1').className = 'stat-label cat-food';
+                document.getElementById('val1').textContent = '52%';
 
-        <!-- Concept 2: Safe-To-Spend & Payday Countdown -->
-        <div class="card-wrapper">
-            <div class="card-label">
-                <span>Concept 2: Safe-To-Spend</span>
-                <span class="pill">2x2</span>
-            </div>
-            <div class="widget-card w-safespend">
-                <div class="safe-amt">₹1,250</div>
-                <div class="safe-label">SAFE TO SPEND TODAY</div>
-                <div class="progress-box">
-                    <div class="progress-bar">
-                        <div class="progress-fill"></div>
-                    </div>
-                    <div class="progress-sub">8 days until payday</div>
-                </div>
-                <div class="safe-btn">+ Quick Log</div>
-            </div>
-        </div>
+                document.getElementById('lbl2').textContent = 'SHOP';
+                document.getElementById('lbl2').className = 'stat-label cat-shop';
+                document.getElementById('val2').textContent = '32%';
 
-        <!-- Concept 3: Weekly Neon Waveform Chart -->
-        <div class="card-wrapper">
-            <div class="card-label">
-                <span>Concept 3: Weekly Waveform</span>
-                <span class="pill">2x2</span>
-            </div>
-            <div class="widget-card w-wave">
-                <div class="peak-tag">
-                    <div class="p-label">Peak</div>
-                    <div class="p-val">₹2,400 Sat</div>
-                </div>
-                <div class="wave-chart">
-                    <svg viewBox="0 0 200 80" preserveAspectRatio="none">
-                        <defs>
-                            <linearGradient id="waveFill" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stop-color="rgba(168, 85, 247, 0.4)" />
-                                <stop offset="100%" stop-color="rgba(168, 85, 247, 0)" />
-                            </linearGradient>
-                            <linearGradient id="waveLine" x1="0%" y1="0%" x2="100%" y2="0%">
-                                <stop offset="0%" stop-color="#10B981" />
-                                <stop offset="50%" stop-color="#06B6D4" />
-                                <stop offset="100%" stop-color="#A855F7" />
-                            </linearGradient>
-                        </defs>
-                        <path d="M 0 60 Q 30 10, 60 50 T 120 40 T 160 15 T 200 65 L 200 80 L 0 80 Z" fill="url(#waveFill)" />
-                        <path d="M 0 60 Q 30 10, 60 50 T 120 40 T 160 15 T 200 65" fill="none" stroke="url(#waveLine)" stroke-width="3.5" stroke-linecap="round" />
-                        <circle cx="160" cy="15" r="4.5" fill="#FFFFFF" stroke="#A855F7" stroke-width="2" />
-                    </svg>
-                </div>
-                <div class="days-row">
-                    <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span class="active-day">S</span><span>S</span>
-                </div>
-                <div class="bottom-spent">₹8,920<span>this week</span></div>
-            </div>
-        </div>
+                document.getElementById('lbl3').textContent = 'TRANS';
+                document.getElementById('lbl3').className = 'stat-label cat-trans';
+                document.getElementById('val3').textContent = '15%';
 
-        <!-- Concept 4: Category 3-Tile Instant Log Matrix -->
-        <div class="card-wrapper">
-            <div class="card-label">
-                <span>Concept 4: Quick 3-Category Matrix</span>
-                <span class="pill">2x2</span>
-            </div>
-            <div class="widget-card w-matrix">
-                <div class="cat-capsule">
-                    <div class="cat-left">
-                        <div class="cat-icon-box" style="background: rgba(239, 68, 68, 0.15); color: #EF4444;">🍔</div>
-                        <div class="cat-info">
-                            <div class="c-name">Food</div>
-                            <div class="c-amt">₹340</div>
-                        </div>
-                    </div>
-                    <div class="cat-add-btn">+</div>
-                </div>
-                <div class="cat-capsule">
-                    <div class="cat-left">
-                        <div class="cat-icon-box" style="background: rgba(59, 130, 246, 0.15); color: #3B82F6;">🚕</div>
-                        <div class="cat-info">
-                            <div class="c-name">Travel</div>
-                            <div class="c-amt">₹180</div>
-                        </div>
-                    </div>
-                    <div class="cat-add-btn">+</div>
-                </div>
-                <div class="cat-capsule">
-                    <div class="cat-left">
-                        <div class="cat-icon-box" style="background: rgba(245, 158, 11, 0.15); color: #F59E0B;">☕</div>
-                        <div class="cat-info">
-                            <div class="c-name">Coffee</div>
-                            <div class="c-amt">₹90</div>
-                        </div>
-                    </div>
-                    <div class="cat-add-btn">+</div>
-                </div>
-            </div>
-        </div>
+                document.getElementById('lbl4').textContent = 'BILLS';
+                document.getElementById('lbl4').className = 'stat-label cat-bills';
+                document.getElementById('val4').textContent = '77%';
 
-    </div>
+                document.getElementById('ring1').style.stroke = '#F59E0B';
+                document.getElementById('ring2').style.stroke = '#EC4899';
+                document.getElementById('ring3').style.stroke = '#38BDF8';
+                document.getElementById('ring4').style.stroke = '#A78BFA';
+            } else {
+                btns[1].classList.add('active');
+                document.getElementById('lbl1').textContent = 'DEEP';
+                document.getElementById('lbl1').className = 'stat-label';
+                document.getElementById('lbl1').style.color = '#A78BFA';
+                document.getElementById('val1').textContent = '52%';
+
+                document.getElementById('lbl2').textContent = 'LIGHT';
+                document.getElementById('lbl2').className = 'stat-label';
+                document.getElementById('lbl2').style.color = '#A78BFA';
+                document.getElementById('val2').textContent = '32%';
+
+                document.getElementById('lbl3').textContent = 'AWAKE';
+                document.getElementById('lbl3').className = 'stat-label';
+                document.getElementById('lbl3').style.color = '#A78BFA';
+                document.getElementById('val3').textContent = '9h 8m';
+
+                document.getElementById('lbl4').textContent = 'QUALITY';
+                document.getElementById('lbl4').className = 'stat-label';
+                document.getElementById('lbl4').style.color = '#A78BFA';
+                document.getElementById('val4').textContent = '77%';
+
+                document.getElementById('ring1').style.stroke = '#8B7CF6';
+                document.getElementById('ring2').style.stroke = '#7C6AED';
+                document.getElementById('ring3').style.stroke = '#6D5AE0';
+                document.getElementById('ring4').style.stroke = '#5C4AD1';
+            }
+        }
+    </script>
 
 </body>
 

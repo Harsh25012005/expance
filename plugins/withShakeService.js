@@ -2,12 +2,9 @@
  * Expo Config Plugin: withShakeService
  *
  * Injects the native Android ShakeService foreground service, ShakeServiceModule,
- * ShakeServicePackage, BootReceiver, ReminderReceiver, WidgetChartUtils, and all 5 Home Screen AppWidgets:
- * 1. Budget Usage & Controls (BudgetWidgetProvider - Ref 1)
- * 2. Monthly Total Spent (QuickAddWidgetProvider - Ref 2)
- * 3. Today's Spending (TodaySpendingWidgetProvider - Ref 3)
- * 4. Where Did It Go? Concentric Rings (WhereDidItGoWidgetProvider - Ref 4)
- * 5. Daily Activity Equalizer (BudgetProgressWidgetProvider - Ref 5)
+ * ShakeServicePackage, BootReceiver, ReminderReceiver, RingRenderer, and the
+ * single Category Concentric Rings Widget:
+ * - CategoryWidgetProvider (with dynamic per-category colors)
  */
 const {
   withAndroidManifest,
@@ -369,233 +366,78 @@ class BootReceiver : BroadcastReceiver() {
 }
 `;
 
-// ─── WidgetChartUtils.kt source ──────────────────────────────────────────────
-const WIDGET_CHART_UTILS_KT = `package {{PACKAGE}}
+// ─── RingRenderer.kt source ──────────────────────────────────────────────────
+const RING_RENDERER_KT = `package {{PACKAGE}}
 
-import android.content.Context
-import android.graphics.*
-import kotlin.math.cos
-import kotlin.math.sin
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
 
-object WidgetChartUtils {
+object RingRenderer {
 
-    private fun dpToPx(context: Context, dp: Float): Float {
-        return dp * context.resources.displayMetrics.density
-    }
+    private val defaultColors = listOf(
+        "#F59E0B",
+        "#EC4899",
+        "#38BDF8",
+        "#A78BFA"
+    )
 
-    fun drawGradientArcGauge(
-        context: Context,
-        progressPct: Int,
-        widthDp: Float = 170f,
-        heightDp: Float = 120f,
-        strokeWidthDp: Float = 13f
+    fun draw(
+        sizePx: Int,
+        values: List<Float>,
+        colors: List<String> = defaultColors,
+        strokeWidthPx: Float = sizePx * 0.055f
     ): Bitmap {
-        val widthPx = dpToPx(context, widthDp).toInt().coerceAtLeast(1)
-        val heightPx = dpToPx(context, heightDp).toInt().coerceAtLeast(1)
+        val safeValues = if (values.size >= 4) values else listOf(0.52f, 0.32f, 0.15f, 0.77f)
 
-        val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-
-        val strokePx = dpToPx(context, strokeWidthDp)
-        val padding = strokePx / 2f + dpToPx(context, 4f)
-        val arcSize = (widthPx - padding * 2).coerceAtMost(heightPx * 1.5f)
-
-        val rect = RectF(
-            (widthPx - arcSize) / 2f,
-            padding,
-            (widthPx + arcSize) / 2f,
-            padding + arcSize
-        )
-
-        val startAngle = 140f
-        val totalAngle = 260f
-
-        val paintTrack = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#25FFFFFF")
-            style = Paint.Style.STROKE
-            strokeWidth = strokePx
-            strokeCap = Paint.Cap.ROUND
-        }
-        canvas.drawArc(rect, startAngle, totalAngle, false, paintTrack)
-
-        val activeSweep = ((progressPct.coerceIn(0, 100) / 100f) * totalAngle).coerceAtLeast(4f)
-        val colors = intArrayOf(
-            Color.parseColor("#38BDF8"),
-            Color.parseColor("#818CF8"),
-            Color.parseColor("#FB7185")
-        )
-        val positions = floatArrayOf(0f, 0.5f, 1f)
-
-        val gradient = LinearGradient(
-            rect.left, rect.top, rect.right, rect.bottom,
-            colors, positions, Shader.TileMode.CLAMP
-        )
-
-        val paintProgress = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            shader = gradient
-            style = Paint.Style.STROKE
-            strokeWidth = strokePx
-            strokeCap = Paint.Cap.ROUND
-        }
-        canvas.drawArc(rect, startAngle, activeSweep, false, paintProgress)
-
-        val endAngleRad = Math.toRadians((startAngle + activeSweep).toDouble())
-        val radius = arcSize / 2f
-        val centerX = rect.centerX()
-        val centerY = rect.centerY()
-        val notchX = (centerX + radius * cos(endAngleRad)).toFloat()
-        val notchY = (centerY + radius * sin(endAngleRad)).toFloat()
-
-        val paintNotch = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            style = Paint.Style.FILL
-        }
-        canvas.drawCircle(notchX, notchY, dpToPx(context, 4.5f), paintNotch)
-
-        return bitmap
-    }
-
-    fun drawMiniProgressRing(
-        context: Context,
-        count: Int,
-        maxCount: Int = 10,
-        sizeDp: Float = 34f
-    ): Bitmap {
-        val sizePx = dpToPx(context, sizeDp).toInt().coerceAtLeast(1)
         val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
-        val strokePx = dpToPx(context, 3f)
-        val padding = strokePx / 2f + dpToPx(context, 1f)
-        val rect = RectF(padding, padding, sizePx - padding, sizePx - padding)
-
-        val paintTrack = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#1E3A5F")
+        val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            strokeWidth = strokePx
-        }
-        canvas.drawArc(rect, 0f, 360f, false, paintTrack)
-
-        val ratio = (count.toFloat() / maxCount.coerceAtLeast(1).toFloat()).coerceIn(0.1f, 1f)
-        val sweepAngle = ratio * 360f
-
-        val paintProgress = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#0075FF")
-            style = Paint.Style.STROKE
-            strokeWidth = strokePx
+            strokeWidth = strokeWidthPx
             strokeCap = Paint.Cap.ROUND
         }
-        canvas.drawArc(rect, -90f, sweepAngle, false, paintProgress)
 
-        val paintText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            textSize = dpToPx(context, 11f)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textAlign = Paint.Align.CENTER
+        val progressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = strokeWidthPx
+            strokeCap = Paint.Cap.ROUND
         }
-        val textY = (sizePx / 2f) - ((paintText.descent() + paintText.ascent()) / 2f)
-        canvas.drawText(count.toString(), sizePx / 2f, textY, paintText)
 
-        return bitmap
-    }
-
-    data class ConcentricSlice(val name: String, val percent: Int, val colorHex: String)
-
-    fun drawConcentricRings(
-        context: Context,
-        slices: List<ConcentricSlice>,
-        sizeDp: Float = 110f
-    ): Bitmap {
-        val sizePx = dpToPx(context, sizeDp).toInt().coerceAtLeast(1)
-        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-
+        val gap = strokeWidthPx * 1.5f
         val center = sizePx / 2f
-        val ringWidth = dpToPx(context, 5.5f)
-        val gap = dpToPx(context, 4f)
-
-        val defaultColors = listOf("#A78BFA", "#60A5FA", "#22D3EE", "#FB923C")
+        var radius = center - strokeWidthPx
+        val startAngle = -90f
 
         for (i in 0 until 4) {
-            val radius = (center - dpToPx(context, 8f)) - (i * (ringWidth + gap))
-            if (radius <= 0) continue
+            val rect = RectF(
+                center - radius, center - radius,
+                center + radius, center + radius
+            )
 
-            val rect = RectF(center - radius, center - radius, center + radius, center + radius)
-            val slice = if (i < slices.size) slices[i] else null
-            val pct = slice?.percent ?: (30 - i * 5)
-            val colorHex = slice?.colorHex ?: defaultColors[i % defaultColors.size]
-
+            val colorHex = if (i < colors.size && colors[i].isNotEmpty()) colors[i] else defaultColors[i % defaultColors.size]
             val parsedColor = try {
                 Color.parseColor(colorHex)
             } catch (e: Exception) {
                 Color.parseColor(defaultColors[i % defaultColors.size])
             }
 
-            val paintTrack = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.argb(45, Color.red(parsedColor), Color.green(parsedColor), Color.blue(parsedColor))
-                style = Paint.Style.STROKE
-                strokeWidth = ringWidth
-            }
-            canvas.drawArc(rect, 0f, 360f, false, paintTrack)
+            trackPaint.color = Color.argb(
+                55,
+                Color.red(parsedColor),
+                Color.green(parsedColor),
+                Color.blue(parsedColor)
+            )
+            canvas.drawArc(rect, 0f, 360f, false, trackPaint)
 
-            val sweepAngle = ((pct.coerceIn(5, 100) / 100f) * 360f).coerceAtLeast(12f)
-            val paintActive = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = parsedColor
-                style = Paint.Style.STROKE
-                strokeWidth = ringWidth
-                strokeCap = Paint.Cap.ROUND
-            }
-            canvas.drawArc(rect, -90f, sweepAngle, false, paintActive)
-        }
+            val pct = safeValues[i].coerceIn(0.04f, 1f)
+            progressPaint.color = parsedColor
+            canvas.drawArc(rect, startAngle, 360f * pct, false, progressPaint)
 
-        return bitmap
-    }
-
-    fun drawEqualizerBars(
-        context: Context,
-        barRatios: FloatArray,
-        widthDp: Float = 260f,
-        heightDp: Float = 68f
-    ): Bitmap {
-        val widthPx = dpToPx(context, widthDp).toInt().coerceAtLeast(1)
-        val heightPx = dpToPx(context, heightDp).toInt().coerceAtLeast(1)
-
-        val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-
-        val totalBars = 20
-        val spacing = dpToPx(context, 3.5f)
-        val totalSpacing = spacing * (totalBars - 1)
-        val barWidth = (widthPx - totalSpacing) / totalBars
-        val radius = barWidth / 2f
-
-        val paintBar = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#84CC16")
-            style = Paint.Style.FILL
-        }
-
-        val defaultPattern = floatArrayOf(
-            0.25f, 0.65f, 0.45f, 0.55f, 0.3f, 0.7f, 0.5f, 0.2f, 0.12f, 0.35f,
-            0.6f, 0.3f, 0.55f, 0.9f, 0.85f, 0.6f, 0.45f, 0.6f, 0.88f, 0.75f
-        )
-
-        for (i in 0 until totalBars) {
-            val ratio = if (i < barRatios.size && barRatios[i] > 0f) {
-                barRatios[i].coerceIn(0.1f, 1f)
-            } else {
-                defaultPattern[i % defaultPattern.size]
-            }
-
-            val minHeightPx = dpToPx(context, 8f)
-            val barHeight = minHeightPx + (ratio * (heightPx - minHeightPx))
-
-            val left = i * (barWidth + spacing)
-            val right = left + barWidth
-            val top = heightPx - barHeight
-            val bottom = heightPx.toFloat()
-
-            val rect = RectF(left, top, right, bottom)
-            canvas.drawRoundRect(rect, radius, radius, paintBar)
+            radius -= gap
         }
 
         return bitmap
@@ -603,8 +445,8 @@ object WidgetChartUtils {
 }
 `;
 
-// ─── TodaySpendingWidgetProvider.kt source ──────────────────────────────────
-const TODAY_SPENDING_WIDGET_PROVIDER_KT = `package {{PACKAGE}}
+// ─── CategoryWidgetProvider.kt source ───────────────────────────────────────
+const CATEGORY_WIDGET_PROVIDER_KT = `package {{PACKAGE}}
 
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
@@ -612,284 +454,16 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.util.Log
-import android.widget.RemoteViews
-import java.util.Locale
-
-class TodaySpendingWidgetProvider : AppWidgetProvider() {
-
-    companion object {
-        private const val TAG = "TodaySpendingWidget"
-        const val PREFS_NAME = "expenza_widget_data"
-        const val KEY_TODAY_SPENT = "today_spent"
-        const val KEY_TODAY_COUNT = "today_count"
-        const val KEY_CURRENCY = "currency"
-
-        fun updateAllWidgets(context: Context) {
-            try {
-                val appWidgetManager = AppWidgetManager.getInstance(context)
-                val componentName = ComponentName(context, TodaySpendingWidgetProvider::class.java)
-                val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-                if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
-                    val provider = TodaySpendingWidgetProvider()
-                    provider.onUpdate(context, appWidgetManager, appWidgetIds)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error updating today spending widgets", e)
-            }
-        }
-    }
-
-    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val todaySpent = prefs.getFloat(KEY_TODAY_SPENT, 0f).toDouble()
-        val todayCount = prefs.getInt(KEY_TODAY_COUNT, 0)
-        val currency = prefs.getString(KEY_CURRENCY, "₹") ?: "₹"
-
-        val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        } else {
-            PendingIntent.FLAG_UPDATE_CURRENT
-        }
-
-        val addExpenseIntent = Intent(context, MainActivity::class.java).apply {
-            action = "ADD_EXPENSE"
-            data = Uri.parse("expenza://add-expense")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            putExtra("action", "ADD_EXPENSE")
-        }
-        val pendingIntent = PendingIntent.getActivity(context, 304, addExpenseIntent, pendingFlags)
-
-        for (appWidgetId in appWidgetIds) {
-            try {
-                val views = RemoteViews(context.packageName, R.layout.widget_today_spending)
-
-                val amountStr = if (todaySpent == 0.0) {
-                    "$currency 0"
-                } else if (todaySpent == todaySpent.toLong().toDouble()) {
-                    String.format(Locale.getDefault(), "%s %,d", currency, todaySpent.toLong())
-                } else {
-                    String.format(Locale.getDefault(), "%s %,.2f", currency, todaySpent)
-                }
-                views.setTextViewText(R.id.widget_today_amount, amountStr)
-
-                val ringBitmap = WidgetChartUtils.drawMiniProgressRing(context, todayCount, 10, 32f)
-                views.setImageViewBitmap(R.id.widget_today_mini_ring, ringBitmap)
-
-                views.setOnClickPendingIntent(R.id.widget_today_root, pendingIntent)
-                views.setOnClickPendingIntent(R.id.widget_today_btn, pendingIntent)
-                appWidgetManager.updateAppWidget(appWidgetId, views)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error rendering TodaySpendingWidget", e)
-            }
-        }
-    }
-}
-`;
-
-// ─── QuickAddWidgetProvider.kt source ───────────────────────────────────────
-const QUICK_ADD_WIDGET_PROVIDER_KT = `package {{PACKAGE}}
-
-import android.app.PendingIntent
-import android.appwidget.AppWidgetManager
-import android.appwidget.AppWidgetProvider
-import android.content.ComponentName
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.util.Log
-import android.widget.RemoteViews
-import java.util.Locale
-
-class QuickAddWidgetProvider : AppWidgetProvider() {
-
-    companion object {
-        private const val TAG = "QuickAddWidget"
-        const val PREFS_NAME = "expenza_widget_data"
-        const val KEY_MONTH_SPENT = "month_spent"
-        const val KEY_CURRENCY = "currency"
-
-        fun updateAllWidgets(context: Context) {
-            try {
-                val appWidgetManager = AppWidgetManager.getInstance(context)
-                val componentName = ComponentName(context, QuickAddWidgetProvider::class.java)
-                val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-                if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
-                    val provider = QuickAddWidgetProvider()
-                    provider.onUpdate(context, appWidgetManager, appWidgetIds)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error updating quick add widgets", e)
-            }
-        }
-    }
-
-    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val monthSpent = prefs.getFloat(KEY_MONTH_SPENT, 0f).toDouble()
-        val currency = prefs.getString(KEY_CURRENCY, "₹") ?: "₹"
-
-        val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        } else {
-            PendingIntent.FLAG_UPDATE_CURRENT
-        }
-
-        val addExpenseIntent = Intent(context, MainActivity::class.java).apply {
-            action = "ADD_EXPENSE"
-            data = Uri.parse("expenza://add-expense")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            putExtra("action", "ADD_EXPENSE")
-        }
-        val pendingIntent = PendingIntent.getActivity(context, 303, addExpenseIntent, pendingFlags)
-
-        for (appWidgetId in appWidgetIds) {
-            try {
-                val views = RemoteViews(context.packageName, R.layout.widget_quick_add)
-
-                val amountStr = if (monthSpent >= 1000) {
-                    String.format(Locale.getDefault(), "%s%,d", currency, monthSpent.toLong())
-                } else {
-                    String.format(Locale.getDefault(), "%s%d", currency, monthSpent.toLong())
-                }
-                views.setTextViewText(R.id.widget_quick_add_amount, amountStr)
-                views.setTextViewText(R.id.widget_quick_add_trend, "↑ Active Tracking")
-
-                views.setOnClickPendingIntent(R.id.widget_quick_add_root, pendingIntent)
-                views.setOnClickPendingIntent(R.id.widget_quick_add_btn, pendingIntent)
-                appWidgetManager.updateAppWidget(appWidgetId, views)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error rendering QuickAddWidget", e)
-            }
-        }
-    }
-}
-`;
-
-// ─── BudgetWidgetProvider.kt source ─────────────────────────────────────────
-const BUDGET_WIDGET_PROVIDER_KT = `package {{PACKAGE}}
-
-import android.app.PendingIntent
-import android.appwidget.AppWidgetManager
-import android.appwidget.AppWidgetProvider
-import android.content.ComponentName
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.util.Log
-import android.widget.RemoteViews
-import java.util.Locale
-
-class BudgetWidgetProvider : AppWidgetProvider() {
-
-    companion object {
-        private const val TAG = "BudgetWidget"
-        const val PREFS_NAME = "expenza_widget_data"
-        const val KEY_MONTHLY_BUDGET = "monthly_budget"
-        const val KEY_MONTH_SPENT = "month_spent"
-        const val KEY_CURRENCY = "currency"
-
-        fun updateAllWidgets(context: Context) {
-            try {
-                val appWidgetManager = AppWidgetManager.getInstance(context)
-                val componentName = ComponentName(context, BudgetWidgetProvider::class.java)
-                val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-                if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
-                    val provider = BudgetWidgetProvider()
-                    provider.onUpdate(context, appWidgetManager, appWidgetIds)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error updating budget widgets", e)
-            }
-        }
-    }
-
-    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val monthlyBudget = prefs.getFloat(KEY_MONTHLY_BUDGET, 0f).toDouble()
-        val monthSpent = prefs.getFloat(KEY_MONTH_SPENT, 0f).toDouble()
-        val currency = prefs.getString(KEY_CURRENCY, "₹") ?: "₹"
-
-        val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        } else {
-            PendingIntent.FLAG_UPDATE_CURRENT
-        }
-
-        val addExpenseIntent = Intent(context, MainActivity::class.java).apply {
-            action = "ADD_EXPENSE"
-            data = Uri.parse("expenza://add-expense")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            putExtra("action", "ADD_EXPENSE")
-        }
-        val addPendingIntent = PendingIntent.getActivity(context, 301, addExpenseIntent, pendingFlags)
-
-        val openBudgetIntent = Intent(context, MainActivity::class.java).apply {
-            action = "OPEN_SET_BUDGET"
-            data = Uri.parse("expenza://set-budget")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            putExtra("action", "OPEN_SET_BUDGET")
-        }
-        val budgetPendingIntent = PendingIntent.getActivity(context, 302, openBudgetIntent, pendingFlags)
-
-        for (appWidgetId in appWidgetIds) {
-            try {
-                val views = RemoteViews(context.packageName, R.layout.widget_budget)
-
-                val percentage = if (monthlyBudget > 0) {
-                    ((monthSpent / monthlyBudget) * 100).toInt()
-                } else {
-                    0
-                }
-
-                views.setTextViewText(R.id.widget_budget_pct, "$percentage%")
-
-                val spentFormatted = if (monthSpent >= 1000) {
-                    String.format(Locale.getDefault(), "%s%,d spent", currency, monthSpent.toLong())
-                } else {
-                    String.format(Locale.getDefault(), "%s%d spent", currency, monthSpent.toLong())
-                }
-                views.setTextViewText(R.id.widget_budget_sub, spentFormatted)
-
-                val gaugeBitmap = WidgetChartUtils.drawGradientArcGauge(context, percentage, 170f, 115f, 13f)
-                views.setImageViewBitmap(R.id.widget_budget_gauge, gaugeBitmap)
-
-                views.setOnClickPendingIntent(R.id.widget_budget_root, budgetPendingIntent)
-                views.setOnClickPendingIntent(R.id.widget_budget_btn_minus, addPendingIntent)
-                views.setOnClickPendingIntent(R.id.widget_budget_btn_add, addPendingIntent)
-                views.setOnClickPendingIntent(R.id.widget_budget_btn_more, budgetPendingIntent)
-
-                appWidgetManager.updateAppWidget(appWidgetId, views)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error rendering BudgetWidget", e)
-            }
-        }
-    }
-}
-`;
-
-// ─── WhereDidItGoWidgetProvider.kt source ───────────────────────────────────
-const WHERE_DID_IT_GO_WIDGET_PROVIDER_KT = `package {{PACKAGE}}
-
-import android.app.PendingIntent
-import android.appwidget.AppWidgetManager
-import android.appwidget.AppWidgetProvider
-import android.content.ComponentName
-import android.content.Context
-import android.content.Intent
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.util.Log
 import android.widget.RemoteViews
 
-class WhereDidItGoWidgetProvider : AppWidgetProvider() {
+class CategoryWidgetProvider : AppWidgetProvider() {
 
     companion object {
-        private const val TAG = "WhereDidItGoWidget"
+        private const val TAG = "CategoryWidgetProvider"
         const val PREFS_NAME = "expenza_widget_data"
 
         const val KEY_CAT1_NAME = "cat1_name"
@@ -911,38 +485,63 @@ class WhereDidItGoWidgetProvider : AppWidgetProvider() {
         fun updateAllWidgets(context: Context) {
             try {
                 val appWidgetManager = AppWidgetManager.getInstance(context)
-                val componentName = ComponentName(context, WhereDidItGoWidgetProvider::class.java)
+                val componentName = ComponentName(context, CategoryWidgetProvider::class.java)
                 val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
                 if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
-                    val provider = WhereDidItGoWidgetProvider()
+                    val provider = CategoryWidgetProvider()
                     provider.onUpdate(context, appWidgetManager, appWidgetIds)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error updating where did it go widgets", e)
+                Log.e(TAG, "Error updating category widget", e)
+            }
+        }
+
+        private fun shortenLabel(name: String): String {
+            return when (name.uppercase()) {
+                "FOOD", "FOOD & DRINK", "GROCERIES", "FOOD & DINING" -> "FOOD"
+                "SHOPPING" -> "SHOP"
+                "TRANSPORTATION", "TRAVEL", "TRANSPORT" -> "TRANS"
+                "BILLS", "UTILITIES", "BILLS & UTILITIES" -> "BILLS"
+                "ENTERTAINMENT" -> "FUN"
+                "HEALTH", "HEALTH & MEDICAL" -> "HLTH"
+                "EDUCATION" -> "EDU"
+                else -> if (name.length > 5) name.substring(0, 4).uppercase() else name.uppercase()
+            }
+        }
+
+        private fun parseColorSafe(colorHex: String, fallbackHex: String): Int {
+            return try {
+                Color.parseColor(colorHex)
+            } catch (e: Exception) {
+                Color.parseColor(fallbackHex)
             }
         }
     }
 
-    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+    override fun onUpdate(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetIds: IntArray
+    ) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
         val cat1Name = prefs.getString(KEY_CAT1_NAME, "FOOD")?.takeIf { it.isNotEmpty() } ?: "FOOD"
-        val cat1Pct = prefs.getInt(KEY_CAT1_PCT, 26)
-        val cat1Color = prefs.getString(KEY_CAT1_COLOR, "#A78BFA") ?: "#A78BFA"
+        val cat1Pct = prefs.getInt(KEY_CAT1_PCT, 52)
+        val cat1Color = prefs.getString(KEY_CAT1_COLOR, "#F59E0B") ?: "#F59E0B"
 
         val cat2Name = prefs.getString(KEY_CAT2_NAME, "SHOP")?.takeIf { it.isNotEmpty() } ?: "SHOP"
-        val cat2Pct = prefs.getInt(KEY_CAT2_PCT, 19)
-        val cat2Color = prefs.getString(KEY_CAT2_COLOR, "#60A5FA") ?: "#60A5FA"
+        val cat2Pct = prefs.getInt(KEY_CAT2_PCT, 32)
+        val cat2Color = prefs.getString(KEY_CAT2_COLOR, "#EC4899") ?: "#EC4899"
 
         val cat3Name = prefs.getString(KEY_CAT3_NAME, "TRANS")?.takeIf { it.isNotEmpty() } ?: "TRANS"
         val cat3Pct = prefs.getInt(KEY_CAT3_PCT, 15)
-        val cat3Color = prefs.getString(KEY_CAT3_COLOR, "#22D3EE") ?: "#22D3EE"
+        val cat3Color = prefs.getString(KEY_CAT3_COLOR, "#38BDF8") ?: "#38BDF8"
 
         val cat4Name = prefs.getString(KEY_CAT4_NAME, "BILLS")?.takeIf { it.isNotEmpty() } ?: "BILLS"
-        val cat4Pct = prefs.getInt(KEY_CAT4_PCT, 13)
-        val cat4Color = prefs.getString(KEY_CAT4_COLOR, "#FB923C") ?: "#FB923C"
+        val cat4Pct = prefs.getInt(KEY_CAT4_PCT, 77)
+        val cat4Color = prefs.getString(KEY_CAT4_COLOR, "#A78BFA") ?: "#A78BFA"
 
-        val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         } else {
             PendingIntent.FLAG_UPDATE_CURRENT
@@ -954,173 +553,51 @@ class WhereDidItGoWidgetProvider : AppWidgetProvider() {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra("action", "VIEW_ANALYTICS")
         }
-        val pendingIntent = PendingIntent.getActivity(context, 305, openAppIntent, pendingFlags)
+        val pendingIntent = PendingIntent.getActivity(context, 401, openAppIntent, flags)
 
-        val slices = listOf(
-            WidgetChartUtils.ConcentricSlice(cat1Name, cat1Pct, cat1Color),
-            WidgetChartUtils.ConcentricSlice(cat2Name, cat2Pct, cat2Color),
-            WidgetChartUtils.ConcentricSlice(cat3Name, cat3Pct, cat3Color),
-            WidgetChartUtils.ConcentricSlice(cat4Name, cat4Pct, cat4Color)
+        val ringValues = listOf(
+            (cat1Pct / 100f).coerceIn(0.05f, 1f),
+            (cat2Pct / 100f).coerceIn(0.05f, 1f),
+            (cat3Pct / 100f).coerceIn(0.05f, 1f),
+            (cat4Pct / 100f).coerceIn(0.05f, 1f)
         )
 
-        fun shortenLabel(name: String): String {
-            return when (name.uppercase()) {
-                "FOOD", "FOOD & DRINK", "GROCERIES" -> "FOOD"
-                "SHOPPING" -> "SHOP"
-                "TRANSPORTATION", "TRAVEL" -> "TRANS"
-                "BILLS", "UTILITIES" -> "BILLS"
-                "ENTERTAINMENT" -> "FUN"
-                "HEALTH" -> "HLTH"
-                else -> if (name.length > 5) name.substring(0, 4).uppercase() else name.uppercase()
-            }
-        }
+        val ringColors = listOf(cat1Color, cat2Color, cat3Color, cat4Color)
 
-        for (appWidgetId in appWidgetIds) {
+        val density = context.resources.displayMetrics.density
+        val ringSizePx = (160 * density).toInt().coerceAtLeast(200)
+        val bitmap = RingRenderer.draw(sizePx = ringSizePx, values = ringValues, colors = ringColors)
+
+        for (widgetId in appWidgetIds) {
             try {
-                val views = RemoteViews(context.packageName, R.layout.widget_where_did_it_go)
+                val views = RemoteViews(context.packageName, R.layout.widget_category_card)
 
-                val ringsBitmap = WidgetChartUtils.drawConcentricRings(context, slices, 106f)
-                views.setImageViewBitmap(R.id.widget_breakdown_rings, ringsBitmap)
+                views.setImageViewBitmap(R.id.widget_category_rings, bitmap)
 
-                views.setTextViewText(R.id.widget_cat1_label, shortenLabel(cat1Name))
-                views.setTextViewText(R.id.widget_cat1_pct, "$cat1Pct%")
+                views.setTextViewText(R.id.widget_stat_deep_label, shortenLabel(cat1Name))
+                views.setTextColor(R.id.widget_stat_deep_label, parseColorSafe(cat1Color, "#F59E0B"))
+                views.setTextViewText(R.id.widget_stat_deep_value, "$cat1Pct%")
 
-                views.setTextViewText(R.id.widget_cat2_label, shortenLabel(cat2Name))
-                views.setTextViewText(R.id.widget_cat2_pct, "$cat2Pct%")
+                views.setTextViewText(R.id.widget_stat_light_label, shortenLabel(cat2Name))
+                views.setTextColor(R.id.widget_stat_light_label, parseColorSafe(cat2Color, "#EC4899"))
+                views.setTextViewText(R.id.widget_stat_light_value, "$cat2Pct%")
 
-                views.setTextViewText(R.id.widget_cat3_label, shortenLabel(cat3Name))
-                views.setTextViewText(R.id.widget_cat3_pct, "$cat3Pct%")
+                views.setTextViewText(R.id.widget_stat_awake_label, shortenLabel(cat3Name))
+                views.setTextColor(R.id.widget_stat_awake_label, parseColorSafe(cat3Color, "#38BDF8"))
+                views.setTextViewText(R.id.widget_stat_awake_value, "$cat3Pct%")
 
-                views.setTextViewText(R.id.widget_cat4_label, shortenLabel(cat4Name))
-                views.setTextViewText(R.id.widget_cat4_pct, "$cat4Pct%")
+                views.setTextViewText(R.id.widget_stat_quality_label, shortenLabel(cat4Name))
+                views.setTextColor(R.id.widget_stat_quality_label, parseColorSafe(cat4Color, "#A78BFA"))
+                views.setTextViewText(R.id.widget_stat_quality_value, "$cat4Pct%")
 
-                views.setOnClickPendingIntent(R.id.widget_breakdown_root, pendingIntent)
-                views.setOnClickPendingIntent(R.id.widget_breakdown_btn, pendingIntent)
-                appWidgetManager.updateAppWidget(appWidgetId, views)
+                views.setOnClickPendingIntent(R.id.widget_category_root, pendingIntent)
+
+                appWidgetManager.updateAppWidget(widgetId, views)
             } catch (e: Exception) {
-                Log.e(TAG, "Error rendering WhereDidItGoWidget", e)
+                Log.e(TAG, "Error updating widgetId: $widgetId", e)
             }
         }
     }
-}
-`;
-
-// ─── BudgetProgressWidgetProvider.kt source ─────────────────────────────────
-const BUDGET_PROGRESS_WIDGET_PROVIDER_KT = `package {{PACKAGE}}
-
-import android.app.PendingIntent
-import android.appwidget.AppWidgetManager
-import android.appwidget.AppWidgetProvider
-import android.content.ComponentName
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.util.Log
-import android.widget.RemoteViews
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-
-class BudgetProgressWidgetProvider : AppWidgetProvider() {
-
-    companion object {
-        private const val TAG = "BudgetProgressWidget"
-        const val PREFS_NAME = "expenza_widget_data"
-        const val KEY_TODAY_SPENT = "today_spent"
-        const val KEY_TODAY_BARS = "today_bars"
-        const val KEY_CURRENCY = "currency"
-
-        fun updateAllWidgets(context: Context) {
-            try {
-                val appWidgetManager = AppWidgetManager.getInstance(context)
-                val componentName = ComponentName(context, BudgetProgressWidgetProvider::class.java)
-                val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-                if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
-                    val provider = BudgetProgressWidgetProvider()
-                    provider.onUpdate(context, appWidgetManager, appWidgetIds)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error updating budget progress widgets", e)
-            }
-        }
-    }
-
-    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val todaySpent = prefs.getFloat(KEY_TODAY_SPENT, 0f).toDouble()
-        val barsRaw = prefs.getString(KEY_TODAY_BARS, "") ?: ""
-        val currency = prefs.getString(KEY_CURRENCY, "₹") ?: "₹"
-
-        val barValues = if (barsRaw.isNotEmpty()) {
-            try {
-                barsRaw.split(",").map { it.trim().toFloatOrNull() ?: 0f }.toFloatArray()
-            } catch (e: Exception) {
-                floatArrayOf()
-            }
-        } else {
-            floatArrayOf()
-        }
-
-        val dateFormat = SimpleDateFormat("dd.MM", Locale.getDefault())
-        val dateStr = dateFormat.format(Date())
-
-        val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        } else {
-            PendingIntent.FLAG_UPDATE_CURRENT
-        }
-
-        val openTodayIntent = Intent(context, MainActivity::class.java).apply {
-            action = "VIEW_TODAY_EXPENSES"
-            data = Uri.parse("expenza://today")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            putExtra("action", "VIEW_TODAY_EXPENSES")
-        }
-        val pendingIntent = PendingIntent.getActivity(context, 306, openTodayIntent, pendingFlags)
-
-        for (appWidgetId in appWidgetIds) {
-            try {
-                val views = RemoteViews(context.packageName, R.layout.widget_budget_progress)
-
-                views.setTextViewText(R.id.widget_budget_prog_month, dateStr)
-
-                val amountStr = if (todaySpent == 0.0) {
-                    "0"
-                } else if (todaySpent == todaySpent.toLong().toDouble()) {
-                    String.format(Locale.getDefault(), "%,d", todaySpent.toLong())
-                } else {
-                    String.format(Locale.getDefault(), "%,.2f", todaySpent)
-                }
-                views.setTextViewText(R.id.widget_budget_prog_remaining, amountStr)
-                views.setTextViewText(R.id.widget_budget_prog_target, " $currency")
-
-                val equalizerBitmap = WidgetChartUtils.drawEqualizerBars(context, barValues, 260f, 68f)
-                views.setImageViewBitmap(R.id.widget_budget_prog_gauge, equalizerBitmap)
-
-                views.setOnClickPendingIntent(R.id.widget_budget_prog_root, pendingIntent)
-                appWidgetManager.updateAppWidget(appWidgetId, views)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error rendering BudgetProgressWidget", e)
-            }
-        }
-    }
-}
-`;
-
-// ─── ShakeServicePackage.kt source ───────────────────────────────────────────
-const SHAKE_SERVICE_PACKAGE_KT = `package {{PACKAGE}}
-
-import com.facebook.react.ReactPackage
-import com.facebook.react.bridge.NativeModule
-import com.facebook.react.bridge.ReactApplicationContext
-import com.facebook.react.uimanager.ViewManager
-
-class ShakeServicePackage : ReactPackage {
-    override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
-        return listOf(ShakeServiceModule(reactContext))
-    }
-    override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> = emptyList()
 }
 `;
 
@@ -1160,11 +637,7 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
 
         fun updateAllWidgets(context: android.content.Context) {
             try {
-                TodaySpendingWidgetProvider.updateAllWidgets(context)
-                QuickAddWidgetProvider.updateAllWidgets(context)
-                BudgetWidgetProvider.updateAllWidgets(context)
-                WhereDidItGoWidgetProvider.updateAllWidgets(context)
-                BudgetProgressWidgetProvider.updateAllWidgets(context)
+                CategoryWidgetProvider.updateAllWidgets(context)
             } catch (e: Exception) {
                 Log.e(TAG, "Error triggering updateAllWidgets", e)
             }
@@ -1269,35 +742,32 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
             val context = reactApplicationContext
             val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
             prefs.edit().apply {
-                putFloat(TodaySpendingWidgetProvider.KEY_TODAY_SPENT, todaySpent.toFloat())
-                putInt(TodaySpendingWidgetProvider.KEY_TODAY_COUNT, todayCount.toInt())
-                putString(BudgetProgressWidgetProvider.KEY_TODAY_BARS, todayBars)
-                putString(TodaySpendingWidgetProvider.KEY_CURRENCY, currency)
+                putFloat("today_spent", todaySpent.toFloat())
+                putInt("today_count", todayCount.toInt())
+                putFloat("monthly_budget", monthlyBudget.toFloat())
+                putFloat("month_spent", monthSpent.toFloat())
+                putString("currency", currency)
 
-                putFloat(BudgetWidgetProvider.KEY_MONTHLY_BUDGET, monthlyBudget.toFloat())
-                putFloat(BudgetWidgetProvider.KEY_MONTH_SPENT, monthSpent.toFloat())
-                putFloat(QuickAddWidgetProvider.KEY_MONTH_SPENT, monthSpent.toFloat())
+                putString(CategoryWidgetProvider.KEY_CAT1_NAME, cat1Name)
+                putInt(CategoryWidgetProvider.KEY_CAT1_PCT, cat1Pct.toInt())
+                putString(CategoryWidgetProvider.KEY_CAT1_COLOR, cat1Color)
 
-                putString(WhereDidItGoWidgetProvider.KEY_CAT1_NAME, cat1Name)
-                putInt(WhereDidItGoWidgetProvider.KEY_CAT1_PCT, cat1Pct.toInt())
-                putString(WhereDidItGoWidgetProvider.KEY_CAT1_COLOR, cat1Color)
+                putString(CategoryWidgetProvider.KEY_CAT2_NAME, cat2Name)
+                putInt(CategoryWidgetProvider.KEY_CAT2_PCT, cat2Pct.toInt())
+                putString(CategoryWidgetProvider.KEY_CAT2_COLOR, cat2Color)
 
-                putString(WhereDidItGoWidgetProvider.KEY_CAT2_NAME, cat2Name)
-                putInt(WhereDidItGoWidgetProvider.KEY_CAT2_PCT, cat2Pct.toInt())
-                putString(WhereDidItGoWidgetProvider.KEY_CAT2_COLOR, cat2Color)
+                putString(CategoryWidgetProvider.KEY_CAT3_NAME, cat3Name)
+                putInt(CategoryWidgetProvider.KEY_CAT3_PCT, cat3Pct.toInt())
+                putString(CategoryWidgetProvider.KEY_CAT3_COLOR, cat3Color)
 
-                putString(WhereDidItGoWidgetProvider.KEY_CAT3_NAME, cat3Name)
-                putInt(WhereDidItGoWidgetProvider.KEY_CAT3_PCT, cat3Pct.toInt())
-                putString(WhereDidItGoWidgetProvider.KEY_CAT3_COLOR, cat3Color)
-
-                putString(WhereDidItGoWidgetProvider.KEY_CAT4_NAME, cat4Name)
-                putInt(WhereDidItGoWidgetProvider.KEY_CAT4_PCT, cat4Pct.toInt())
-                putString(WhereDidItGoWidgetProvider.KEY_CAT4_COLOR, cat4Color)
+                putString(CategoryWidgetProvider.KEY_CAT4_NAME, cat4Name)
+                putInt(CategoryWidgetProvider.KEY_CAT4_PCT, cat4Pct.toInt())
+                putString(CategoryWidgetProvider.KEY_CAT4_COLOR, cat4Color)
 
                 apply()
             }
             updateAllWidgets(context)
-            Log.d(TAG, "Successfully synced 5-widget data: today=$todaySpent, month=$monthSpent, budget=$monthlyBudget")
+            Log.d(TAG, "Successfully synced CategoryWidget data: $cat1Name $cat1Pct% ($cat1Color), $cat2Name $cat2Pct% ($cat2Color)")
         } catch (e: Exception) {
             Log.e(TAG, "Error updating widget data", e)
         }
@@ -1420,7 +890,7 @@ class ReminderReceiver : BroadcastReceiver() {
         scheduleAlarm(context, hour, minute)
 
         val prefs = context.getSharedPreferences(ShakeServiceModule.PREFS_NAME, Context.MODE_PRIVATE)
-        val todayCount = prefs.getInt(TodaySpendingWidgetProvider.KEY_TODAY_COUNT, 0)
+        val todayCount = prefs.getInt("today_count", 0)
 
         if (todayCount > 0) {
             Log.d(TAG, "[REMINDER] User has already logged $todayCount expenses today. Skipping reminder notification.")
@@ -1474,335 +944,83 @@ class ReminderReceiver : BroadcastReceiver() {
 }
 `;
 
+// ─── ShakeServicePackage.kt source ───────────────────────────────────────────
+const SHAKE_SERVICE_PACKAGE_KT = `package {{PACKAGE}}
+
+import com.facebook.react.ReactPackage
+import com.facebook.react.bridge.NativeModule
+import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.uimanager.ViewManager
+
+class ShakeServicePackage : ReactPackage {
+    override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
+        return listOf(ShakeServiceModule(reactContext))
+    }
+    override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> = emptyList()
+}
+`;
+
 // ─── Layout & Drawable XMLs ──────────────────────────────────────────────────
-const XML_WIDGET_BUDGET = `<?xml version="1.0" encoding="utf-8"?>
+const XML_WIDGET_CATEGORY_CARD = `<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_budget_root"
+    android:id="@+id/widget_category_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@drawable/widget_navy_gradient_bg"
-    android:padding="16dp"
-    android:gravity="center_horizontal">
+    android:gravity="center_horizontal"
+    android:background="@drawable/widget_card_bg_gradient"
+    android:paddingTop="20dp"
+    android:paddingBottom="18dp"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp">
 
     <TextView
-        android:id="@+id/widget_budget_title"
+        android:id="@+id/widget_category_title"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="BUDGET USAGE"
-        android:textColor="#8AB4F8"
-        android:textSize="11sp"
+        android:text="CATEGORY"
+        android:textColor="#C4B5FD"
+        android:textSize="20sp"
         android:textStyle="bold"
-        android:letterSpacing="0.08" />
-
-    <FrameLayout
-        android:layout_width="170dp"
-        android:layout_height="115dp"
-        android:layout_marginTop="2dp"
-        android:layout_marginBottom="2dp">
-
-        <ImageView
-            android:id="@+id/widget_budget_gauge"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:scaleType="fitCenter" />
-
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:layout_marginTop="10dp">
-
-            <TextView
-                android:id="@+id/widget_budget_pct"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="61%"
-                android:textColor="#FFFFFF"
-                android:textSize="34sp"
-                android:textStyle="bold"
-                android:includeFontPadding="false" />
-
-            <TextView
-                android:id="@+id/widget_budget_sub"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="₹18,450 spent"
-                android:textColor="#8AB4F8"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:layout_marginTop="1dp" />
-        </LinearLayout>
-    </FrameLayout>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="44dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:layout_marginTop="8dp">
-
-        <FrameLayout
-            android:id="@+id/widget_budget_btn_minus"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@drawable/widget_pill_navy_btn"
-            android:layout_marginEnd="6dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:text="−"
-                android:textColor="#FFFFFF"
-                android:textSize="20sp"
-                android:textStyle="bold" />
-        </FrameLayout>
-
-        <FrameLayout
-            android:id="@+id/widget_budget_btn_add"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1.2"
-            android:background="@drawable/widget_pill_accent_btn"
-            android:layout_marginEnd="6dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:text="⚡"
-                android:textColor="#FFFFFF"
-                android:textSize="16sp" />
-        </FrameLayout>
-
-        <FrameLayout
-            android:id="@+id/widget_budget_btn_more"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@drawable/widget_pill_navy_btn">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:text="+"
-                android:textColor="#FFFFFF"
-                android:textSize="20sp"
-                android:textStyle="bold" />
-        </FrameLayout>
-    </LinearLayout>
-</LinearLayout>
-`;
-
-const XML_WIDGET_QUICK_ADD = `<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_quick_add_root"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@drawable/widget_blue_gradient_bg"
-    android:padding="20dp"
-    android:gravity="center_horizontal">
-
-    <TextView
-        android:id="@+id/widget_quick_add_title"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="MONTHLY SPENT"
-        android:textColor="#D1E9FF"
-        android:textSize="11sp"
-        android:textStyle="bold"
-        android:letterSpacing="0.1" />
-
-    <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:orientation="vertical"
-        android:gravity="center">
-
-        <TextView
-            android:id="@+id/widget_quick_add_amount"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="₹18,450"
-            android:textColor="#FFFFFF"
-            android:textSize="36sp"
-            android:textStyle="bold"
-            android:letterSpacing="-0.02" />
-
-        <TextView
-            android:id="@+id/widget_quick_add_trend"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="↑ 4.2% vs last month"
-            android:textColor="#00FF66"
-            android:textSize="12sp"
-            android:textStyle="bold"
-            android:layout_marginTop="2dp" />
-    </LinearLayout>
-
-    <FrameLayout
-        android:id="@+id/widget_quick_add_btn"
-        android:layout_width="match_parent"
-        android:layout_height="46dp"
-        android:background="@drawable/widget_pill_blue_btn">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:text="+ Add Expense"
-            android:textColor="#FFFFFF"
-            android:textSize="14.5sp"
-            android:textStyle="bold" />
-    </FrameLayout>
-</LinearLayout>
-`;
-
-const XML_WIDGET_TODAY = `<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_today_root"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@drawable/widget_midnight_gradient_bg"
-    android:padding="20dp">
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <TextView
-            android:id="@+id/widget_today_app_name"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Expenza"
-            android:textColor="#FFFFFF"
-            android:textSize="15sp"
-            android:textStyle="bold" />
-
-        <ImageView
-            android:id="@+id/widget_today_mini_ring"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:scaleType="fitCenter" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:orientation="vertical"
-        android:gravity="center">
-
-        <TextView
-            android:id="@+id/widget_today_label"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="TODAY\'S SPENT"
-            android:textColor="#9CA3AF"
-            android:textSize="12sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.08" />
-
-        <TextView
-            android:id="@+id/widget_today_amount"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="₹ 780"
-            android:textColor="#FFFFFF"
-            android:textSize="36sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.04"
-            android:layout_marginTop="2dp" />
-    </LinearLayout>
-
-    <FrameLayout
-        android:id="@+id/widget_today_btn"
-        android:layout_width="match_parent"
-        android:layout_height="46dp"
-        android:background="@drawable/widget_pill_accent_btn">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:text="+ QUICK ADD"
-            android:textColor="#FFFFFF"
-            android:textSize="14.5sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.04" />
-    </FrameLayout>
-</LinearLayout>
-`;
-
-const XML_WIDGET_BREAKDOWN = `<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_breakdown_root"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@drawable/widget_purple_gradient_bg"
-    android:padding="16dp"
-    android:gravity="center_horizontal">
-
-    <TextView
-        android:id="@+id/widget_breakdown_title"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="WHERE DID IT GO?"
-        android:textColor="#A78BFA"
-        android:textSize="11sp"
-        android:textStyle="bold"
-        android:letterSpacing="0.08" />
+        android:letterSpacing="0.05"
+        android:layout_marginBottom="12dp" />
 
     <ImageView
-        android:id="@+id/widget_breakdown_rings"
-        android:layout_width="106dp"
-        android:layout_height="106dp"
-        android:layout_marginTop="2dp"
-        android:layout_marginBottom="4dp"
+        android:id="@+id/widget_category_rings"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_gravity="center"
         android:scaleType="fitCenter" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:layout_marginBottom="8dp">
+        android:layout_marginTop="14dp"
+        android:weightSum="4">
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:orientation="vertical"
-            android:gravity="center">
-
+            android:gravity="center_horizontal">
             <TextView
-                android:id="@+id/widget_cat1_label"
+                android:id="@+id/widget_stat_deep_label"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="FOOD"
-                android:textColor="#A78BFA"
-                android:textSize="8.5sp"
+                android:textColor="#F59E0B"
+                android:textSize="11sp"
                 android:textStyle="bold" />
-
             <TextView
-                android:id="@+id/widget_cat1_pct"
+                android:id="@+id/widget_stat_deep_value"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="26%"
+                android:text="52%"
                 android:textColor="#FFFFFF"
-                android:textSize="12sp"
+                android:textSize="17sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
@@ -1811,24 +1029,22 @@ const XML_WIDGET_BREAKDOWN = `<?xml version="1.0" encoding="utf-8"?>
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:orientation="vertical"
-            android:gravity="center">
-
+            android:gravity="center_horizontal">
             <TextView
-                android:id="@+id/widget_cat2_label"
+                android:id="@+id/widget_stat_light_label"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="SHOP"
-                android:textColor="#A78BFA"
-                android:textSize="8.5sp"
+                android:textColor="#EC4899"
+                android:textSize="11sp"
                 android:textStyle="bold" />
-
             <TextView
-                android:id="@+id/widget_cat2_pct"
+                android:id="@+id/widget_stat_light_value"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="19%"
+                android:text="32%"
                 android:textColor="#FFFFFF"
-                android:textSize="12sp"
+                android:textSize="17sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
@@ -1837,24 +1053,22 @@ const XML_WIDGET_BREAKDOWN = `<?xml version="1.0" encoding="utf-8"?>
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:orientation="vertical"
-            android:gravity="center">
-
+            android:gravity="center_horizontal">
             <TextView
-                android:id="@+id/widget_cat3_label"
+                android:id="@+id/widget_stat_awake_label"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="TRANS"
-                android:textColor="#A78BFA"
-                android:textSize="8.5sp"
+                android:textColor="#38BDF8"
+                android:textSize="11sp"
                 android:textStyle="bold" />
-
             <TextView
-                android:id="@+id/widget_cat3_pct"
+                android:id="@+id/widget_stat_awake_value"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="15%"
                 android:textColor="#FFFFFF"
-                android:textSize="12sp"
+                android:textSize="17sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
@@ -1863,120 +1077,26 @@ const XML_WIDGET_BREAKDOWN = `<?xml version="1.0" encoding="utf-8"?>
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:orientation="vertical"
-            android:gravity="center">
-
+            android:gravity="center_horizontal">
             <TextView
-                android:id="@+id/widget_cat4_label"
+                android:id="@+id/widget_stat_quality_label"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="BILLS"
                 android:textColor="#A78BFA"
-                android:textSize="8.5sp"
+                android:textSize="11sp"
                 android:textStyle="bold" />
-
             <TextView
-                android:id="@+id/widget_cat4_pct"
+                android:id="@+id/widget_stat_quality_value"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="13%"
+                android:text="77%"
                 android:textColor="#FFFFFF"
-                android:textSize="12sp"
+                android:textSize="17sp"
                 android:textStyle="bold" />
         </LinearLayout>
+
     </LinearLayout>
-
-    <FrameLayout
-        android:id="@+id/widget_breakdown_btn"
-        android:layout_width="match_parent"
-        android:layout_height="42dp"
-        android:background="@drawable/widget_pill_purple_btn">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:text="View Breakdown ↗"
-            android:textColor="#FFFFFF"
-            android:textSize="13.5sp"
-            android:textStyle="bold" />
-    </FrameLayout>
-</LinearLayout>
-`;
-
-const XML_WIDGET_EQUALIZER = `<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_budget_prog_root"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@drawable/widget_forest_green_bg"
-    android:paddingTop="20dp"
-    android:paddingStart="18dp"
-    android:paddingEnd="18dp"
-    android:gravity="center_horizontal">
-
-    <TextView
-        android:id="@+id/widget_budget_prog_month"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="25.08"
-        android:textColor="#9AE600"
-        android:textSize="12.5sp"
-        android:textStyle="bold"
-        android:letterSpacing="0.04" />
-
-    <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:orientation="vertical"
-        android:gravity="center"
-        android:layout_marginTop="6dp">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="TODAY\'S SPENDING"
-            android:textColor="#9AE600"
-            android:textSize="10.5sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.1" />
-
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="bottom"
-            android:layout_marginTop="2dp">
-
-            <TextView
-                android:id="@+id/widget_budget_prog_remaining"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="780"
-                android:textColor="#F7FCEB"
-                android:textSize="40sp"
-                android:textStyle="bold"
-                android:letterSpacing="-0.02"
-                android:includeFontPadding="false" />
-
-            <TextView
-                android:id="@+id/widget_budget_prog_target"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text=" ₹"
-                android:textColor="#9AE600"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:layout_marginBottom="4dp" />
-        </LinearLayout>
-    </LinearLayout>
-
-    <ImageView
-        android:id="@+id/widget_budget_prog_gauge"
-        android:layout_width="match_parent"
-        android:layout_height="68dp"
-        android:scaleType="fitXY" />
 </LinearLayout>
 `;
 
@@ -2022,12 +1142,8 @@ function withShakeServiceFiles(config) {
         "BootReceiver.kt": BOOT_RECEIVER_KT,
         "ShakeServiceModule.kt": SHAKE_SERVICE_MODULE_KT,
         "ShakeServicePackage.kt": SHAKE_SERVICE_PACKAGE_KT,
-        "WidgetChartUtils.kt": WIDGET_CHART_UTILS_KT,
-        "TodaySpendingWidgetProvider.kt": TODAY_SPENDING_WIDGET_PROVIDER_KT,
-        "QuickAddWidgetProvider.kt": QUICK_ADD_WIDGET_PROVIDER_KT,
-        "BudgetWidgetProvider.kt": BUDGET_WIDGET_PROVIDER_KT,
-        "WhereDidItGoWidgetProvider.kt": WHERE_DID_IT_GO_WIDGET_PROVIDER_KT,
-        "BudgetProgressWidgetProvider.kt": BUDGET_PROGRESS_WIDGET_PROVIDER_KT,
+        "RingRenderer.kt": RING_RENDERER_KT,
+        "CategoryWidgetProvider.kt": CATEGORY_WIDGET_PROVIDER_KT,
         "ReminderReceiver.kt": REMINDER_RECEIVER_KT,
       };
 
@@ -2036,52 +1152,35 @@ function withShakeServiceFiles(config) {
         fs.writeFileSync(filepath, content.replace(/\{\{PACKAGE\}\}/g, pkg));
       }
 
-      // Layout XMLs
-      fs.writeFileSync(path.join(resDir, "layout", "widget_budget.xml"), XML_WIDGET_BUDGET);
-      fs.writeFileSync(path.join(resDir, "layout", "widget_quick_add.xml"), XML_WIDGET_QUICK_ADD);
-      fs.writeFileSync(path.join(resDir, "layout", "widget_today_spending.xml"), XML_WIDGET_TODAY);
-      fs.writeFileSync(path.join(resDir, "layout", "widget_where_did_it_go.xml"), XML_WIDGET_BREAKDOWN);
-      fs.writeFileSync(path.join(resDir, "layout", "widget_budget_progress.xml"), XML_WIDGET_EQUALIZER);
+      // Layout XML
+      fs.writeFileSync(path.join(resDir, "layout", "widget_category_card.xml"), XML_WIDGET_CATEGORY_CARD);
 
-      // Widget Provider Info XMLs
-      const makeWidgetInfoXml = (layoutName, descRes) => `<?xml version="1.0" encoding="utf-8"?>
+      // Widget Provider Info XML
+      const categoryWidgetInfoXml = `<?xml version="1.0" encoding="utf-8"?>
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="160dp"
     android:minHeight="160dp"
     android:targetCellWidth="2"
     android:targetCellHeight="2"
     android:updatePeriodMillis="1800000"
-    android:description="${descRes}"
+    android:description="@string/widget_category_description"
     android:previewImage="@mipmap/ic_launcher"
-    android:initialLayout="@layout/${layoutName}"
+    android:initialLayout="@layout/widget_category_card"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen" />
 `;
-
-      fs.writeFileSync(path.join(resDir, "xml", "budget_widget_info.xml"), makeWidgetInfoXml("widget_budget", "@string/widget_budget_description"));
-      fs.writeFileSync(path.join(resDir, "xml", "quick_add_widget_info.xml"), makeWidgetInfoXml("widget_quick_add", "@string/widget_quick_add_description"));
-      fs.writeFileSync(path.join(resDir, "xml", "today_spending_widget_info.xml"), makeWidgetInfoXml("widget_today_spending", "@string/widget_today_spending_description"));
-      fs.writeFileSync(path.join(resDir, "xml", "where_did_it_go_widget_info.xml"), makeWidgetInfoXml("widget_where_did_it_go", "@string/widget_breakdown_description"));
-      fs.writeFileSync(path.join(resDir, "xml", "budget_progress_widget_info.xml"), makeWidgetInfoXml("widget_budget_progress", "@string/widget_budget_progress_description"));
+      fs.writeFileSync(path.join(resDir, "xml", "category_widget_info.xml"), categoryWidgetInfoXml);
 
       // Drawables
       const drawables = {
-        "widget_navy_gradient_bg.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android"><gradient android:type="linear" android:angle="270" android:startColor="#11325A" android:endColor="#061930"/><corners android:radius="26dp"/><stroke android:width="1dp" android:color="#1E4472"/></shape>`,
-        "widget_blue_gradient_bg.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android"><gradient android:type="linear" android:angle="315" android:startColor="#20A2F7" android:endColor="#0057FF"/><corners android:radius="26dp"/></shape>`,
-        "widget_midnight_gradient_bg.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android"><gradient android:type="linear" android:angle="270" android:startColor="#0C335F" android:endColor="#000103"/><corners android:radius="26dp"/><stroke android:width="1dp" android:color="#1A4068"/></shape>`,
-        "widget_purple_gradient_bg.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android"><gradient android:type="linear" android:angle="270" android:startColor="#2B1865" android:endColor="#190B44"/><corners android:radius="26dp"/><stroke android:width="1dp" android:color="#3D267E"/></shape>`,
-        "widget_forest_green_bg.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android"><solid android:color="#193102"/><corners android:radius="26dp"/><stroke android:width="1dp" android:color="#2D5208"/></shape>`,
-        "widget_pill_navy_btn.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android"><solid android:color="#0E488F"/><corners android:radius="14dp"/></shape>`,
-        "widget_pill_accent_btn.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android"><solid android:color="#0075FF"/><corners android:radius="14dp"/></shape>`,
-        "widget_pill_blue_btn.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android"><solid android:color="#0075FF"/><corners android:radius="24dp"/><stroke android:width="1.5dp" android:color="#4DA6FF"/></shape>`,
-        "widget_pill_purple_btn.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android"><solid android:color="#6D4DE3"/><corners android:radius="24dp"/><stroke android:width="1dp" android:color="#8B6EF3"/></shape>`,
+        "widget_card_bg_gradient.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="28dp"/><gradient android:type="linear" android:angle="270" android:startColor="#241568" android:endColor="#150B3D"/></shape>`,
       };
 
       for (const [filename, content] of Object.entries(drawables)) {
         fs.writeFileSync(path.join(resDir, "drawable", filename), content);
       }
 
-      // Colors with theme primary colors
+      // Colors
       const colorsXml = `<resources>
   <color name="colorPrimary">#4F46E5</color>
   <color name="colorPrimaryDark">#4338CA</color>
@@ -2097,7 +1196,7 @@ function withShakeServiceFiles(config) {
   ]);
 }
 
-// ─── 2. Register ShakeService, Receivers, and permissions in AndroidManifest.xml ──
+// ─── 2. Register ShakeService, CategoryWidgetProvider, and permissions ──────
 function withShakeServiceManifest(config) {
   return withAndroidManifest(config, (config) => {
     const manifest = config.modResults;
@@ -2130,47 +1229,30 @@ function withShakeServiceManifest(config) {
       app.service = services;
     }
 
-    const receivers = app.receiver || [];
-
-    function addReceiver(receiverName, label, resource) {
-      const exists = receivers.some((r) => r.$?.["android:name"] === receiverName);
-      if (!exists) {
-        const obj = {
-          $: {
-            "android:name": receiverName,
-            "android:exported": "true",
+    const receivers = [
+      {
+        $: {
+          "android:name": ".CategoryWidgetProvider",
+          "android:label": "@string/widget_category_title",
+          "android:exported": "true",
+        },
+        "intent-filter": [
+          {
+            action: [
+              { $: { "android:name": "android.appwidget.action.APPWIDGET_UPDATE" } },
+            ],
           },
-          "intent-filter": [
-            {
-              action: [
-                { $: { "android:name": "android.appwidget.action.APPWIDGET_UPDATE" } },
-              ],
+        ],
+        "meta-data": [
+          {
+            $: {
+              "android:name": "android.appwidget.provider",
+              "android:resource": "@xml/category_widget_info",
             },
-          ],
-          "meta-data": [
-            {
-              $: {
-                "android:name": "android.appwidget.provider",
-                "android:resource": resource,
-              },
-            },
-          ],
-        };
-        if (label) {
-          obj.$["android:label"] = label;
-        }
-        receivers.push(obj);
-      }
-    }
-
-    addReceiver(".TodaySpendingWidgetProvider", "@string/widget_today_spending_title", "@xml/today_spending_widget_info");
-    addReceiver(".QuickAddWidgetProvider", "@string/widget_quick_add_title", "@xml/quick_add_widget_info");
-    addReceiver(".BudgetWidgetProvider", "@string/widget_budget_title", "@xml/budget_widget_info");
-    addReceiver(".WhereDidItGoWidgetProvider", "@string/widget_breakdown_title", "@xml/where_did_it_go_widget_info");
-    addReceiver(".BudgetProgressWidgetProvider", "@string/widget_budget_progress_title", "@xml/budget_progress_widget_info");
-
-    if (!receivers.some((r) => r.$?.["android:name"] === ".BootReceiver")) {
-      receivers.push({
+          },
+        ],
+      },
+      {
         $: {
           "android:name": ".BootReceiver",
           "android:enabled": "true",
@@ -2185,11 +1267,8 @@ function withShakeServiceManifest(config) {
             ],
           },
         ],
-      });
-    }
-
-    if (!receivers.some((r) => r.$?.["android:name"] === ".ReminderReceiver")) {
-      receivers.push({
+      },
+      {
         $: {
           "android:name": ".ReminderReceiver",
           "android:exported": "false",
@@ -2201,8 +1280,8 @@ function withShakeServiceManifest(config) {
             ],
           },
         ],
-      });
-    }
+      },
+    ];
 
     app.receiver = receivers;
 
@@ -2324,16 +1403,9 @@ function withShakeServiceStrings(config) {
 
     const stringMap = {
       app_name: "Expenza",
-      widget_today_spending_title: '"Today\'s Spending"',
-      widget_today_spending_description: '"Glance at what you\'ve spent today"',
-      widget_quick_add_title: '"Monthly Spending"',
-      widget_quick_add_description: '"View monthly total and quickly log expenses"',
-      widget_budget_title: '"Budget"',
-      widget_budget_description: '"View current monthly budget usage"',
-      widget_breakdown_title: '"Where Did It Go?"',
-      widget_breakdown_description: '"Monthly category spending breakdown"',
-      widget_budget_progress_title: '"Daily Activity"',
-      widget_budget_progress_description: '"Track daily spending equalizer histogram"',
+      widget_category_title: '"Category"',
+      widget_category_description: '"Monthly spending breakdown by category"',
+      widget_rings_desc: '"Concentric category spending rings"',
     };
 
     for (const [name, value] of Object.entries(stringMap)) {
