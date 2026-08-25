@@ -14,6 +14,7 @@ const {
   withMainApplication,
   withMainActivity,
   withAppBuildGradle,
+  withStringsXml,
   withDangerousMod,
 } = require("expo/config-plugins");
 const fs = require("fs");
@@ -709,7 +710,7 @@ class TodaySpendingWidgetProvider : AppWidgetProvider() {
         val todayCount = prefs.getInt(KEY_TODAY_COUNT, 0)
         val currency = prefs.getString(KEY_CURRENCY, "₹") ?: "₹"
 
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         } else {
             PendingIntent.FLAG_UPDATE_CURRENT
@@ -718,10 +719,10 @@ class TodaySpendingWidgetProvider : AppWidgetProvider() {
         val openTodayIntent = Intent(context, MainActivity::class.java).apply {
             action = "VIEW_TODAY_EXPENSES"
             data = Uri.parse("expenza://today")
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra("action", "VIEW_TODAY_EXPENSES")
         }
-        val pendingIntent = PendingIntent.getActivity(context, 201, openTodayIntent, flags)
+        val pendingIntent = PendingIntent.getActivity(context, 201, openTodayIntent, pendingFlags)
 
         for (appWidgetId in appWidgetIds) {
             try {
@@ -801,7 +802,7 @@ class MonthlyBudgetWidgetProvider : AppWidgetProvider() {
         val monthSpent = prefs.getFloat(KEY_MONTH_SPENT, 0f).toDouble()
         val currency = prefs.getString(KEY_CURRENCY, "₹") ?: "₹"
 
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         } else {
             PendingIntent.FLAG_UPDATE_CURRENT
@@ -810,10 +811,10 @@ class MonthlyBudgetWidgetProvider : AppWidgetProvider() {
         val openBudgetIntent = Intent(context, MainActivity::class.java).apply {
             action = "OPEN_SET_BUDGET"
             data = Uri.parse("expenza://set-budget")
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra("action", "OPEN_SET_BUDGET")
         }
-        val pendingIntent = PendingIntent.getActivity(context, 202, openBudgetIntent, flags)
+        val pendingIntent = PendingIntent.getActivity(context, 202, openBudgetIntent, pendingFlags)
 
         for (appWidgetId in appWidgetIds) {
             try {
@@ -895,7 +896,7 @@ class QuickAddWidgetProvider : AppWidgetProvider() {
     }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         } else {
             PendingIntent.FLAG_UPDATE_CURRENT
@@ -904,10 +905,10 @@ class QuickAddWidgetProvider : AppWidgetProvider() {
         val addExpenseIntent = Intent(context, MainActivity::class.java).apply {
             action = "ADD_EXPENSE"
             data = Uri.parse("expenza://add-expense")
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra("action", "ADD_EXPENSE")
         }
-        val pendingIntent = PendingIntent.getActivity(context, 203, addExpenseIntent, flags)
+        val pendingIntent = PendingIntent.getActivity(context, 203, addExpenseIntent, pendingFlags)
 
         for (appWidgetId in appWidgetIds) {
             try {
@@ -980,24 +981,24 @@ class ExpenzaAppWidgetProvider : AppWidgetProvider() {
         val dateFormat = SimpleDateFormat("EEEE, MMM d", Locale.getDefault())
         val formattedDate = dateFormat.format(Date())
 
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         } else {
             PendingIntent.FLAG_UPDATE_CURRENT
         }
 
         val openAppIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
-        val openAppPendingIntent = PendingIntent.getActivity(context, 0, openAppIntent, flags)
+        val openAppPendingIntent = PendingIntent.getActivity(context, 0, openAppIntent, pendingFlags)
 
         val addExpenseIntent = Intent(context, MainActivity::class.java).apply {
             action = "ADD_EXPENSE"
             data = Uri.parse("expenza://add-expense")
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra("action", "ADD_EXPENSE")
         }
-        val addExpensePendingIntent = PendingIntent.getActivity(context, 1, addExpenseIntent, flags)
+        val addExpensePendingIntent = PendingIntent.getActivity(context, 1, addExpenseIntent, pendingFlags)
 
         for (appWidgetId in appWidgetIds) {
             try {
@@ -1716,10 +1717,59 @@ function withShakeServiceMainActivity(config) {
   });
 }
 
+// ─── 5. Add string resources for widgets and app ───────────────────────────
+function withShakeServiceStrings(config) {
+  return withStringsXml(config, (config) => {
+    const strings = config.modResults.resources.string || [];
+
+    const stringMap = {
+      app_name: "Expenza",
+      widget_today_spending_title: "Today\\'s Spending",
+      widget_today_spending_description: "Glance at what you\\'ve spent today",
+      widget_monthly_budget_title: "Monthly Budget",
+      widget_monthly_budget_description: "Track your monthly budget and remaining spend",
+      widget_quick_add_title: "Quick Add Expense",
+      widget_quick_add_description: "Quickly log a new expense in Expenza",
+    };
+
+    for (const [name, value] of Object.entries(stringMap)) {
+      const existing = strings.find((s) => s.$?.name === name);
+      if (existing) {
+        existing._ = value;
+      } else {
+        strings.push({
+          $: { name },
+          _: value,
+        });
+      }
+    }
+
+    config.modResults.resources.string = strings;
+    return config;
+  });
+}
+
+// ─── 6. Configure build.gradle with lint and APK naming ──────────────────────
+function withShakeServiceBuildGradle(config) {
+  return withAppBuildGradle(config, (config) => {
+    let contents = config.modResults.contents;
+    if (!contents.includes("Expenza-v")) {
+      contents = contents.replace(
+        /android\s*\{/,
+        `android {\n    lint {\n        abortOnError false\n        checkReleaseBuilds false\n        disable 'Instantiatable'\n    }\n    applicationVariants.all { variant ->\n        variant.outputs.all { output ->\n            outputFileName = "Expenza-v\${variant.versionName}.apk"\n        }\n    }\n`
+      );
+      config.modResults.contents = contents;
+    }
+    return config;
+  });
+}
+
 // ─── Export combined plugin ──────────────────────────────────────────────────
 function withShakeService(config) {
   config = withShakeServiceFiles(config);
+  config = withShakeServiceStrings(config);
   config = withShakeServiceManifest(config);
+  config = withShakeServiceBuildGradle(config);
   config = withShakeServiceMainApplication(config);
   config = withShakeServiceMainActivity(config);
   return config;
