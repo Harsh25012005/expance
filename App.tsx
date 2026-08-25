@@ -13,10 +13,11 @@ import {
 } from '@expo-google-fonts/plus-jakarta-sans';
 
 import { ExpenseProvider, useExpenses } from './src/context/ExpenseContext';
-import { ShakeProvider } from './src/context/ShakeContext';
+import { ShakeProvider, useShake } from './src/context/ShakeContext';
 import { Header } from './src/components/Header';
 import { CustomTabBar } from './src/components/CustomTabBar';
 import { QuickExpenseModal } from './src/components/QuickExpenseModal';
+import { SetBudgetModal } from './src/components/SetBudgetModal';
 import { AppLogo } from './src/components/AppLogo';
 import { setupReminderChannel } from './src/utils/reminderService';
 
@@ -41,6 +42,14 @@ function SplashScreen() {
 
 function MainApp() {
   const [activeTab, setActiveTab] = useState<TabScreen>('home');
+  const { navigationTarget, clearNavigationTarget, isSetBudgetModalOpen, closeSetBudgetModal } = useShake();
+
+  useEffect(() => {
+    if (navigationTarget) {
+      setActiveTab(navigationTarget);
+      clearNavigationTarget();
+    }
+  }, [navigationTarget, clearNavigationTarget]);
 
   const renderCurrentScreen = () => {
     switch (activeTab) {
@@ -105,6 +114,9 @@ function MainApp() {
 
       {/* Glassmorphism Bottom Tab Bar */}
       <CustomTabBar activeTab={activeTab} onTabChange={setActiveTab} />
+
+      {/* Global Set Budget Modal for Deep Links & Home Widget */}
+      <SetBudgetModal visible={isSetBudgetModalOpen} onClose={closeSetBudgetModal} />
     </SafeAreaView>
   );
 }

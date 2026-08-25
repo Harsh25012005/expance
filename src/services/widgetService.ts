@@ -6,7 +6,7 @@ const { ShakeServiceModule } = NativeModules;
 
 export const widgetService = {
   /**
-   * Synchronize current spending and budget metrics with Android Home Screen AppWidget
+   * Synchronize current spending and budget metrics with Android Home Screen AppWidgets
    */
   syncWidget(expenses: Expense[], settings: AppSettings): void {
     if (Platform.OS !== 'android' || !ShakeServiceModule?.updateWidgetData) {
@@ -20,6 +20,7 @@ export const widgetService = {
       const currentMonth = now.getMonth();
 
       let todaySpent = 0;
+      let todayCount = 0;
       let monthSpent = 0;
 
       for (const exp of expenses) {
@@ -29,6 +30,7 @@ export const widgetService = {
         // Check if created today
         if (toLocalDateString(expDate) === todayStr) {
           todaySpent += amount;
+          todayCount += 1;
         }
 
         // Check if created in current month
@@ -42,6 +44,7 @@ export const widgetService = {
 
       ShakeServiceModule.updateWidgetData(
         todaySpent,
+        todayCount,
         monthlyBudget,
         monthSpent,
         currency

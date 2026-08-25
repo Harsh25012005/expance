@@ -4,7 +4,7 @@ import { Accelerometer } from 'expo-sensors';
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
 import { useExpenses } from './ExpenseContext';
-import { Expense } from '../types/expense';
+import { Expense, TabScreen } from '../types/expense';
 import { shakeServiceBridge } from '../services/shakeServiceBridge';
 import { addShakeListener, emitShakeEvent } from '../utils/shakeEvents';
 import { showShakeExpenseNotification, setupNotificationChannel } from '../utils/shakeNotifications';
@@ -24,6 +24,11 @@ export interface ShakeContextType {
   simulateShake: () => void;
   lastShakeTimestamp: number;
   openAddExpenseFromShake: () => void;
+  isSetBudgetModalOpen: boolean;
+  openSetBudgetModal: () => void;
+  closeSetBudgetModal: () => void;
+  navigationTarget: TabScreen | null;
+  clearNavigationTarget: () => void;
 }
 
 const ShakeContext = createContext<ShakeContextType | undefined>(undefined);
@@ -33,12 +38,13 @@ const SHAKE_COOLDOWN_MS = 1500;
 export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { settings } = useExpenses();
   const [isQuickAddModalOpen, setIsQuickAddModalOpen] = useState<boolean>(false);
+  const [isSetBudgetModalOpen, setIsSetBudgetModalOpen] = useState<boolean>(false);
+  const [navigationTarget, setNavigationTarget] = useState<TabScreen | null>(null);
   const [triggeredByShake, setTriggeredByShake] = useState<boolean>(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [lastShakeTimestamp, setLastShakeTimestamp] = useState<number>(0);
 
   // Refs to avoid stale closures in event listeners
-  const isModalOpenRef = useRef<boolean>(false);
   const settingsRef = useRef(settings);
   const lastShakeTimeRef = useRef<number>(0);
   const lastXRef = useRef<number>(0);
@@ -46,10 +52,6 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const lastZRef = useRef<number>(0);
   const initializedRef = useRef<boolean>(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
-
-  useEffect(() => {
-    isModalOpenRef.current = isQuickAddModalOpen;
-  }, [isQuickAddModalOpen]);
 
   useEffect(() => {
     settingsRef.current = settings;
@@ -61,21 +63,13 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     Notifications.requestPermissionsAsync().catch(() => {});
   }, []);
 
-  /**
-   * openAddExpensePopup — The single authoritative function that opens the Add Expense popup.
-   * Directly updates global modal state with required debug logs.
-   */
   const openAddExpensePopup = useCallback((options?: OpenModalOptions) => {
     console.log('[ADD EXPENSE] openAddExpensePopup() called');
-    console.log('[ADD EXPENSE] setting visible = true');
     setTriggeredByShake(options?.triggeredByShake ?? false);
     setEditingExpense(options?.initialExpense ?? null);
     setIsQuickAddModalOpen(true);
   }, []);
 
-  /**
-   * openQuickAddModal — Alias for openAddExpensePopup for backward compatibility across components.
-   */
   const openQuickAddModal = openAddExpensePopup;
 
   const closeQuickAddModal = useCallback(() => {
@@ -84,11 +78,18 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setEditingExpense(null);
   }, []);
 
-  /**
-   * handleShakeDetected —
-   * - If AppState === 'active': Open popup directly
-   * - If AppState !== 'active': Trigger curated Expenza notification fallback
-   */
+  const openSetBudgetModal = useCallback(() => {
+    setIsSetBudgetModalOpen(true);
+  }, []);
+
+  const closeSetBudgetModal = useCallback(() => {
+    setIsSetBudgetModalOpen(false);
+  }, []);
+
+  const clearNavigationTarget = useCallback(() => {
+    setNavigationTarget(null);
+  }, []);
+
   const handleShakeDetected = useCallback(() => {
     const currentAppState = AppState.currentState;
     console.log('[SHAKE] DETECTED');
@@ -108,12 +109,10 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     if (currentAppState === 'active') {
-      console.log('[SHAKE] APP STATE: active');
-      console.log('[SHAKE] Opening Add Expense popup');
+      console.log('[SHAKE] APP STATE: active -> Opening Add Expense popup');
       openAddExpensePopup({ triggeredByShake: true });
     } else {
-      console.log(`[SHAKE] APP STATE: ${currentAppState}`);
-      // Show varied, curated, emoji-free notification
+      console.log(`[SHAKE] APP STATE: ${currentAppState} -> Posting notification`);
       showShakeExpenseNotification();
     }
   }, [openAddExpensePopup]);
@@ -143,45 +142,44 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, []);
 
-  // 3. Notification Tap & Deep Link Listener (Opens Add Expense directly)
+  // 3. Notification Tap & Deep Link Listener (Dispatches to Add Expense, Set Budget, or Today's Expenses)
   useEffect(() => {
     // A. Handle notification click response (from expo-notifications)
-    const responseSub = Notifications.addNotificationResponseReceivedListener(() => {
-      console.log('[SHAKE] Notification tapped');
-      console.log('[SHAKE] ADD_EXPENSE action requested');
-      console.log('[SHAKE] Opening Add Expense');
-      openAddExpensePopup({ triggeredByShake: true });
+    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data;
+      const action = data?.action;
+      const url = data?.url as string | undefined;
+
+      if (url?.includes('set-budget') || action === 'OPEN_SET_BUDGET') {
+        openSetBudgetModal();
+      } else if (url?.includes('today') || url?.includes('expenses') || action === 'VIEW_TODAY_EXPENSES') {
+        setNavigationTarget('expenses');
+      } else {
+        openAddExpensePopup({ triggeredByShake: false });
+      }
     });
 
-    // B. Handle deep links (expenza://add-expense)
-    const handleDeepLink = (event: { url: string }) => {
-      const url = event.url;
-      if (url && (url.includes('shake-open') || url.includes('add-expense') || url.includes('expenza://'))) {
-        console.log('[SHAKE] Notification tapped');
-        console.log('[SHAKE] ADD_EXPENSE action requested');
-        console.log('[SHAKE] Opening Add Expense');
-        openAddExpensePopup({ triggeredByShake: true });
+    // B. Handle deep links
+    const processDeepLink = (url: string | null) => {
+      if (!url) return;
+      console.log(`[DEEP LINK] Received: ${url}`);
+      if (url.includes('set-budget')) {
+        openSetBudgetModal();
+      } else if (url.includes('today') || url.includes('expenses')) {
+        setNavigationTarget('expenses');
+      } else if (url.includes('add-expense') || url.includes('shake-open')) {
+        openAddExpensePopup({ triggeredByShake: false });
       }
     };
 
-    Linking.getInitialURL()
-      .then((url) => {
-        if (url && (url.includes('shake-open') || url.includes('add-expense') || url.includes('expenza://'))) {
-          console.log('[SHAKE] Notification tapped');
-          console.log('[SHAKE] ADD_EXPENSE action requested');
-          console.log('[SHAKE] Opening Add Expense');
-          openAddExpensePopup({ triggeredByShake: true });
-        }
-      })
-      .catch(() => {});
-
-    const linkingSub = Linking.addEventListener('url', handleDeepLink);
+    Linking.getInitialURL().then(processDeepLink).catch(() => {});
+    const linkingSub = Linking.addEventListener('url', (event) => processDeepLink(event.url));
 
     return () => {
       responseSub.remove();
       linkingSub.remove();
     };
-  }, [openAddExpensePopup]);
+  }, [openAddExpensePopup, openSetBudgetModal]);
 
   // 4. Foreground Accelerometer & AppState Lifecycle Management
   useEffect(() => {
@@ -197,8 +195,6 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return;
       }
 
-      console.log('[SHAKE DEBUG] Sensor service started (JS Accelerometer)');
-      // 20Hz update rate (50ms interval)
       Accelerometer.setUpdateInterval(50);
 
       sensorSubscription = Accelerometer.addListener((data) => {
@@ -223,28 +219,21 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         lastYRef.current = y;
         lastZRef.current = z;
 
-        // Calibrated G-force thresholds:
-        // low: firm deliberate shake (default)
-        // medium: moderate shake
-        // high: light shake
         const threshold =
           settingsRef.current.shakeSensitivity === 'low'
-            ? 2.6
+            ? 3.0
             : settingsRef.current.shakeSensitivity === 'high'
-            ? 1.3
-            : 1.8;
+            ? 1.5
+            : 2.2;
 
         if (delta > threshold) {
-          console.log(`[SHAKE] Accelerometer delta=${delta.toFixed(2)}, threshold=${threshold}`);
           emitShakeEvent();
         }
       });
     };
 
-    // App state changes handling (Foreground vs Background Lifecycle)
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
       appStateRef.current = nextAppState;
-      console.log(`[SHAKE] AppState changed: ${nextAppState}`);
 
       if (nextAppState === 'active') {
         shakeServiceBridge.setAppForeground(true);
@@ -255,7 +244,6 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           sensorSubscription.remove();
           sensorSubscription = null;
         }
-        // Ensure background native service is active on Android if enabled
         if (settingsRef.current.shakeEnabled && Platform.OS === 'android') {
           shakeServiceBridge.startService(settingsRef.current.shakeSensitivity);
         }
@@ -285,6 +273,11 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         simulateShake,
         lastShakeTimestamp,
         openAddExpenseFromShake,
+        isSetBudgetModalOpen,
+        openSetBudgetModal,
+        closeSetBudgetModal,
+        navigationTarget,
+        clearNavigationTarget,
       }}
     >
       {children}

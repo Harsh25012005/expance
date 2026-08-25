@@ -102,48 +102,6 @@ export async function syncDailyReminder(
     // 4. Native Android Exact Alarm (Fires reliably via AlarmManager.setExactAndAllowWhileIdle)
     shakeServiceBridge.scheduleDailyReminder(hour, minute);
 
-    // 5. Expo Notifications Schedule (Secondary layer)
-    try {
-      if (Platform.OS === 'android') {
-        await Notifications.scheduleNotificationAsync({
-          identifier: REMINDER_NOTIFICATION_ID,
-          content: {
-            title: "Add today's expense",
-            body: "You haven't recorded an expense today. Add anything you spent today.",
-            data: { action: 'ADD_EXPENSE', url: 'expenza://add-expense' },
-            categoryIdentifier: 'shake_expense_category',
-            sound: 'default',
-            priority: Notifications.AndroidNotificationPriority.HIGH,
-            ...({ channelId: REMINDER_CHANNEL_ID } as any),
-          },
-          trigger: {
-            hour,
-            minute,
-            repeats: true,
-            channelId: REMINDER_CHANNEL_ID,
-          } as any,
-        });
-      } else {
-        await Notifications.scheduleNotificationAsync({
-          identifier: REMINDER_NOTIFICATION_ID,
-          content: {
-            title: "Add today's expense",
-            body: "You haven't recorded an expense today. Add anything you spent today.",
-            data: { action: 'ADD_EXPENSE', url: 'expenza://add-expense' },
-            categoryIdentifier: 'shake_expense_category',
-            sound: true,
-          },
-          trigger: {
-            hour,
-            minute,
-            repeats: true,
-          } as any,
-        });
-      }
-    } catch (schedErr) {
-      console.warn('[ReminderService] Expo scheduler warning:', schedErr);
-    }
-
     console.log(`[ReminderService] Daily reminder scheduled for ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
   } catch (error) {
     console.warn('[ReminderService] Error syncing daily reminder:', error);

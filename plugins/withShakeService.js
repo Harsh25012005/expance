@@ -2,21 +2,18 @@
  * Expo Config Plugin: withShakeService
  *
  * Injects the native Android ShakeService foreground service, ShakeServiceModule,
- * ShakeServicePackage, and BootReceiver into the generated android/ directory during expo prebuild.
+ * ShakeServicePackage, BootReceiver, ReminderReceiver, and 3 Home Screen AppWidgets:
+ * 1. Today's Spending Widget (TodaySpendingWidgetProvider)
+ * 2. Monthly Budget Widget (MonthlyBudgetWidgetProvider)
+ * 3. Quick Add Widget (QuickAddWidgetProvider)
  *
- * This ensures background shake detection works reliably across all Android lifecycle states:
- * - App open / foreground
- * - App backgrounded / minimized
- * - App removed from recent tasks
- * - Device boot / restart
- *
- * Direct bridge to React Native DeviceEventEmitter ("SHAKE_TO_ADD_EXPENSE")
- * so physical shake opens the Add Expense popup immediately without notifications in foreground.
+ * Configures output APK naming to Expenza-v1.0.0.apk and handles all native lifecycles.
  */
 const {
   withAndroidManifest,
   withMainApplication,
   withMainActivity,
+  withAppBuildGradle,
   withDangerousMod,
 } = require("expo/config-plugins");
 const fs = require("fs");
@@ -59,7 +56,7 @@ class ShakeService : Service(), SensorEventListener {
         private const val EXPENSE_CHANNEL_ID = "expense_tracking_channel"
         private const val ONGOING_NOTIFICATION_ID = 9001
         private const val NOTIFICATION_BASE_ID = 9100
-        private const val SHAKE_DEBOUNCE_MS = 1500L
+        private const val SHAKE_DEBOUNCE_MS = 2000L
 
         private val NOTIFICATION_MESSAGES = arrayOf(
             NotificationMessage("Add an expense", "Tap to quickly record what you just spent."),
@@ -75,10 +72,11 @@ class ShakeService : Service(), SensorEventListener {
         private var lastMessageIndex: Int = -1
         private var notificationCounter: Int = 0
 
-        var shakeThreshold: Float = 20.0f
+        var shakeThreshold: Float = 24.0f
         var isRunning: Boolean = false
             private set
-        var isAppInForeground: Boolean = true
+
+        var isAppInForeground: Boolean = false
 
         private fun getNextNotificationMessage(): NotificationMessage {
             val size = NOTIFICATION_MESSAGES.size
@@ -90,7 +88,7 @@ class ShakeService : Service(), SensorEventListener {
             return NOTIFICATION_MESSAGES[nextIndex]
         }
 
-        fun start(context: Context, threshold: Float = 20.0f) {
+        fun start(context: Context, threshold: Float = 24.0f) {
             shakeThreshold = threshold
             val intent = Intent(context, ShakeService::class.java)
             try {
@@ -99,18 +97,18 @@ class ShakeService : Service(), SensorEventListener {
                 } else {
                     context.startService(intent)
                 }
-                Log.d(TAG, "[SHAKE DEBUG] Native ShakeService started with threshold=\$threshold")
+                Log.d(TAG, "Native ShakeService start requested with threshold=$threshold")
             } catch (e: Exception) {
-                Log.e(TAG, "[SHAKE DEBUG] Error starting ShakeService", e)
+                Log.e(TAG, "Error starting ShakeService", e)
             }
         }
 
         fun stop(context: Context) {
             try {
                 context.stopService(Intent(context, ShakeService::class.java))
-                Log.d(TAG, "[SHAKE DEBUG] Native ShakeService stopped")
+                Log.d(TAG, "Native ShakeService stopped")
             } catch (e: Exception) {
-                Log.e(TAG, "[SHAKE DEBUG] Error stopping ShakeService", e)
+                Log.e(TAG, "Error stopping ShakeService", e)
             }
         }
     }
@@ -119,44 +117,58 @@ class ShakeService : Service(), SensorEventListener {
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "[SHAKE DEBUG] Sensor service started (native)")
+        Log.d(TAG, "Sensor service onCreate (native foreground service)")
         createNotificationChannels()
         startForeground(ONGOING_NOTIFICATION_ID, createOngoingNotification())
 
         try {
             val pm = getSystemService(POWER_SERVICE) as PowerManager
-            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ShakeExpense::ShakeSensorWakeLock").apply {
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Expenza::ShakeSensorWakeLock").apply {
                 acquire()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "[SHAKE DEBUG] Error acquiring wake lock", e)
+            Log.e(TAG, "Error acquiring wake lock", e)
         }
 
-        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
-        accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        if (accelerometer != null) {
-            sensorManager?.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_UI)
-            Log.d(TAG, "[SHAKE DEBUG] Accelerometer registered (threshold=\$shakeThreshold)")
-        } else {
-            Log.e(TAG, "[SHAKE DEBUG] No accelerometer sensor found on device")
-        }
+        registerSensorListener()
         isRunning = true
     }
 
+    private fun registerSensorListener() {
+        if (sensorManager == null) {
+            sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
+        }
+        accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        if (accelerometer != null) {
+            sensorManager?.unregisterListener(this)
+            sensorManager?.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_UI)
+            Log.d(TAG, "Accelerometer registered with threshold=$shakeThreshold")
+        } else {
+            Log.e(TAG, "No accelerometer sensor found on device")
+        }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "ShakeService onStartCommand")
+        registerSensorListener()
+        return START_STICKY
+    }
+
     override fun onDestroy() {
-        Log.d(TAG, "[SHAKE DEBUG] ShakeService onDestroy")
+        Log.d(TAG, "ShakeService onDestroy")
         try {
             sensorManager?.unregisterListener(this)
             wakeLock?.let { if (it.isHeld) it.release() }
         } catch (e: Exception) {
-            Log.e(TAG, "[SHAKE DEBUG] Error in onDestroy cleanup", e)
+            Log.e(TAG, "Error in onDestroy cleanup", e)
         }
         isRunning = false
         super.onDestroy()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        Log.d(TAG, "[SHAKE DEBUG] App task removed from recents - maintaining service for background shake detection")
+        Log.d(TAG, "App task removed from recents - maintaining service for background shake detection")
+        isAppInForeground = false
         try {
             val restartServiceIntent = Intent(applicationContext, ShakeService::class.java).also {
                 it.setPackage(packageName)
@@ -167,13 +179,9 @@ class ShakeService : Service(), SensorEventListener {
                 startService(restartServiceIntent)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "[SHAKE DEBUG] Error restarting service on task removed", e)
+            Log.e(TAG, "Error maintaining service on task removed", e)
         }
         super.onTaskRemoved(rootIntent)
-    }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        return START_STICKY
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
@@ -206,9 +214,7 @@ class ShakeService : Service(), SensorEventListener {
 
                 // FOREGROUND: open popup directly via JS event
                 if (isAppInForeground) {
-                    Log.d(TAG, "[SHAKE] DETECTED")
-                    Log.d(TAG, "[SHAKE] APP STATE: active")
-                    Log.d(TAG, "[SHAKE] Opening Add Expense popup")
+                    Log.d(TAG, "[SHAKE] DETECTED (app foreground)")
                     val emitted = ShakeServiceModule.emitShakeToJS()
                     if (!emitted) {
                         Log.d(TAG, "[SHAKE] JS not ready in foreground, showing notification fallback")
@@ -217,9 +223,8 @@ class ShakeService : Service(), SensorEventListener {
                     return
                 }
 
-                // BACKGROUND / CLOSED: show reliable, curated notification
-                Log.d(TAG, "[SHAKE] DETECTED")
-                Log.d(TAG, "[SHAKE] APP STATE: background")
+                // BACKGROUND / CLOSED APP: show native curated notification directly
+                Log.d(TAG, "[SHAKE] DETECTED (app closed/background)")
                 showExpenseNotification()
             }
         }
@@ -229,9 +234,7 @@ class ShakeService : Service(), SensorEventListener {
 
     private fun showExpenseNotification() {
         val message = getNextNotificationMessage()
-        Log.d(TAG, "[SHAKE] Creating notification")
-        Log.d(TAG, "[SHAKE] Notification title: \${message.title}")
-        Log.d(TAG, "[SHAKE] Notification body: \${message.body}")
+        Log.d(TAG, "[SHAKE] Posting notification: " + message.title + " - " + message.body)
 
         try {
             val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
@@ -267,8 +270,7 @@ class ShakeService : Service(), SensorEventListener {
         val contentPendingIntent = PendingIntent.getActivity(this, 101, tapIntent, pendingIntentFlags)
 
         try {
-            val iconRes = resources.getIdentifier("notification_icon", "drawable", packageName)
-            val icon = if (iconRes != 0) iconRes else android.R.drawable.ic_input_add
+            val icon = R.mipmap.ic_launcher
 
             val notification = NotificationCompat.Builder(this, EXPENSE_CHANNEL_ID)
                 .setSmallIcon(icon)
@@ -285,7 +287,7 @@ class ShakeService : Service(), SensorEventListener {
             val notificationManager = getSystemService(NotificationManager::class.java)
             notificationManager?.notify(notificationId, notification)
         } catch (e: Exception) {
-            Log.e(TAG, "[SHAKE] Failed to post expense notification: " + e.javaClass.simpleName + ": " + e.message, e)
+            Log.e(TAG, "Failed to post expense notification", e)
         }
     }
 
@@ -330,8 +332,7 @@ class ShakeService : Service(), SensorEventListener {
             PendingIntent.FLAG_UPDATE_CURRENT
         }
         val pendingIntent = PendingIntent.getActivity(this, 0, tapIntent, flags)
-        val iconRes = resources.getIdentifier("notification_icon", "drawable", packageName)
-        val icon = if (iconRes != 0) iconRes else android.R.drawable.ic_dialog_info
+        val icon = R.mipmap.ic_launcher
 
         return NotificationCompat.Builder(this, ONGOING_CHANNEL_ID)
             .setContentTitle("Shake to Add Active")
@@ -362,7 +363,7 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
         if (action == Intent.ACTION_BOOT_COMPLETED || action == "android.intent.action.QUICKBOOT_POWERON" || action == "com.htc.intent.action.QUICKBOOT_POWERON") {
-            Log.d(TAG, "[SHAKE DEBUG] Device booted (\$action) - starting ShakeService")
+            Log.d(TAG, "Device booted ($action) - starting ShakeService")
             ShakeService.start(context)
         }
     }
@@ -388,16 +389,16 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
             return try {
                 val ctx = reactContextInstance
                 if (ctx != null && ctx.hasActiveReactInstance()) {
-                    Log.d(TAG, "[SHAKE DEBUG] Native emitting SHAKE_TO_ADD_EXPENSE to React Native DeviceEventEmitter")
+                    Log.d(TAG, "Emitting SHAKE_TO_ADD_EXPENSE to React Native DeviceEventEmitter")
                     ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
                         .emit("SHAKE_TO_ADD_EXPENSE", null)
                     true
                 } else {
-                    Log.d(TAG, "[SHAKE DEBUG] React instance not active yet for emit")
+                    Log.d(TAG, "React instance not active for direct JS emit")
                     false
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "[SHAKE DEBUG] Error emitting to JS", e)
+                Log.e(TAG, "Error emitting to JS", e)
                 false
             }
         }
@@ -412,42 +413,42 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
     @ReactMethod
     fun startService(sensitivity: String) {
         val threshold = when (sensitivity.lowercase()) {
-            "low" -> 28.0f
-            "medium" -> 20.0f
-            "high" -> 14.0f
-            else -> 28.0f
+            "low" -> 32.0f
+            "medium" -> 24.0f
+            "high" -> 16.0f
+            else -> 32.0f
         }
-        Log.d(TAG, "[SHAKE DEBUG] Starting ShakeService with sensitivity=\$sensitivity (threshold=\$threshold)")
+        Log.d(TAG, "startService called with sensitivity=$sensitivity (threshold=$threshold)")
         ShakeService.start(reactApplicationContext, threshold)
     }
 
     @ReactMethod
     fun stopService() {
-        Log.d(TAG, "[SHAKE DEBUG] Stopping ShakeService")
+        Log.d(TAG, "stopService called")
         ShakeService.stop(reactApplicationContext)
     }
 
     @ReactMethod
     fun updateSensitivity(sensitivity: String) {
         val threshold = when (sensitivity.lowercase()) {
-            "low" -> 28.0f
-            "medium" -> 20.0f
-            "high" -> 14.0f
-            else -> 28.0f
+            "low" -> 32.0f
+            "medium" -> 24.0f
+            "high" -> 16.0f
+            else -> 32.0f
         }
         ShakeService.shakeThreshold = threshold
-        Log.d(TAG, "[SHAKE DEBUG] Updated ShakeService threshold to \$threshold")
+        Log.d(TAG, "updateSensitivity updated threshold to $threshold")
+    }
+
+    @ReactMethod
+    fun setAppForeground(isForeground: Boolean) {
+        ShakeService.isAppInForeground = isForeground
+        Log.d(TAG, "setAppForeground called with isForeground=$isForeground")
     }
 
     @ReactMethod
     fun requestAppResume() {
         try {
-            Log.d("ShakeService", "[ANDROID SHAKE] DETECTED")
-            Log.d("ShakeService", "[ANDROID SHAKE] APP IS BACKGROUND")
-            Log.d("ShakeService", "[ANDROID SHAKE] Creating ADD_EXPENSE Intent")
-            Log.d("ShakeService", "[ANDROID SHAKE] Target Activity = MainActivity")
-            Log.d("ShakeService", "[ANDROID SHAKE] Calling startActivity()")
-
             val context = reactApplicationContext
             val intent = android.content.Intent(context, MainActivity::class.java).apply {
                 action = "ADD_EXPENSE"
@@ -460,11 +461,10 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
                     android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
                 )
             }
-
             context.startActivity(intent)
-            Log.d("ShakeService", "[ANDROID SHAKE] startActivity() CALLED")
+            Log.d(TAG, "requestAppResume started MainActivity")
         } catch (e: Exception) {
-            Log.e("ShakeService", "[ANDROID SHAKE] startActivity() FAILED: " + e.javaClass.simpleName + ": " + e.message, e)
+            Log.e(TAG, "requestAppResume failed", e)
         }
     }
 
@@ -474,21 +474,22 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
     }
 
     @ReactMethod
-    fun updateWidgetData(todaySpent: Double, monthlyBudget: Double, monthSpent: Double, currency: String) {
+    fun updateWidgetData(todaySpent: Double, todayCount: Double, monthlyBudget: Double, monthSpent: Double, currency: String) {
         try {
             val context = reactApplicationContext
             val prefs = context.getSharedPreferences(ExpenzaAppWidgetProvider.PREFS_NAME, android.content.Context.MODE_PRIVATE)
             prefs.edit().apply {
                 putFloat(ExpenzaAppWidgetProvider.KEY_TODAY_SPENT, todaySpent.toFloat())
+                putInt(ExpenzaAppWidgetProvider.KEY_TODAY_COUNT, todayCount.toInt())
                 putFloat(ExpenzaAppWidgetProvider.KEY_MONTHLY_BUDGET, monthlyBudget.toFloat())
                 putFloat(ExpenzaAppWidgetProvider.KEY_MONTH_SPENT, monthSpent.toFloat())
                 putString(ExpenzaAppWidgetProvider.KEY_CURRENCY, currency)
                 apply()
             }
             ExpenzaAppWidgetProvider.updateAllWidgets(context)
-            Log.d("ShakeServiceModule", "[WIDGET] Successfully updated widget data: today=$todaySpent, budget=$monthlyBudget, month=$monthSpent")
+            Log.d(TAG, "Successfully updated widget data: todaySpent=$todaySpent, todayCount=$todayCount, budget=$monthlyBudget, monthSpent=$monthSpent")
         } catch (e: Exception) {
-            Log.e("ShakeServiceModule", "[WIDGET] Error updating widget data", e)
+            Log.e(TAG, "Error updating widget data", e)
         }
     }
 
@@ -496,9 +497,9 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
     fun scheduleDailyReminder(hour: Double, minute: Double) {
         try {
             ReminderReceiver.scheduleAlarm(reactApplicationContext, hour.toInt(), minute.toInt())
-            Log.d("ShakeServiceModule", "[REMINDER] Native scheduled alarm for $hour:$minute")
+            Log.d(TAG, "Native scheduled exact alarm for " + hour.toInt() + ":" + minute.toInt())
         } catch (e: Exception) {
-            Log.e("ShakeServiceModule", "[REMINDER] Error scheduling native reminder alarm", e)
+            Log.e(TAG, "Error scheduling native reminder alarm", e)
         }
     }
 
@@ -506,9 +507,9 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
     fun cancelDailyReminder() {
         try {
             ReminderReceiver.cancelAlarm(reactApplicationContext)
-            Log.d("ShakeServiceModule", "[REMINDER] Native cancelled reminder alarm")
+            Log.d(TAG, "Native cancelled reminder alarm")
         } catch (e: Exception) {
-            Log.e("ShakeServiceModule", "[REMINDER] Error cancelling native reminder alarm", e)
+            Log.e(TAG, "Error cancelling native reminder alarm", e)
         }
     }
 }
@@ -606,8 +607,15 @@ class ReminderReceiver : BroadcastReceiver() {
         val hour = intent.getIntExtra("hour", 20)
         val minute = intent.getIntExtra("minute", 0)
 
-        // Reschedule recurring alarm for tomorrow
         scheduleAlarm(context, hour, minute)
+
+        val prefs = context.getSharedPreferences(ExpenzaAppWidgetProvider.PREFS_NAME, Context.MODE_PRIVATE)
+        val todayCount = prefs.getInt(ExpenzaAppWidgetProvider.KEY_TODAY_COUNT, 0)
+
+        if (todayCount > 0) {
+            Log.d(TAG, "[REMINDER] User has already logged $todayCount expenses today. Skipping reminder notification.")
+            return
+        }
 
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -626,7 +634,7 @@ class ReminderReceiver : BroadcastReceiver() {
         }
 
         val openAppIntent = Intent(context, MainActivity::class.java).apply {
-            action = "com.harsh.expense.ACTION_ADD_EXPENSE"
+            action = "ADD_EXPENSE"
             data = Uri.parse("expenza://add-expense")
             putExtra("action", "ADD_EXPENSE")
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -647,11 +655,270 @@ class ReminderReceiver : BroadcastReceiver() {
             .setAutoCancel(true)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setContentIntent(pendingIntent)
-            .addAction(0, "+ Add Expense", pendingIntent)
+            .addAction(android.R.drawable.ic_input_add, "Add Expense", pendingIntent)
             .build()
 
         notificationManager.notify(NOTIFICATION_ID, notification)
-        Log.d(TAG, "[REMINDER] Posted reminder notification successfully")
+        Log.d(TAG, "[REMINDER] Posted daily reminder notification successfully")
+    }
+}
+`;
+
+// ─── TodaySpendingWidgetProvider.kt source ──────────────────────────────────
+const TODAY_SPENDING_WIDGET_PROVIDER_KT = `package {{PACKAGE}}
+
+import android.app.PendingIntent
+import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProvider
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.util.Log
+import android.widget.RemoteViews
+import java.util.Locale
+
+class TodaySpendingWidgetProvider : AppWidgetProvider() {
+
+    companion object {
+        private const val TAG = "TodaySpendingWidget"
+        const val PREFS_NAME = "expenza_widget_data"
+        const val KEY_TODAY_SPENT = "today_spent"
+        const val KEY_TODAY_COUNT = "today_count"
+        const val KEY_CURRENCY = "currency"
+
+        fun updateAllWidgets(context: Context) {
+            try {
+                val appWidgetManager = AppWidgetManager.getInstance(context)
+                val componentName = ComponentName(context, TodaySpendingWidgetProvider::class.java)
+                val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
+                if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
+                    val provider = TodaySpendingWidgetProvider()
+                    provider.onUpdate(context, appWidgetManager, appWidgetIds)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating today spending widgets", e)
+            }
+        }
+    }
+
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val todaySpent = prefs.getFloat(KEY_TODAY_SPENT, 0f).toDouble()
+        val todayCount = prefs.getInt(KEY_TODAY_COUNT, 0)
+        val currency = prefs.getString(KEY_CURRENCY, "₹") ?: "₹"
+
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+
+        val openTodayIntent = Intent(context, MainActivity::class.java).apply {
+            action = "VIEW_TODAY_EXPENSES"
+            data = Uri.parse("expenza://today")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("action", "VIEW_TODAY_EXPENSES")
+        }
+        val pendingIntent = PendingIntent.getActivity(context, 201, openTodayIntent, flags)
+
+        for (appWidgetId in appWidgetIds) {
+            try {
+                val views = RemoteViews(context.packageName, R.layout.widget_today_spending)
+
+                val amountStr = if (todaySpent == 0.0) {
+                    "\${currency}0"
+                } else if (todaySpent == todaySpent.toLong().toDouble()) {
+                    String.format(Locale.getDefault(), "%s%,d", currency, todaySpent.toLong())
+                } else {
+                    String.format(Locale.getDefault(), "%s%,.2f", currency, todaySpent)
+                }
+                views.setTextViewText(R.id.widget_today_amount, amountStr)
+
+                val countStr = when (todayCount) {
+                    0 -> "No expenses today"
+                    1 -> "1 expense today"
+                    else -> "$todayCount expenses today"
+                }
+                views.setTextViewText(R.id.widget_today_count, countStr)
+
+                views.setOnClickPendingIntent(R.id.widget_today_root, pendingIntent)
+
+                appWidgetManager.updateAppWidget(appWidgetId, views)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error rendering TodaySpendingWidget", e)
+            }
+        }
+    }
+}
+`;
+
+// ─── MonthlyBudgetWidgetProvider.kt source ──────────────────────────────────
+const MONTHLY_BUDGET_WIDGET_PROVIDER_KT = `package {{PACKAGE}}
+
+import android.app.PendingIntent
+import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProvider
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.util.Log
+import android.widget.RemoteViews
+import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.min
+
+class MonthlyBudgetWidgetProvider : AppWidgetProvider() {
+
+    companion object {
+        private const val TAG = "MonthlyBudgetWidget"
+        const val PREFS_NAME = "expenza_widget_data"
+        const val KEY_MONTHLY_BUDGET = "monthly_budget"
+        const val KEY_MONTH_SPENT = "month_spent"
+        const val KEY_CURRENCY = "currency"
+
+        fun updateAllWidgets(context: Context) {
+            try {
+                val appWidgetManager = AppWidgetManager.getInstance(context)
+                val componentName = ComponentName(context, MonthlyBudgetWidgetProvider::class.java)
+                val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
+                if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
+                    val provider = MonthlyBudgetWidgetProvider()
+                    provider.onUpdate(context, appWidgetManager, appWidgetIds)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating monthly budget widgets", e)
+            }
+        }
+    }
+
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val monthlyBudget = prefs.getFloat(KEY_MONTHLY_BUDGET, 0f).toDouble()
+        val monthSpent = prefs.getFloat(KEY_MONTH_SPENT, 0f).toDouble()
+        val currency = prefs.getString(KEY_CURRENCY, "₹") ?: "₹"
+
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+
+        val openBudgetIntent = Intent(context, MainActivity::class.java).apply {
+            action = "OPEN_SET_BUDGET"
+            data = Uri.parse("expenza://set-budget")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("action", "OPEN_SET_BUDGET")
+        }
+        val pendingIntent = PendingIntent.getActivity(context, 202, openBudgetIntent, flags)
+
+        for (appWidgetId in appWidgetIds) {
+            try {
+                val views = RemoteViews(context.packageName, R.layout.widget_monthly_budget)
+
+                if (monthlyBudget > 0) {
+                    val remaining = monthlyBudget - monthSpent
+                    val percentage = ((monthSpent / monthlyBudget) * 100).toInt()
+                    val progressVal = min(percentage, 100)
+
+                    val spentFormatted = String.format(Locale.getDefault(), "%s%,d", currency, monthSpent.toLong())
+                    val budgetFormatted = String.format(Locale.getDefault(), "%s%,d", currency, monthlyBudget.toLong())
+                    val valuesStr = "$spentFormatted / $budgetFormatted"
+                    views.setTextViewText(R.id.widget_budget_values, valuesStr)
+
+                    views.setProgressBar(R.id.widget_budget_progressbar, 100, progressVal, false)
+
+                    if (remaining >= 0) {
+                        val leftFormatted = String.format(Locale.getDefault(), "%s%,d", currency, remaining.toLong())
+                        val subtext = "$percentage% used \u2022 $leftFormatted left"
+                        views.setTextViewText(R.id.widget_budget_subtext, subtext)
+                        views.setTextColor(R.id.widget_budget_subtext, 0xFF4F46E5.toInt())
+                    } else {
+                        val overFormatted = String.format(Locale.getDefault(), "%s%,d", currency, abs(remaining).toLong())
+                        val subtext = "$percentage% used \u2022 $overFormatted over"
+                        views.setTextViewText(R.id.widget_budget_subtext, subtext)
+                        views.setTextColor(R.id.widget_budget_subtext, 0xFFDC2626.toInt())
+                    }
+                } else {
+                    views.setTextViewText(R.id.widget_budget_values, "Set your budget")
+                    views.setProgressBar(R.id.widget_budget_progressbar, 100, 0, false)
+                    views.setTextViewText(R.id.widget_budget_subtext, "Tap to set monthly target")
+                    views.setTextColor(R.id.widget_budget_subtext, 0xFF4F46E5.toInt())
+                }
+
+                views.setOnClickPendingIntent(R.id.widget_budget_root, pendingIntent)
+
+                appWidgetManager.updateAppWidget(appWidgetId, views)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error rendering MonthlyBudgetWidget", e)
+            }
+        }
+    }
+}
+`;
+
+// ─── QuickAddWidgetProvider.kt source ───────────────────────────────────────
+const QUICK_ADD_WIDGET_PROVIDER_KT = `package {{PACKAGE}}
+
+import android.app.PendingIntent
+import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProvider
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.util.Log
+import android.widget.RemoteViews
+
+class QuickAddWidgetProvider : AppWidgetProvider() {
+
+    companion object {
+        private const val TAG = "QuickAddWidget"
+
+        fun updateAllWidgets(context: Context) {
+            try {
+                val appWidgetManager = AppWidgetManager.getInstance(context)
+                val componentName = ComponentName(context, QuickAddWidgetProvider::class.java)
+                val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
+                if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
+                    val provider = QuickAddWidgetProvider()
+                    provider.onUpdate(context, appWidgetManager, appWidgetIds)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating quick add widgets", e)
+            }
+        }
+    }
+
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+
+        val addExpenseIntent = Intent(context, MainActivity::class.java).apply {
+            action = "ADD_EXPENSE"
+            data = Uri.parse("expenza://add-expense")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("action", "ADD_EXPENSE")
+        }
+        val pendingIntent = PendingIntent.getActivity(context, 203, addExpenseIntent, flags)
+
+        for (appWidgetId in appWidgetIds) {
+            try {
+                val views = RemoteViews(context.packageName, R.layout.widget_quick_add)
+                views.setOnClickPendingIntent(R.id.widget_quick_add_root, pendingIntent)
+                views.setOnClickPendingIntent(R.id.widget_quick_add_btn, pendingIntent)
+                appWidgetManager.updateAppWidget(appWidgetId, views)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error rendering QuickAddWidget", e)
+            }
+        }
     }
 }
 `;
@@ -666,6 +933,8 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.util.Log
 import android.widget.RemoteViews
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -674,19 +943,29 @@ import java.util.Locale
 class ExpenzaAppWidgetProvider : AppWidgetProvider() {
 
     companion object {
+        private const val TAG = "ExpenzaAppWidget"
         const val PREFS_NAME = "expenza_widget_data"
         const val KEY_TODAY_SPENT = "today_spent"
+        const val KEY_TODAY_COUNT = "today_count"
         const val KEY_MONTHLY_BUDGET = "monthly_budget"
         const val KEY_MONTH_SPENT = "month_spent"
         const val KEY_CURRENCY = "currency"
 
         fun updateAllWidgets(context: Context) {
-            val appWidgetManager = AppWidgetManager.getInstance(context)
-            val componentName = ComponentName(context, ExpenzaAppWidgetProvider::class.java)
-            val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-            if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
-                val provider = ExpenzaAppWidgetProvider()
-                provider.onUpdate(context, appWidgetManager, appWidgetIds)
+            try {
+                TodaySpendingWidgetProvider.updateAllWidgets(context)
+                MonthlyBudgetWidgetProvider.updateAllWidgets(context)
+                QuickAddWidgetProvider.updateAllWidgets(context)
+
+                val appWidgetManager = AppWidgetManager.getInstance(context)
+                val componentName = ComponentName(context, ExpenzaAppWidgetProvider::class.java)
+                val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
+                if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
+                    val provider = ExpenzaAppWidgetProvider()
+                    provider.onUpdate(context, appWidgetManager, appWidgetIds)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in updateAllWidgets", e)
             }
         }
     }
@@ -701,67 +980,83 @@ class ExpenzaAppWidgetProvider : AppWidgetProvider() {
         val dateFormat = SimpleDateFormat("EEEE, MMM d", Locale.getDefault())
         val formattedDate = dateFormat.format(Date())
 
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+
+        val openAppIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val openAppPendingIntent = PendingIntent.getActivity(context, 0, openAppIntent, flags)
+
+        val addExpenseIntent = Intent(context, MainActivity::class.java).apply {
+            action = "ADD_EXPENSE"
+            data = Uri.parse("expenza://add-expense")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("action", "ADD_EXPENSE")
+        }
+        val addExpensePendingIntent = PendingIntent.getActivity(context, 1, addExpenseIntent, flags)
+
         for (appWidgetId in appWidgetIds) {
-            val views = RemoteViews(context.packageName, R.layout.widget_expenza)
+            try {
+                val views = RemoteViews(context.packageName, R.layout.widget_expenza)
+                views.setTextViewText(R.id.widget_date, formattedDate)
 
-            // 1. Set Date
-            views.setTextViewText(R.id.widget_date, formattedDate)
-
-            // 2. Set Today's Spending
-            val todayStr = String.format(Locale.getDefault(), "%s%,.2f", currency, todaySpent)
-            views.setTextViewText(R.id.widget_today_spent, todayStr)
-
-            // 3. Set Monthly Budget / Remaining
-            if (monthlyBudget > 0) {
-                val remaining = monthlyBudget - monthSpent
-                if (remaining >= 0) {
-                    views.setTextViewText(R.id.widget_budget_label, "REMAINING BUDGET")
-                    val remStr = String.format(Locale.getDefault(), "%s%,.0f left", currency, remaining)
-                    views.setTextViewText(R.id.widget_budget_value, remStr)
-                    views.setTextColor(R.id.widget_budget_value, 0xFF4F46E5.toInt())
+                val todayStr = if (todaySpent == 0.0) {
+                    "\${currency}0"
+                } else if (todaySpent == todaySpent.toLong().toDouble()) {
+                    String.format(Locale.getDefault(), "%s%,d", currency, todaySpent.toLong())
                 } else {
-                    views.setTextViewText(R.id.widget_budget_label, "OVER BUDGET")
-                    val overStr = String.format(Locale.getDefault(), "%s%,.0f over", currency, Math.abs(remaining))
-                    views.setTextViewText(R.id.widget_budget_value, overStr)
-                    views.setTextColor(R.id.widget_budget_value, 0xFFDC2626.toInt())
+                    String.format(Locale.getDefault(), "%s%,.2f", currency, todaySpent)
                 }
-            } else {
-                views.setTextViewText(R.id.widget_budget_label, "THIS MONTH")
-                val monthStr = String.format(Locale.getDefault(), "%s%,.2f", currency, monthSpent)
-                views.setTextViewText(R.id.widget_budget_value, monthStr)
-                views.setTextColor(R.id.widget_budget_value, 0xFF737373.toInt())
-            }
+                views.setTextViewText(R.id.widget_today_spent, todayStr)
 
-            // 4. Click Entire Widget -> Launch App Home
-            val openAppIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            }
-            val openAppPendingIntent = PendingIntent.getActivity(
-                context,
-                0,
-                openAppIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            views.setOnClickPendingIntent(R.id.widget_root, openAppPendingIntent)
+                if (monthlyBudget > 0) {
+                    val remaining = monthlyBudget - monthSpent
+                    if (remaining >= 0) {
+                        views.setTextViewText(R.id.widget_budget_label, "REMAINING BUDGET")
+                        val remStr = String.format(Locale.getDefault(), "%s%,d left", currency, remaining.toLong())
+                        views.setTextViewText(R.id.widget_budget_value, remStr)
+                        views.setTextColor(R.id.widget_budget_value, 0xFF4F46E5.toInt())
+                    } else {
+                        views.setTextViewText(R.id.widget_budget_label, "OVER BUDGET")
+                        val overStr = String.format(Locale.getDefault(), "%s%,d over", currency, Math.abs(remaining).toLong())
+                        views.setTextViewText(R.id.widget_budget_value, overStr)
+                        views.setTextColor(R.id.widget_budget_value, 0xFFDC2626.toInt())
+                    }
+                } else {
+                    views.setTextViewText(R.id.widget_budget_label, "MONTHLY BUDGET")
+                    views.setTextViewText(R.id.widget_budget_value, "No target set")
+                    views.setTextColor(R.id.widget_budget_value, 0xFF4F46E5.toInt())
+                }
 
-            // 5. Click '+ Add' Button -> Direct deep link to Add Expense
-            val addExpenseIntent = Intent(context, MainActivity::class.java).apply {
-                action = "com.harsh.expense.ACTION_ADD_EXPENSE"
-                data = Uri.parse("expenza://add-expense")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                putExtra("action", "ADD_EXPENSE")
-            }
-            val addExpensePendingIntent = PendingIntent.getActivity(
-                context,
-                1,
-                addExpenseIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            views.setOnClickPendingIntent(R.id.widget_btn_add, addExpensePendingIntent)
+                views.setOnClickPendingIntent(R.id.widget_root, openAppPendingIntent)
+                views.setOnClickPendingIntent(R.id.widget_btn_add, addExpensePendingIntent)
 
-            appWidgetManager.updateAppWidget(appWidgetId, views)
+                appWidgetManager.updateAppWidget(appWidgetId, views)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error rendering ExpenzaAppWidget", e)
+            }
         }
     }
+}
+`;
+
+// ─── ShakeServicePackage.kt source ───────────────────────────────────────────
+const SHAKE_SERVICE_PACKAGE_KT = `package {{PACKAGE}}
+
+import com.facebook.react.ReactPackage
+import com.facebook.react.bridge.NativeModule
+import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.uimanager.ViewManager
+
+class ShakeServicePackage : ReactPackage {
+    override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
+        return listOf(ShakeServiceModule(reactContext))
+    }
+    override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> = emptyList()
 }
 `;
 
@@ -770,27 +1065,77 @@ const WIDGET_BACKGROUND_XML = `<?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="#FFFFFF" />
-    <corners android:radius="18dp" />
+    <corners android:radius="16dp" />
     <stroke
         android:width="1dp"
-        android:color="#E7E7E4" />
+        android:color="#E5E7EB" />
 </shape>`;
 
 const WIDGET_BTN_BG_XML = `<?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="#4F46E5" />
-    <corners android:radius="8dp" />
+    <corners android:radius="10dp" />
 </shape>`;
 
-const WIDGET_ICON_BADGE_XML = `<?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <solid android:color="#EEF2FF" />
-    <corners android:radius="6dp" />
-</shape>`;
+const WIDGET_PROGRESS_DRAWABLE_XML = `<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@android:id/background">
+        <shape>
+            <corners android:radius="4dp" />
+            <solid android:color="#F3F4F6" />
+        </shape>
+    </item>
+    <item android:id="@android:id/progress">
+        <clip>
+            <shape>
+                <corners android:radius="4dp" />
+                <solid android:color="#4F46E5" />
+            </shape>
+        </clip>
+    </item>
+</layer-list>`;
 
-const WIDGET_INFO_XML = `<?xml version="1.0" encoding="utf-8"?>
+const TODAY_SPENDING_WIDGET_INFO_XML = `<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="160dp"
+    android:minHeight="90dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="1800000"
+    android:initialLayout="@layout/widget_today_spending"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/widget_today_spending_description">
+</appwidget-provider>`;
+
+const MONTHLY_BUDGET_WIDGET_INFO_XML = `<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="220dp"
+    android:minHeight="90dp"
+    android:targetCellWidth="3"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="1800000"
+    android:initialLayout="@layout/widget_monthly_budget"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/widget_monthly_budget_description">
+</appwidget-provider>`;
+
+const QUICK_ADD_WIDGET_INFO_XML = `<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="140dp"
+    android:minHeight="70dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="1"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/widget_quick_add"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/widget_quick_add_description">
+</appwidget-provider>`;
+
+const EXPENZA_WIDGET_INFO_XML = `<?xml version="1.0" encoding="utf-8"?>
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="220dp"
     android:minHeight="90dp"
@@ -802,14 +1147,163 @@ const WIDGET_INFO_XML = `<?xml version="1.0" encoding="utf-8"?>
     android:widgetCategory="home_screen">
 </appwidget-provider>`;
 
-const WIDGET_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
+const WIDGET_TODAY_SPENDING_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_today_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_background"
+    android:padding="14dp"
+    android:gravity="center_vertical">
+
+    <TextView
+        android:id="@+id/widget_today_label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="TODAY\\'S SPENDING"
+        android:textColor="#6B7280"
+        android:textSize="11sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/widget_today_amount"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="₹0"
+        android:textColor="#111827"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:layout_marginTop="4dp" />
+
+    <TextView
+        android:id="@+id/widget_today_count"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="No expenses today"
+        android:textColor="#6B7280"
+        android:textSize="12sp"
+        android:layout_marginTop="2dp" />
+
+</LinearLayout>`;
+
+const WIDGET_MONTHLY_BUDGET_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_budget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_background"
+    android:padding="14dp"
+    android:gravity="center_vertical">
+
+    <TextView
+        android:id="@+id/widget_budget_label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="MONTHLY BUDGET"
+        android:textColor="#6B7280"
+        android:textSize="11sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/widget_budget_values"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Set your budget"
+        android:textColor="#111827"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:layout_marginTop="4dp" />
+
+    <ProgressBar
+        android:id="@+id/widget_budget_progressbar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="6dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="6dp"
+        android:max="100"
+        android:progress="0"
+        android:progressDrawable="@drawable/widget_progress_drawable" />
+
+    <TextView
+        android:id="@+id/widget_budget_subtext"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Tap to set monthly target"
+        android:textColor="#4F46E5"
+        android:textSize="11sp"
+        android:textStyle="bold" />
+
+</LinearLayout>`;
+
+const WIDGET_QUICK_ADD_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_quick_add_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:background="@drawable/widget_background"
+    android:padding="12dp"
+    android:gravity="center_vertical">
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/widget_quick_add_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Add Expense"
+            android:textColor="#111827"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_quick_add_subtext"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Tap to record spending"
+            android:textColor="#6B7280"
+            android:textSize="11sp"
+            android:layout_marginTop="2dp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/widget_quick_add_btn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/widget_btn_bg"
+        android:paddingStart="14dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="14dp"
+        android:paddingBottom="8dp"
+        android:gravity="center">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="+ Add"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+</LinearLayout>`;
+
+const WIDGET_EXPENZA_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/widget_background"
-    android:padding="16dp">
+    android:padding="14dp"
+    android:gravity="center_vertical">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -828,7 +1322,7 @@ const WIDGET_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Expenza"
-                android:textColor="#171717"
+                android:textColor="#111827"
                 android:textSize="14sp"
                 android:textStyle="bold" />
 
@@ -837,7 +1331,7 @@ const WIDGET_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Today"
-                android:textColor="#737373"
+                android:textColor="#6B7280"
                 android:textSize="11sp"
                 android:layout_marginTop="1dp" />
         </LinearLayout>
@@ -849,9 +1343,9 @@ const WIDGET_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
             android:background="@drawable/widget_btn_bg"
             android:gravity="center"
             android:paddingStart="12dp"
-            android:paddingTop="7dp"
+            android:paddingTop="6dp"
             android:paddingEnd="12dp"
-            android:paddingBottom="7dp">
+            android:paddingBottom="6dp">
 
             <TextView
                 android:layout_width="wrap_content"
@@ -867,7 +1361,7 @@ const WIDGET_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginTop="14dp"
+        android:layout_marginTop="10dp"
         android:gravity="center_vertical">
 
         <LinearLayout
@@ -879,8 +1373,8 @@ const WIDGET_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="TODAY'S SPENT"
-                android:textColor="#737373"
+                android:text="TODAY\\'S SPENT"
+                android:textColor="#6B7280"
                 android:textSize="10sp"
                 android:textStyle="bold" />
 
@@ -888,19 +1382,12 @@ const WIDGET_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
                 android:id="@+id/widget_today_spent"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="₹0.00"
-                android:textColor="#171717"
-                android:textSize="18sp"
+                android:text="₹0"
+                android:textColor="#111827"
+                android:textSize="16sp"
                 android:textStyle="bold"
                 android:layout_marginTop="2dp" />
         </LinearLayout>
-
-        <View
-            android:layout_width="1dp"
-            android:layout_height="32dp"
-            android:background="#E7E7E4"
-            android:layout_marginStart="12dp"
-            android:layout_marginEnd="12dp" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -913,7 +1400,7 @@ const WIDGET_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="MONTHLY BUDGET"
-                android:textColor="#737373"
+                android:textColor="#6B7280"
                 android:textSize="10sp"
                 android:textStyle="bold" />
 
@@ -923,7 +1410,7 @@ const WIDGET_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
                 android:layout_height="wrap_content"
                 android:text="No target set"
                 android:textColor="#4F46E5"
-                android:textSize="14sp"
+                android:textSize="13sp"
                 android:textStyle="bold"
                 android:layout_marginTop="2dp" />
         </LinearLayout>
@@ -931,26 +1418,9 @@ const WIDGET_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
 
 </LinearLayout>`;
 
-// ─── ShakeServicePackage.kt source ───────────────────────────────────────────
-const SHAKE_SERVICE_PACKAGE_KT = `package {{PACKAGE}}
-
-import com.facebook.react.ReactPackage
-import com.facebook.react.bridge.NativeModule
-import com.facebook.react.bridge.ReactApplicationContext
-import com.facebook.react.uimanager.ViewManager
-
-class ShakeServicePackage : ReactPackage {
-    override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
-        return listOf(ShakeServiceModule(reactContext))
-    }
-    override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> = emptyList()
-}
-`;
-
 // ─── Helper: resolve package directory path ──────────────────────────────────
 function getPackageDirPath(config) {
-  const pkg =
-    config.android?.package || config.extra?.eas?.projectId || "com.harsh.expense";
+  const pkg = config.android?.package || "com.harsh.expense";
   const pkgDir = path.join(...pkg.split("."));
   return { pkg, pkgDir };
 }
@@ -987,6 +1457,9 @@ function withShakeServiceFiles(config) {
         "BootReceiver.kt": BOOT_RECEIVER_KT,
         "ShakeServiceModule.kt": SHAKE_SERVICE_MODULE_KT,
         "ShakeServicePackage.kt": SHAKE_SERVICE_PACKAGE_KT,
+        "TodaySpendingWidgetProvider.kt": TODAY_SPENDING_WIDGET_PROVIDER_KT,
+        "MonthlyBudgetWidgetProvider.kt": MONTHLY_BUDGET_WIDGET_PROVIDER_KT,
+        "QuickAddWidgetProvider.kt": QUICK_ADD_WIDGET_PROVIDER_KT,
         "ExpenzaAppWidgetProvider.kt": EXPENZA_APP_WIDGET_PROVIDER_KT,
         "ReminderReceiver.kt": REMINDER_RECEIVER_KT,
       };
@@ -994,21 +1467,25 @@ function withShakeServiceFiles(config) {
       for (const [filename, content] of Object.entries(files)) {
         const filepath = path.join(javaDir, filename);
         fs.writeFileSync(filepath, content.replace(/\{\{PACKAGE\}\}/g, pkg));
-        console.log(`[withShakeService] Wrote ${filepath}`);
       }
 
       // Write layout, xml and drawable files
       const resFiles = [
-        { path: path.join(resDir, "xml", "expenza_widget_info.xml"), content: WIDGET_INFO_XML },
-        { path: path.join(resDir, "layout", "widget_expenza.xml"), content: WIDGET_LAYOUT_XML },
+        { path: path.join(resDir, "xml", "today_spending_widget_info.xml"), content: TODAY_SPENDING_WIDGET_INFO_XML },
+        { path: path.join(resDir, "xml", "monthly_budget_widget_info.xml"), content: MONTHLY_BUDGET_WIDGET_INFO_XML },
+        { path: path.join(resDir, "xml", "quick_add_widget_info.xml"), content: QUICK_ADD_WIDGET_INFO_XML },
+        { path: path.join(resDir, "xml", "expenza_widget_info.xml"), content: EXPENZA_WIDGET_INFO_XML },
+        { path: path.join(resDir, "layout", "widget_today_spending.xml"), content: WIDGET_TODAY_SPENDING_LAYOUT_XML },
+        { path: path.join(resDir, "layout", "widget_monthly_budget.xml"), content: WIDGET_MONTHLY_BUDGET_LAYOUT_XML },
+        { path: path.join(resDir, "layout", "widget_quick_add.xml"), content: WIDGET_QUICK_ADD_LAYOUT_XML },
+        { path: path.join(resDir, "layout", "widget_expenza.xml"), content: WIDGET_EXPENZA_LAYOUT_XML },
         { path: path.join(resDir, "drawable", "widget_background.xml"), content: WIDGET_BACKGROUND_XML },
         { path: path.join(resDir, "drawable", "widget_btn_bg.xml"), content: WIDGET_BTN_BG_XML },
-        { path: path.join(resDir, "drawable", "widget_icon_badge.xml"), content: WIDGET_ICON_BADGE_XML },
+        { path: path.join(resDir, "drawable", "widget_progress_drawable.xml"), content: WIDGET_PROGRESS_DRAWABLE_XML },
       ];
 
       for (const { path: rPath, content } of resFiles) {
         fs.writeFileSync(rPath, content);
-        console.log(`[withShakeService] Wrote resource ${rPath}`);
       }
 
       return config;
@@ -1016,7 +1493,7 @@ function withShakeServiceFiles(config) {
   ]);
 }
 
-// ─── 2. Register ShakeService and permissions in AndroidManifest.xml ─────────
+// ─── 2. Register ShakeService, Receivers, and permissions in AndroidManifest.xml ──
 function withShakeServiceManifest(config) {
   return withAndroidManifest(config, (config) => {
     const manifest = config.modResults;
@@ -1033,6 +1510,7 @@ function withShakeServiceManifest(config) {
         $: {
           "android:name": ".ShakeService",
           "android:exported": "false",
+          "android:stopWithTask": "false",
           "android:foregroundServiceType": "specialUse",
         },
         property: [
@@ -1046,16 +1524,50 @@ function withShakeServiceManifest(config) {
         ],
       });
       app.service = services;
-      console.log("[withShakeService] Registered ShakeService in AndroidManifest.xml");
     }
 
-    // Register BootReceiver
     const receivers = app.receiver || [];
-    const receiverExists = receivers.some(
-      (r) => r.$?.["android:name"] === ".BootReceiver"
-    );
 
-    if (!receiverExists) {
+    // Helper to add receiver if missing
+    function addReceiver(receiverName, label, resource) {
+      const exists = receivers.some((r) => r.$?.["android:name"] === receiverName);
+      if (!exists) {
+        const obj = {
+          $: {
+            "android:name": receiverName,
+            "android:exported": "true",
+          },
+          "intent-filter": [
+            {
+              action: [
+                { $: { "android:name": "android.appwidget.action.APPWIDGET_UPDATE" } },
+              ],
+            },
+          ],
+          "meta-data": [
+            {
+              $: {
+                "android:name": "android.appwidget.provider",
+                "android:resource": resource,
+              },
+            },
+          ],
+        };
+        if (label) {
+          obj.$["android:label"] = label;
+        }
+        receivers.push(obj);
+      }
+    }
+
+    // Register 3 Home Screen Widgets
+    addReceiver(".TodaySpendingWidgetProvider", "@string/widget_today_spending_title", "@xml/today_spending_widget_info");
+    addReceiver(".MonthlyBudgetWidgetProvider", "@string/widget_monthly_budget_title", "@xml/monthly_budget_widget_info");
+    addReceiver(".QuickAddWidgetProvider", "@string/widget_quick_add_title", "@xml/quick_add_widget_info");
+    addReceiver(".ExpenzaAppWidgetProvider", null, "@xml/expenza_widget_info");
+
+    // Register BootReceiver
+    if (!receivers.some((r) => r.$?.["android:name"] === ".BootReceiver")) {
       receivers.push({
         $: {
           "android:name": ".BootReceiver",
@@ -1072,47 +1584,10 @@ function withShakeServiceManifest(config) {
           },
         ],
       });
-      app.receiver = receivers;
-      console.log("[withShakeService] Registered BootReceiver in AndroidManifest.xml");
-    }
-
-    // Register ExpenzaAppWidgetProvider
-    const widgetReceiverExists = receivers.some(
-      (r) => r.$?.["android:name"] === ".ExpenzaAppWidgetProvider"
-    );
-
-    if (!widgetReceiverExists) {
-      receivers.push({
-        $: {
-          "android:name": ".ExpenzaAppWidgetProvider",
-          "android:exported": "true",
-        },
-        "intent-filter": [
-          {
-            action: [
-              { $: { "android:name": "android.appwidget.action.APPWIDGET_UPDATE" } },
-            ],
-          },
-        ],
-        "meta-data": [
-          {
-            $: {
-              "android:name": "android.appwidget.provider",
-              "android:resource": "@xml/expenza_widget_info",
-            },
-          },
-        ],
-      });
-      app.receiver = receivers;
-      console.log("[withShakeService] Registered ExpenzaAppWidgetProvider in AndroidManifest.xml");
     }
 
     // Register ReminderReceiver
-    const reminderReceiverExists = receivers.some(
-      (r) => r.$?.["android:name"] === ".ReminderReceiver"
-    );
-
-    if (!reminderReceiverExists) {
+    if (!receivers.some((r) => r.$?.["android:name"] === ".ReminderReceiver")) {
       receivers.push({
         $: {
           "android:name": ".ReminderReceiver",
@@ -1126,9 +1601,9 @@ function withShakeServiceManifest(config) {
           },
         ],
       });
-      app.receiver = receivers;
-      console.log("[withShakeService] Registered ReminderReceiver in AndroidManifest.xml");
     }
+
+    app.receiver = receivers;
 
     const permissions = manifest.manifest["uses-permission"] || [];
     const requiredPermissions = [
@@ -1169,14 +1644,13 @@ function withShakeServiceMainApplication(config) {
         `// Packages that cannot be autolinked yet can be added manually here, for example:\n          // add(MyReactNativePackage())\n          add(ShakeServicePackage())`
       );
       config.modResults.contents = contents;
-      console.log("[withShakeService] Added ShakeServicePackage to MainApplication");
     }
 
     return config;
   });
 }
 
-// ─── 4. Add onNewIntent to MainActivity ──────────────────────────────────────
+// ─── 4. Add onResume/onPause/onNewIntent to MainActivity ─────────────────────
 function withShakeServiceMainActivity(config) {
   return withMainActivity(config, (config) => {
     let contents = config.modResults.contents;
@@ -1198,7 +1672,22 @@ function withShakeServiceMainActivity(config) {
       const onCreateEnd = contents.indexOf("super.onCreate(null)");
       if (onCreateEnd !== -1) {
         const insertPos = contents.indexOf("}", onCreateEnd) + 1;
-        const onNewIntentMethod = `
+        const methods = `
+
+  override fun onResume() {
+    super.onResume()
+    ShakeService.isAppInForeground = true
+  }
+
+  override fun onPause() {
+    super.onPause()
+    ShakeService.isAppInForeground = false
+  }
+
+  override fun onDestroy() {
+    super.onDestroy()
+    ShakeService.isAppInForeground = false
+  }
 
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
@@ -1210,21 +1699,17 @@ function withShakeServiceMainActivity(config) {
     if (intent == null) return
     val uri = intent.dataString
     val action = intent.getStringExtra("action") ?: intent.action
-    if (action == "ADD_EXPENSE" || (uri != null && (uri.contains("add-expense") || uri.contains("shake-open") || uri.contains("expenza://")))) {
-      Log.d("MainActivity", "[SHAKE] Notification tapped")
-      Log.d("MainActivity", "[SHAKE] ADD_EXPENSE action requested")
-      Log.d("MainActivity", "[SHAKE] Opening Add Expense")
+    if (action == "ADD_EXPENSE" || (uri != null && (uri.contains("add-expense") || uri.contains("shake-open")))) {
       ShakeServiceModule.emitShakeToJS()
     }
   }`;
         contents =
           contents.slice(0, insertPos) +
-          onNewIntentMethod +
+          methods +
           contents.slice(insertPos);
       }
 
       config.modResults.contents = contents;
-      console.log("[withShakeService] Added onNewIntent to MainActivity");
     }
 
     return config;
