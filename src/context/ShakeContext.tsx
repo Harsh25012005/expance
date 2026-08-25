@@ -152,6 +152,8 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       if (url?.includes('set-budget') || action === 'OPEN_SET_BUDGET') {
         openSetBudgetModal();
+      } else if (url?.includes('breakdown') || action === 'VIEW_ANALYTICS') {
+        setNavigationTarget('analytics');
       } else if (url?.includes('today') || url?.includes('expenses') || action === 'VIEW_TODAY_EXPENSES') {
         setNavigationTarget('expenses');
       } else {
@@ -165,6 +167,8 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       console.log(`[DEEP LINK] Received: ${url}`);
       if (url.includes('set-budget')) {
         openSetBudgetModal();
+      } else if (url.includes('breakdown')) {
+        setNavigationTarget('analytics');
       } else if (url.includes('today') || url.includes('expenses')) {
         setNavigationTarget('expenses');
       } else if (url.includes('add-expense') || url.includes('shake-open')) {
