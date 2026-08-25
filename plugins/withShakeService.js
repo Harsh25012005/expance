@@ -2,15 +2,12 @@
  * Expo Config Plugin: withShakeService
  *
  * Injects the native Android ShakeService foreground service, ShakeServiceModule,
- * ShakeServicePackage, BootReceiver, ReminderReceiver, and 6 Home Screen AppWidgets:
- * 1. Total Spent & Budget (ExpenzaAppWidgetProvider)
- * 2. Today's Spending (TodaySpendingWidgetProvider)
- * 3. Monthly Budget Progress (MonthlyBudgetWidgetProvider)
- * 4. Quick Add Action (QuickAddWidgetProvider)
- * 5. Where Did It Go? Spending Breakdown (WhereDidItGoWidgetProvider)
- * 6. Money Mood / Spending Status (MoneyMoodWidgetProvider)
- *
- * Configures output APK naming to Expenza-v1.0.0.apk and handles all native lifecycles.
+ * ShakeServicePackage, BootReceiver, ReminderReceiver, WidgetChartUtils, and exactly 5 Home Screen AppWidgets:
+ * 1. Budget Gauge & Controls (BudgetWidgetProvider - Ref 1)
+ * 2. Monthly Total Spent (QuickAddWidgetProvider - Ref 2)
+ * 3. Today's Spending (TodaySpendingWidgetProvider - Ref 3)
+ * 4. Where Did It Go? Concentric Rings (WhereDidItGoWidgetProvider - Ref 4)
+ * 5. Daily Activity Equalizer (BudgetProgressWidgetProvider - Ref 5)
  */
 const {
   withAndroidManifest,
@@ -216,7 +213,6 @@ class ShakeService : Service(), SensorEventListener {
             if (now - lastShakeTime > SHAKE_DEBOUNCE_MS) {
                 lastShakeTime = now
 
-                // FOREGROUND: open popup directly via JS event
                 if (isAppInForeground) {
                     Log.d(TAG, "[SHAKE] DETECTED (app foreground)")
                     val emitted = ShakeServiceModule.emitShakeToJS()
@@ -227,7 +223,6 @@ class ShakeService : Service(), SensorEventListener {
                     return
                 }
 
-                // BACKGROUND / CLOSED APP: show native curated notification directly
                 Log.d(TAG, "[SHAKE] DETECTED (app closed/background)")
                 showExpenseNotification()
             }
@@ -374,6 +369,240 @@ class BootReceiver : BroadcastReceiver() {
 }
 `;
 
+// ─── WidgetChartUtils.kt source ──────────────────────────────────────────────
+const WIDGET_CHART_UTILS_KT = `package {{PACKAGE}}
+
+import android.content.Context
+import android.graphics.*
+import kotlin.math.cos
+import kotlin.math.sin
+
+object WidgetChartUtils {
+
+    private fun dpToPx(context: Context, dp: Float): Float {
+        return dp * context.resources.displayMetrics.density
+    }
+
+    fun drawGradientArcGauge(
+        context: Context,
+        progressPct: Int,
+        widthDp: Float = 170f,
+        heightDp: Float = 120f,
+        strokeWidthDp: Float = 13f
+    ): Bitmap {
+        val widthPx = dpToPx(context, widthDp).toInt().coerceAtLeast(1)
+        val heightPx = dpToPx(context, heightDp).toInt().coerceAtLeast(1)
+
+        val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val strokePx = dpToPx(context, strokeWidthDp)
+        val padding = strokePx / 2f + dpToPx(context, 4f)
+        val arcSize = (widthPx - padding * 2).coerceAtMost(heightPx * 1.5f)
+
+        val rect = RectF(
+            (widthPx - arcSize) / 2f,
+            padding,
+            (widthPx + arcSize) / 2f,
+            padding + arcSize
+        )
+
+        val startAngle = 140f
+        val totalAngle = 260f
+
+        val paintTrack = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#25FFFFFF")
+            style = Paint.Style.STROKE
+            strokeWidth = strokePx
+            strokeCap = Paint.Cap.ROUND
+        }
+        canvas.drawArc(rect, startAngle, totalAngle, false, paintTrack)
+
+        val activeSweep = ((progressPct.coerceIn(0, 100) / 100f) * totalAngle).coerceAtLeast(4f)
+        val colors = intArrayOf(
+            Color.parseColor("#38BDF8"),
+            Color.parseColor("#818CF8"),
+            Color.parseColor("#FB7185")
+        )
+        val positions = floatArrayOf(0f, 0.5f, 1f)
+
+        val gradient = LinearGradient(
+            rect.left, rect.top, rect.right, rect.bottom,
+            colors, positions, Shader.TileMode.CLAMP
+        )
+
+        val paintProgress = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = gradient
+            style = Paint.Style.STROKE
+            strokeWidth = strokePx
+            strokeCap = Paint.Cap.ROUND
+        }
+        canvas.drawArc(rect, startAngle, activeSweep, false, paintProgress)
+
+        val endAngleRad = Math.toRadians((startAngle + activeSweep).toDouble())
+        val radius = arcSize / 2f
+        val centerX = rect.centerX()
+        val centerY = rect.centerY()
+        val notchX = (centerX + radius * cos(endAngleRad)).toFloat()
+        val notchY = (centerY + radius * sin(endAngleRad)).toFloat()
+
+        val paintNotch = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(notchX, notchY, dpToPx(context, 4.5f), paintNotch)
+
+        return bitmap
+    }
+
+    fun drawMiniProgressRing(
+        context: Context,
+        count: Int,
+        maxCount: Int = 10,
+        sizeDp: Float = 34f
+    ): Bitmap {
+        val sizePx = dpToPx(context, sizeDp).toInt().coerceAtLeast(1)
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val strokePx = dpToPx(context, 3f)
+        val padding = strokePx / 2f + dpToPx(context, 1f)
+        val rect = RectF(padding, padding, sizePx - padding, sizePx - padding)
+
+        val paintTrack = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#1E3A5F")
+            style = Paint.Style.STROKE
+            strokeWidth = strokePx
+        }
+        canvas.drawArc(rect, 0f, 360f, false, paintTrack)
+
+        val ratio = (count.toFloat() / maxCount.coerceAtLeast(1).toFloat()).coerceIn(0.1f, 1f)
+        val sweepAngle = ratio * 360f
+
+        val paintProgress = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#0075FF")
+            style = Paint.Style.STROKE
+            strokeWidth = strokePx
+            strokeCap = Paint.Cap.ROUND
+        }
+        canvas.drawArc(rect, -90f, sweepAngle, false, paintProgress)
+
+        val paintText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = dpToPx(context, 11f)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+        val textY = (sizePx / 2f) - ((paintText.descent() + paintText.ascent()) / 2f)
+        canvas.drawText(count.toString(), sizePx / 2f, textY, paintText)
+
+        return bitmap
+    }
+
+    data class ConcentricSlice(val name: String, val percent: Int, val colorHex: String)
+
+    fun drawConcentricRings(
+        context: Context,
+        slices: List<ConcentricSlice>,
+        sizeDp: Float = 110f
+    ): Bitmap {
+        val sizePx = dpToPx(context, sizeDp).toInt().coerceAtLeast(1)
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val center = sizePx / 2f
+        val ringWidth = dpToPx(context, 5.5f)
+        val gap = dpToPx(context, 4f)
+
+        val defaultColors = listOf("#A78BFA", "#60A5FA", "#22D3EE", "#FB923C")
+
+        for (i in 0 until 4) {
+            val radius = (center - dpToPx(context, 8f)) - (i * (ringWidth + gap))
+            if (radius <= 0) continue
+
+            val rect = RectF(center - radius, center - radius, center + radius, center + radius)
+            val slice = if (i < slices.size) slices[i] else null
+            val pct = slice?.percent ?: (30 - i * 5)
+            val colorHex = slice?.colorHex ?: defaultColors[i % defaultColors.size]
+
+            val parsedColor = try {
+                Color.parseColor(colorHex)
+            } catch (e: Exception) {
+                Color.parseColor(defaultColors[i % defaultColors.size])
+            }
+
+            val paintTrack = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.argb(45, Color.red(parsedColor), Color.green(parsedColor), Color.blue(parsedColor))
+                style = Paint.Style.STROKE
+                strokeWidth = ringWidth
+            }
+            canvas.drawArc(rect, 0f, 360f, false, paintTrack)
+
+            val sweepAngle = ((pct.coerceIn(5, 100) / 100f) * 360f).coerceAtLeast(12f)
+            val paintActive = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = parsedColor
+                style = Paint.Style.STROKE
+                strokeWidth = ringWidth
+                strokeCap = Paint.Cap.ROUND
+            }
+            canvas.drawArc(rect, -90f, sweepAngle, false, paintActive)
+        }
+
+        return bitmap
+    }
+
+    fun drawEqualizerBars(
+        context: Context,
+        barRatios: FloatArray,
+        widthDp: Float = 260f,
+        heightDp: Float = 68f
+    ): Bitmap {
+        val widthPx = dpToPx(context, widthDp).toInt().coerceAtLeast(1)
+        val heightPx = dpToPx(context, heightDp).toInt().coerceAtLeast(1)
+
+        val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val totalBars = 20
+        val spacing = dpToPx(context, 3.5f)
+        val totalSpacing = spacing * (totalBars - 1)
+        val barWidth = (widthPx - totalSpacing) / totalBars
+        val radius = barWidth / 2f
+
+        val paintBar = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#84CC16")
+            style = Paint.Style.FILL
+        }
+
+        val defaultPattern = floatArrayOf(
+            0.25f, 0.65f, 0.45f, 0.55f, 0.3f, 0.7f, 0.5f, 0.2f, 0.12f, 0.35f,
+            0.6f, 0.3f, 0.55f, 0.9f, 0.85f, 0.6f, 0.45f, 0.6f, 0.88f, 0.75f
+        )
+
+        for (i in 0 until totalBars) {
+            val ratio = if (i < barRatios.size && barRatios[i] > 0f) {
+                barRatios[i].coerceIn(0.1f, 1f)
+            } else {
+                defaultPattern[i % defaultPattern.size]
+            }
+
+            val minHeightPx = dpToPx(context, 8f)
+            val barHeight = minHeightPx + (ratio * (heightPx - minHeightPx))
+
+            val left = i * (barWidth + spacing)
+            val right = left + barWidth
+            val top = heightPx - barHeight
+            val bottom = heightPx.toFloat()
+
+            val rect = RectF(left, top, right, bottom)
+            canvas.drawRoundRect(rect, radius, radius, paintBar)
+        }
+
+        return bitmap
+    }
+}
+`;
+
 // ─── ShakeServiceModule.kt source ────────────────────────────────────────────
 const SHAKE_SERVICE_MODULE_KT = `package {{PACKAGE}}
 
@@ -388,6 +617,7 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
     companion object {
         private const val TAG = "ShakeServiceModule"
         var reactContextInstance: ReactApplicationContext? = null
+        const val PREFS_NAME = "expenza_widget_data"
 
         fun emitShakeToJS(): Boolean {
             return try {
@@ -404,6 +634,18 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
             } catch (e: Exception) {
                 Log.e(TAG, "Error emitting to JS", e)
                 false
+            }
+        }
+
+        fun updateAllWidgets(context: android.content.Context) {
+            try {
+                TodaySpendingWidgetProvider.updateAllWidgets(context)
+                QuickAddWidgetProvider.updateAllWidgets(context)
+                BudgetWidgetProvider.updateAllWidgets(context)
+                WhereDidItGoWidgetProvider.updateAllWidgets(context)
+                BudgetProgressWidgetProvider.updateAllWidgets(context)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error triggering updateAllWidgets", e)
             }
         }
     }
@@ -481,55 +723,60 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
     fun updateWidgetData(
         todaySpent: Double,
         todayCount: Double,
-        todayTopCat: String,
+        todayBars: String,
         monthlyBudget: Double,
         monthSpent: Double,
         monthName: String,
         currency: String,
         cat1Name: String,
-        cat1Amount: Double,
         cat1Pct: Double,
+        cat1Color: String,
         cat2Name: String,
-        cat2Amount: Double,
         cat2Pct: Double,
+        cat2Color: String,
         cat3Name: String,
-        cat3Amount: Double,
         cat3Pct: Double,
-        moodStatus: String,
-        moodSubtitle: String,
-        moodPct: Double
+        cat3Color: String,
+        cat4Name: String,
+        cat4Pct: Double,
+        cat4Color: String,
+        cat5Name: String,
+        cat5Pct: Double,
+        cat5Color: String
     ) {
         try {
             val context = reactApplicationContext
-            val prefs = context.getSharedPreferences(ExpenzaAppWidgetProvider.PREFS_NAME, android.content.Context.MODE_PRIVATE)
+            val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
             prefs.edit().apply {
-                putFloat(ExpenzaAppWidgetProvider.KEY_TODAY_SPENT, todaySpent.toFloat())
-                putInt(ExpenzaAppWidgetProvider.KEY_TODAY_COUNT, todayCount.toInt())
-                putString(ExpenzaAppWidgetProvider.KEY_TODAY_TOP_CAT, todayTopCat)
-                putFloat(ExpenzaAppWidgetProvider.KEY_MONTHLY_BUDGET, monthlyBudget.toFloat())
-                putFloat(ExpenzaAppWidgetProvider.KEY_MONTH_SPENT, monthSpent.toFloat())
-                putString(ExpenzaAppWidgetProvider.KEY_MONTH_NAME, monthName)
-                putString(ExpenzaAppWidgetProvider.KEY_CURRENCY, currency)
+                putFloat(TodaySpendingWidgetProvider.KEY_TODAY_SPENT, todaySpent.toFloat())
+                putInt(TodaySpendingWidgetProvider.KEY_TODAY_COUNT, todayCount.toInt())
+                putString(BudgetProgressWidgetProvider.KEY_TODAY_BARS, todayBars)
+                putString(TodaySpendingWidgetProvider.KEY_CURRENCY, currency)
 
-                putString(ExpenzaAppWidgetProvider.KEY_CAT1_NAME, cat1Name)
-                putFloat(ExpenzaAppWidgetProvider.KEY_CAT1_AMOUNT, cat1Amount.toFloat())
-                putInt(ExpenzaAppWidgetProvider.KEY_CAT1_PCT, cat1Pct.toInt())
+                putFloat(BudgetWidgetProvider.KEY_MONTHLY_BUDGET, monthlyBudget.toFloat())
+                putFloat(BudgetWidgetProvider.KEY_MONTH_SPENT, monthSpent.toFloat())
+                putFloat(QuickAddWidgetProvider.KEY_MONTH_SPENT, monthSpent.toFloat())
 
-                putString(ExpenzaAppWidgetProvider.KEY_CAT2_NAME, cat2Name)
-                putFloat(ExpenzaAppWidgetProvider.KEY_CAT2_AMOUNT, cat2Amount.toFloat())
-                putInt(ExpenzaAppWidgetProvider.KEY_CAT2_PCT, cat2Pct.toInt())
+                putString(WhereDidItGoWidgetProvider.KEY_CAT1_NAME, cat1Name)
+                putInt(WhereDidItGoWidgetProvider.KEY_CAT1_PCT, cat1Pct.toInt())
+                putString(WhereDidItGoWidgetProvider.KEY_CAT1_COLOR, cat1Color)
 
-                putString(ExpenzaAppWidgetProvider.KEY_CAT3_NAME, cat3Name)
-                putFloat(ExpenzaAppWidgetProvider.KEY_CAT3_AMOUNT, cat3Amount.toFloat())
-                putInt(ExpenzaAppWidgetProvider.KEY_CAT3_PCT, cat3Pct.toInt())
+                putString(WhereDidItGoWidgetProvider.KEY_CAT2_NAME, cat2Name)
+                putInt(WhereDidItGoWidgetProvider.KEY_CAT2_PCT, cat2Pct.toInt())
+                putString(WhereDidItGoWidgetProvider.KEY_CAT2_COLOR, cat2Color)
 
-                putString(ExpenzaAppWidgetProvider.KEY_MOOD_STATUS, moodStatus)
-                putString(ExpenzaAppWidgetProvider.KEY_MOOD_SUBTITLE, moodSubtitle)
-                putInt(ExpenzaAppWidgetProvider.KEY_MOOD_PCT, moodPct.toInt())
+                putString(WhereDidItGoWidgetProvider.KEY_CAT3_NAME, cat3Name)
+                putInt(WhereDidItGoWidgetProvider.KEY_CAT3_PCT, cat3Pct.toInt())
+                putString(WhereDidItGoWidgetProvider.KEY_CAT3_COLOR, cat3Color)
+
+                putString(WhereDidItGoWidgetProvider.KEY_CAT4_NAME, cat4Name)
+                putInt(WhereDidItGoWidgetProvider.KEY_CAT4_PCT, cat4Pct.toInt())
+                putString(WhereDidItGoWidgetProvider.KEY_CAT4_COLOR, cat4Color)
+
                 apply()
             }
-            ExpenzaAppWidgetProvider.updateAllWidgets(context)
-            Log.d(TAG, "Successfully synced enriched widget data: today=$todaySpent, month=$monthSpent, budget=$monthlyBudget")
+            updateAllWidgets(context)
+            Log.d(TAG, "Successfully synced 5-widget data: today=$todaySpent, month=$monthSpent, budget=$monthlyBudget")
         } catch (e: Exception) {
             Log.e(TAG, "Error updating widget data", e)
         }
@@ -651,8 +898,8 @@ class ReminderReceiver : BroadcastReceiver() {
 
         scheduleAlarm(context, hour, minute)
 
-        val prefs = context.getSharedPreferences(ExpenzaAppWidgetProvider.PREFS_NAME, Context.MODE_PRIVATE)
-        val todayCount = prefs.getInt(ExpenzaAppWidgetProvider.KEY_TODAY_COUNT, 0)
+        val prefs = context.getSharedPreferences(ShakeServiceModule.PREFS_NAME, Context.MODE_PRIVATE)
+        val todayCount = prefs.getInt(TodaySpendingWidgetProvider.KEY_TODAY_COUNT, 0)
 
         if (todayCount > 0) {
             Log.d(TAG, "[REMINDER] User has already logged $todayCount expenses today. Skipping reminder notification.")
@@ -725,6 +972,10 @@ class TodaySpendingWidgetProvider : AppWidgetProvider() {
 
     companion object {
         private const val TAG = "TodaySpendingWidget"
+        const val PREFS_NAME = "expenza_widget_data"
+        const val KEY_TODAY_SPENT = "today_spent"
+        const val KEY_TODAY_COUNT = "today_count"
+        const val KEY_CURRENCY = "currency"
 
         fun updateAllWidgets(context: Context) {
             try {
@@ -742,11 +993,10 @@ class TodaySpendingWidgetProvider : AppWidgetProvider() {
     }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        val prefs = context.getSharedPreferences(ExpenzaAppWidgetProvider.PREFS_NAME, Context.MODE_PRIVATE)
-        val todaySpent = prefs.getFloat(ExpenzaAppWidgetProvider.KEY_TODAY_SPENT, 0f).toDouble()
-        val todayCount = prefs.getInt(ExpenzaAppWidgetProvider.KEY_TODAY_COUNT, 0)
-        val todayTopCat = prefs.getString(ExpenzaAppWidgetProvider.KEY_TODAY_TOP_CAT, "") ?: ""
-        val currency = prefs.getString(ExpenzaAppWidgetProvider.KEY_CURRENCY, "₹") ?: "₹"
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val todaySpent = prefs.getFloat(KEY_TODAY_SPENT, 0f).toDouble()
+        val todayCount = prefs.getInt(KEY_TODAY_COUNT, 0)
+        val currency = prefs.getString(KEY_CURRENCY, "₹") ?: "₹"
 
         val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -754,141 +1004,35 @@ class TodaySpendingWidgetProvider : AppWidgetProvider() {
             PendingIntent.FLAG_UPDATE_CURRENT
         }
 
-        val openTodayIntent = Intent(context, MainActivity::class.java).apply {
-            action = "VIEW_TODAY_EXPENSES"
-            data = Uri.parse("expenza://today")
+        val addExpenseIntent = Intent(context, MainActivity::class.java).apply {
+            action = "ADD_EXPENSE"
+            data = Uri.parse("expenza://add-expense")
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            putExtra("action", "VIEW_TODAY_EXPENSES")
+            putExtra("action", "ADD_EXPENSE")
         }
-        val pendingIntent = PendingIntent.getActivity(context, 201, openTodayIntent, pendingFlags)
+        val pendingIntent = PendingIntent.getActivity(context, 304, addExpenseIntent, pendingFlags)
 
         for (appWidgetId in appWidgetIds) {
             try {
                 val views = RemoteViews(context.packageName, R.layout.widget_today_spending)
 
                 val amountStr = if (todaySpent == 0.0) {
-                    "\${currency}0"
+                    "$currency 0"
                 } else if (todaySpent == todaySpent.toLong().toDouble()) {
-                    String.format(Locale.getDefault(), "%s%,d", currency, todaySpent.toLong())
+                    String.format(Locale.getDefault(), "%s %,d", currency, todaySpent.toLong())
                 } else {
-                    String.format(Locale.getDefault(), "%s%,.2f", currency, todaySpent)
+                    String.format(Locale.getDefault(), "%s %,.2f", currency, todaySpent)
                 }
                 views.setTextViewText(R.id.widget_today_amount, amountStr)
 
-                val countStr = when (todayCount) {
-                    0 -> "No expenses today"
-                    1 -> "1 expense"
-                    else -> "$todayCount expenses"
-                }
-                views.setTextViewText(R.id.widget_today_count, countStr)
-
-                views.setTextViewText(R.id.widget_today_subbreakdown, todayTopCat)
+                val ringBitmap = WidgetChartUtils.drawMiniProgressRing(context, todayCount, 10, 32f)
+                views.setImageViewBitmap(R.id.widget_today_mini_ring, ringBitmap)
 
                 views.setOnClickPendingIntent(R.id.widget_today_root, pendingIntent)
+                views.setOnClickPendingIntent(R.id.widget_today_btn, pendingIntent)
                 appWidgetManager.updateAppWidget(appWidgetId, views)
             } catch (e: Exception) {
                 Log.e(TAG, "Error rendering TodaySpendingWidget", e)
-            }
-        }
-    }
-}
-`;
-
-// ─── MonthlyBudgetWidgetProvider.kt source ──────────────────────────────────
-const MONTHLY_BUDGET_WIDGET_PROVIDER_KT = `package {{PACKAGE}}
-
-import android.app.PendingIntent
-import android.appwidget.AppWidgetManager
-import android.appwidget.AppWidgetProvider
-import android.content.ComponentName
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.util.Log
-import android.widget.RemoteViews
-import java.util.Locale
-import kotlin.math.abs
-import kotlin.math.min
-
-class MonthlyBudgetWidgetProvider : AppWidgetProvider() {
-
-    companion object {
-        private const val TAG = "MonthlyBudgetWidget"
-
-        fun updateAllWidgets(context: Context) {
-            try {
-                val appWidgetManager = AppWidgetManager.getInstance(context)
-                val componentName = ComponentName(context, MonthlyBudgetWidgetProvider::class.java)
-                val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-                if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
-                    val provider = MonthlyBudgetWidgetProvider()
-                    provider.onUpdate(context, appWidgetManager, appWidgetIds)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error updating monthly budget widgets", e)
-            }
-        }
-    }
-
-    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        val prefs = context.getSharedPreferences(ExpenzaAppWidgetProvider.PREFS_NAME, Context.MODE_PRIVATE)
-        val monthlyBudget = prefs.getFloat(ExpenzaAppWidgetProvider.KEY_MONTHLY_BUDGET, 0f).toDouble()
-        val monthSpent = prefs.getFloat(ExpenzaAppWidgetProvider.KEY_MONTH_SPENT, 0f).toDouble()
-        val currency = prefs.getString(ExpenzaAppWidgetProvider.KEY_CURRENCY, "₹") ?: "₹"
-
-        val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        } else {
-            PendingIntent.FLAG_UPDATE_CURRENT
-        }
-
-        val openBudgetIntent = Intent(context, MainActivity::class.java).apply {
-            action = "OPEN_SET_BUDGET"
-            data = Uri.parse("expenza://set-budget")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            putExtra("action", "OPEN_SET_BUDGET")
-        }
-        val pendingIntent = PendingIntent.getActivity(context, 202, openBudgetIntent, pendingFlags)
-
-        for (appWidgetId in appWidgetIds) {
-            try {
-                val views = RemoteViews(context.packageName, R.layout.widget_monthly_budget)
-
-                if (monthlyBudget > 0) {
-                    val remaining = monthlyBudget - monthSpent
-                    val percentage = ((monthSpent / monthlyBudget) * 100).toInt()
-                    val progressVal = min(percentage, 100)
-
-                    val spentFormatted = String.format(Locale.getDefault(), "%s%,d", currency, monthSpent.toLong())
-                    val budgetFormatted = String.format(Locale.getDefault(), "%s%,d", currency, monthlyBudget.toLong())
-                    val valuesStr = "$spentFormatted / $budgetFormatted"
-                    views.setTextViewText(R.id.widget_budget_values, valuesStr)
-
-                    views.setProgressBar(R.id.widget_budget_circle_progress, 100, progressVal, false)
-                    views.setTextViewText(R.id.widget_budget_circle_pct, "$percentage%")
-
-                    if (remaining >= 0) {
-                        val leftFormatted = String.format(Locale.getDefault(), "%s%,d", currency, remaining.toLong())
-                        views.setTextViewText(R.id.widget_budget_subtext, "$leftFormatted left")
-                        views.setTextColor(R.id.widget_budget_subtext, 0xFF4F46E5.toInt())
-                    } else {
-                        val overFormatted = String.format(Locale.getDefault(), "%s%,d", currency, abs(remaining).toLong())
-                        views.setTextViewText(R.id.widget_budget_subtext, "$overFormatted over budget")
-                        views.setTextColor(R.id.widget_budget_subtext, 0xFFDC2626.toInt())
-                    }
-                } else {
-                    views.setTextViewText(R.id.widget_budget_values, "Set your budget")
-                    views.setProgressBar(R.id.widget_budget_circle_progress, 100, 0, false)
-                    views.setTextViewText(R.id.widget_budget_circle_pct, "0%")
-                    views.setTextViewText(R.id.widget_budget_subtext, "Tap to set monthly target")
-                    views.setTextColor(R.id.widget_budget_subtext, 0xFF4F46E5.toInt())
-                }
-
-                views.setOnClickPendingIntent(R.id.widget_budget_root, pendingIntent)
-                appWidgetManager.updateAppWidget(appWidgetId, views)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error rendering MonthlyBudgetWidget", e)
             }
         }
     }
@@ -908,11 +1052,15 @@ import android.net.Uri
 import android.os.Build
 import android.util.Log
 import android.widget.RemoteViews
+import java.util.Locale
 
 class QuickAddWidgetProvider : AppWidgetProvider() {
 
     companion object {
         private const val TAG = "QuickAddWidget"
+        const val PREFS_NAME = "expenza_widget_data"
+        const val KEY_MONTH_SPENT = "month_spent"
+        const val KEY_CURRENCY = "currency"
 
         fun updateAllWidgets(context: Context) {
             try {
@@ -930,6 +1078,10 @@ class QuickAddWidgetProvider : AppWidgetProvider() {
     }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val monthSpent = prefs.getFloat(KEY_MONTH_SPENT, 0f).toDouble()
+        val currency = prefs.getString(KEY_CURRENCY, "₹") ?: "₹"
+
         val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         } else {
@@ -942,16 +1094,128 @@ class QuickAddWidgetProvider : AppWidgetProvider() {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra("action", "ADD_EXPENSE")
         }
-        val pendingIntent = PendingIntent.getActivity(context, 203, addExpenseIntent, pendingFlags)
+        val pendingIntent = PendingIntent.getActivity(context, 303, addExpenseIntent, pendingFlags)
 
         for (appWidgetId in appWidgetIds) {
             try {
                 val views = RemoteViews(context.packageName, R.layout.widget_quick_add)
+
+                val amountStr = if (monthSpent >= 1000) {
+                    String.format(Locale.getDefault(), "%s%,d", currency, monthSpent.toLong())
+                } else {
+                    String.format(Locale.getDefault(), "%s%d", currency, monthSpent.toLong())
+                }
+                views.setTextViewText(R.id.widget_quick_add_amount, amountStr)
+                views.setTextViewText(R.id.widget_quick_add_trend, "↑ Active Tracking")
+
                 views.setOnClickPendingIntent(R.id.widget_quick_add_root, pendingIntent)
                 views.setOnClickPendingIntent(R.id.widget_quick_add_btn, pendingIntent)
                 appWidgetManager.updateAppWidget(appWidgetId, views)
             } catch (e: Exception) {
                 Log.e(TAG, "Error rendering QuickAddWidget", e)
+            }
+        }
+    }
+}
+`;
+
+// ─── BudgetWidgetProvider.kt source ─────────────────────────────────────────
+const BUDGET_WIDGET_PROVIDER_KT = `package {{PACKAGE}}
+
+import android.app.PendingIntent
+import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProvider
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.util.Log
+import android.widget.RemoteViews
+import java.util.Locale
+
+class BudgetWidgetProvider : AppWidgetProvider() {
+
+    companion object {
+        private const val TAG = "BudgetWidget"
+        const val PREFS_NAME = "expenza_widget_data"
+        const val KEY_MONTHLY_BUDGET = "monthly_budget"
+        const val KEY_MONTH_SPENT = "month_spent"
+        const val KEY_CURRENCY = "currency"
+
+        fun updateAllWidgets(context: Context) {
+            try {
+                val appWidgetManager = AppWidgetManager.getInstance(context)
+                val componentName = ComponentName(context, BudgetWidgetProvider::class.java)
+                val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
+                if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
+                    val provider = BudgetWidgetProvider()
+                    provider.onUpdate(context, appWidgetManager, appWidgetIds)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating budget widgets", e)
+            }
+        }
+    }
+
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val monthlyBudget = prefs.getFloat(KEY_MONTHLY_BUDGET, 0f).toDouble()
+        val monthSpent = prefs.getFloat(KEY_MONTH_SPENT, 0f).toDouble()
+        val currency = prefs.getString(KEY_CURRENCY, "₹") ?: "₹"
+
+        val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+
+        val addExpenseIntent = Intent(context, MainActivity::class.java).apply {
+            action = "ADD_EXPENSE"
+            data = Uri.parse("expenza://add-expense")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra("action", "ADD_EXPENSE")
+        }
+        val addPendingIntent = PendingIntent.getActivity(context, 301, addExpenseIntent, pendingFlags)
+
+        val openBudgetIntent = Intent(context, MainActivity::class.java).apply {
+            action = "OPEN_SET_BUDGET"
+            data = Uri.parse("expenza://set-budget")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra("action", "OPEN_SET_BUDGET")
+        }
+        val budgetPendingIntent = PendingIntent.getActivity(context, 302, openBudgetIntent, pendingFlags)
+
+        for (appWidgetId in appWidgetIds) {
+            try {
+                val views = RemoteViews(context.packageName, R.layout.widget_budget)
+
+                val percentage = if (monthlyBudget > 0) {
+                    ((monthSpent / monthlyBudget) * 100).toInt()
+                } else {
+                    0
+                }
+
+                views.setTextViewText(R.id.widget_budget_pct, "$percentage%")
+
+                val spentFormatted = if (monthSpent >= 1000) {
+                    String.format(Locale.getDefault(), "%s%,d spent", currency, monthSpent.toLong())
+                } else {
+                    String.format(Locale.getDefault(), "%s%d spent", currency, monthSpent.toLong())
+                }
+                views.setTextViewText(R.id.widget_budget_sub, spentFormatted)
+
+                val gaugeBitmap = WidgetChartUtils.drawGradientArcGauge(context, percentage, 170f, 115f, 13f)
+                views.setImageViewBitmap(R.id.widget_budget_gauge, gaugeBitmap)
+
+                views.setOnClickPendingIntent(R.id.widget_budget_root, budgetPendingIntent)
+                views.setOnClickPendingIntent(R.id.widget_budget_btn_minus, addPendingIntent)
+                views.setOnClickPendingIntent(R.id.widget_budget_btn_add, addPendingIntent)
+                views.setOnClickPendingIntent(R.id.widget_budget_btn_more, budgetPendingIntent)
+
+                appWidgetManager.updateAppWidget(appWidgetId, views)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error rendering BudgetWidget", e)
             }
         }
     }
@@ -970,14 +1234,29 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.util.Log
-import android.view.View
 import android.widget.RemoteViews
-import java.util.Locale
 
 class WhereDidItGoWidgetProvider : AppWidgetProvider() {
 
     companion object {
         private const val TAG = "WhereDidItGoWidget"
+        const val PREFS_NAME = "expenza_widget_data"
+
+        const val KEY_CAT1_NAME = "cat1_name"
+        const val KEY_CAT1_PCT = "cat1_pct"
+        const val KEY_CAT1_COLOR = "cat1_color"
+
+        const val KEY_CAT2_NAME = "cat2_name"
+        const val KEY_CAT2_PCT = "cat2_pct"
+        const val KEY_CAT2_COLOR = "cat2_color"
+
+        const val KEY_CAT3_NAME = "cat3_name"
+        const val KEY_CAT3_PCT = "cat3_pct"
+        const val KEY_CAT3_COLOR = "cat3_color"
+
+        const val KEY_CAT4_NAME = "cat4_name"
+        const val KEY_CAT4_PCT = "cat4_pct"
+        const val KEY_CAT4_COLOR = "cat4_color"
 
         fun updateAllWidgets(context: Context) {
             try {
@@ -995,21 +1274,23 @@ class WhereDidItGoWidgetProvider : AppWidgetProvider() {
     }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        val prefs = context.getSharedPreferences(ExpenzaAppWidgetProvider.PREFS_NAME, Context.MODE_PRIVATE)
-        val monthName = prefs.getString(ExpenzaAppWidgetProvider.KEY_MONTH_NAME, "This Month") ?: "This Month"
-        val currency = prefs.getString(ExpenzaAppWidgetProvider.KEY_CURRENCY, "₹") ?: "₹"
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-        val cat1Name = prefs.getString(ExpenzaAppWidgetProvider.KEY_CAT1_NAME, "") ?: ""
-        val cat1Amount = prefs.getFloat(ExpenzaAppWidgetProvider.KEY_CAT1_AMOUNT, 0f).toDouble()
-        val cat1Pct = prefs.getInt(ExpenzaAppWidgetProvider.KEY_CAT1_PCT, 0)
+        val cat1Name = prefs.getString(KEY_CAT1_NAME, "FOOD")?.takeIf { it.isNotEmpty() } ?: "FOOD"
+        val cat1Pct = prefs.getInt(KEY_CAT1_PCT, 26)
+        val cat1Color = prefs.getString(KEY_CAT1_COLOR, "#A78BFA") ?: "#A78BFA"
 
-        val cat2Name = prefs.getString(ExpenzaAppWidgetProvider.KEY_CAT2_NAME, "") ?: ""
-        val cat2Amount = prefs.getFloat(ExpenzaAppWidgetProvider.KEY_CAT2_AMOUNT, 0f).toDouble()
-        val cat2Pct = prefs.getInt(ExpenzaAppWidgetProvider.KEY_CAT2_PCT, 0)
+        val cat2Name = prefs.getString(KEY_CAT2_NAME, "SHOP")?.takeIf { it.isNotEmpty() } ?: "SHOP"
+        val cat2Pct = prefs.getInt(KEY_CAT2_PCT, 19)
+        val cat2Color = prefs.getString(KEY_CAT2_COLOR, "#60A5FA") ?: "#60A5FA"
 
-        val cat3Name = prefs.getString(ExpenzaAppWidgetProvider.KEY_CAT3_NAME, "") ?: ""
-        val cat3Amount = prefs.getFloat(ExpenzaAppWidgetProvider.KEY_CAT3_AMOUNT, 0f).toDouble()
-        val cat3Pct = prefs.getInt(ExpenzaAppWidgetProvider.KEY_CAT3_PCT, 0)
+        val cat3Name = prefs.getString(KEY_CAT3_NAME, "TRANS")?.takeIf { it.isNotEmpty() } ?: "TRANS"
+        val cat3Pct = prefs.getInt(KEY_CAT3_PCT, 15)
+        val cat3Color = prefs.getString(KEY_CAT3_COLOR, "#22D3EE") ?: "#22D3EE"
+
+        val cat4Name = prefs.getString(KEY_CAT4_NAME, "BILLS")?.takeIf { it.isNotEmpty() } ?: "BILLS"
+        val cat4Pct = prefs.getInt(KEY_CAT4_PCT, 13)
+        val cat4Color = prefs.getString(KEY_CAT4_COLOR, "#FB923C") ?: "#FB923C"
 
         val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -1023,55 +1304,48 @@ class WhereDidItGoWidgetProvider : AppWidgetProvider() {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra("action", "VIEW_ANALYTICS")
         }
-        val pendingIntent = PendingIntent.getActivity(context, 204, openAppIntent, pendingFlags)
+        val pendingIntent = PendingIntent.getActivity(context, 305, openAppIntent, pendingFlags)
+
+        val slices = listOf(
+            WidgetChartUtils.ConcentricSlice(cat1Name, cat1Pct, cat1Color),
+            WidgetChartUtils.ConcentricSlice(cat2Name, cat2Pct, cat2Color),
+            WidgetChartUtils.ConcentricSlice(cat3Name, cat3Pct, cat3Color),
+            WidgetChartUtils.ConcentricSlice(cat4Name, cat4Pct, cat4Color)
+        )
+
+        fun shortenLabel(name: String): String {
+            return when (name.uppercase()) {
+                "FOOD", "FOOD & DRINK", "GROCERIES" -> "FOOD"
+                "SHOPPING" -> "SHOP"
+                "TRANSPORTATION", "TRAVEL" -> "TRANS"
+                "BILLS", "UTILITIES" -> "BILLS"
+                "ENTERTAINMENT" -> "FUN"
+                "HEALTH" -> "HLTH"
+                else -> if (name.length > 5) name.substring(0, 4).uppercase() else name.uppercase()
+            }
+        }
 
         for (appWidgetId in appWidgetIds) {
             try {
                 val views = RemoteViews(context.packageName, R.layout.widget_where_did_it_go)
-                views.setTextViewText(R.id.widget_breakdown_month, monthName)
 
-                if (cat1Name.isEmpty() && cat2Name.isEmpty() && cat3Name.isEmpty()) {
-                    views.setViewVisibility(R.id.widget_breakdown_empty, View.VISIBLE)
-                    views.setViewVisibility(R.id.widget_breakdown_list, View.GONE)
-                } else {
-                    views.setViewVisibility(R.id.widget_breakdown_empty, View.GONE)
-                    views.setViewVisibility(R.id.widget_breakdown_list, View.VISIBLE)
+                val ringsBitmap = WidgetChartUtils.drawConcentricRings(context, slices, 106f)
+                views.setImageViewBitmap(R.id.widget_breakdown_rings, ringsBitmap)
 
-                    // Cat 1
-                    if (cat1Name.isNotEmpty()) {
-                        views.setViewVisibility(R.id.widget_cat1_row, View.VISIBLE)
-                        views.setTextViewText(R.id.widget_cat1_name, cat1Name)
-                        val amountFormatted = String.format(Locale.getDefault(), "%s%,d", currency, cat1Amount.toLong())
-                        views.setTextViewText(R.id.widget_cat1_amount, amountFormatted)
-                        views.setProgressBar(R.id.widget_cat1_bar, 100, cat1Pct, false)
-                    } else {
-                        views.setViewVisibility(R.id.widget_cat1_row, View.GONE)
-                    }
+                views.setTextViewText(R.id.widget_cat1_label, shortenLabel(cat1Name))
+                views.setTextViewText(R.id.widget_cat1_pct, "$cat1Pct%")
 
-                    // Cat 2
-                    if (cat2Name.isNotEmpty()) {
-                        views.setViewVisibility(R.id.widget_cat2_row, View.VISIBLE)
-                        views.setTextViewText(R.id.widget_cat2_name, cat2Name)
-                        val amountFormatted = String.format(Locale.getDefault(), "%s%,d", currency, cat2Amount.toLong())
-                        views.setTextViewText(R.id.widget_cat2_amount, amountFormatted)
-                        views.setProgressBar(R.id.widget_cat2_bar, 100, cat2Pct, false)
-                    } else {
-                        views.setViewVisibility(R.id.widget_cat2_row, View.GONE)
-                    }
+                views.setTextViewText(R.id.widget_cat2_label, shortenLabel(cat2Name))
+                views.setTextViewText(R.id.widget_cat2_pct, "$cat2Pct%")
 
-                    // Cat 3
-                    if (cat3Name.isNotEmpty()) {
-                        views.setViewVisibility(R.id.widget_cat3_row, View.VISIBLE)
-                        views.setTextViewText(R.id.widget_cat3_name, cat3Name)
-                        val amountFormatted = String.format(Locale.getDefault(), "%s%,d", currency, cat3Amount.toLong())
-                        views.setTextViewText(R.id.widget_cat3_amount, amountFormatted)
-                        views.setProgressBar(R.id.widget_cat3_bar, 100, cat3Pct, false)
-                    } else {
-                        views.setViewVisibility(R.id.widget_cat3_row, View.GONE)
-                    }
-                }
+                views.setTextViewText(R.id.widget_cat3_label, shortenLabel(cat3Name))
+                views.setTextViewText(R.id.widget_cat3_pct, "$cat3Pct%")
+
+                views.setTextViewText(R.id.widget_cat4_label, shortenLabel(cat4Name))
+                views.setTextViewText(R.id.widget_cat4_pct, "$cat4Pct%")
 
                 views.setOnClickPendingIntent(R.id.widget_breakdown_root, pendingIntent)
+                views.setOnClickPendingIntent(R.id.widget_breakdown_btn, pendingIntent)
                 appWidgetManager.updateAppWidget(appWidgetId, views)
             } catch (e: Exception) {
                 Log.e(TAG, "Error rendering WhereDidItGoWidget", e)
@@ -1081,8 +1355,8 @@ class WhereDidItGoWidgetProvider : AppWidgetProvider() {
 }
 `;
 
-// ─── MoneyMoodWidgetProvider.kt source ──────────────────────────────────────
-const MONEY_MOOD_WIDGET_PROVIDER_KT = `package {{PACKAGE}}
+// ─── BudgetProgressWidgetProvider.kt source ─────────────────────────────────
+const BUDGET_PROGRESS_WIDGET_PROVIDER_KT = `package {{PACKAGE}}
 
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
@@ -1094,151 +1368,52 @@ import android.net.Uri
 import android.os.Build
 import android.util.Log
 import android.widget.RemoteViews
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
-class MoneyMoodWidgetProvider : AppWidgetProvider() {
+class BudgetProgressWidgetProvider : AppWidgetProvider() {
 
     companion object {
-        private const val TAG = "MoneyMoodWidget"
-
-        fun updateAllWidgets(context: Context) {
-            try {
-                val appWidgetManager = AppWidgetManager.getInstance(context)
-                val componentName = ComponentName(context, MoneyMoodWidgetProvider::class.java)
-                val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-                if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
-                    val provider = MoneyMoodWidgetProvider()
-                    provider.onUpdate(context, appWidgetManager, appWidgetIds)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error updating money mood widgets", e)
-            }
-        }
-    }
-
-    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        val prefs = context.getSharedPreferences(ExpenzaAppWidgetProvider.PREFS_NAME, Context.MODE_PRIVATE)
-        val status = prefs.getString(ExpenzaAppWidgetProvider.KEY_MOOD_STATUS, "On Track") ?: "On Track"
-        val subtitle = prefs.getString(ExpenzaAppWidgetProvider.KEY_MOOD_SUBTITLE, "Spending is healthy") ?: "Spending is healthy"
-        val progressPct = prefs.getInt(ExpenzaAppWidgetProvider.KEY_MOOD_PCT, 50)
-        val monthSpent = prefs.getFloat(ExpenzaAppWidgetProvider.KEY_MONTH_SPENT, 0f).toDouble()
-        val monthlyBudget = prefs.getFloat(ExpenzaAppWidgetProvider.KEY_MONTHLY_BUDGET, 0f).toDouble()
-        val currency = prefs.getString(ExpenzaAppWidgetProvider.KEY_CURRENCY, "₹") ?: "₹"
-
-        val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        } else {
-            PendingIntent.FLAG_UPDATE_CURRENT
-        }
-
-        val openAppIntent = Intent(context, MainActivity::class.java).apply {
-            action = "VIEW_HOME"
-            data = Uri.parse("expenza://home")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            putExtra("action", "VIEW_HOME")
-        }
-        val pendingIntent = PendingIntent.getActivity(context, 205, openAppIntent, pendingFlags)
-
-        for (appWidgetId in appWidgetIds) {
-            try {
-                val views = RemoteViews(context.packageName, R.layout.widget_money_mood)
-
-                views.setTextViewText(R.id.widget_mood_status, status)
-                views.setTextViewText(R.id.widget_mood_subtitle, subtitle)
-                views.setProgressBar(R.id.widget_mood_progress, 100, progressPct, false)
-
-                val spentFormatted = String.format(Locale.getDefault(), "%s%,d", currency, monthSpent.toLong())
-                val budgetFormatted = String.format(Locale.getDefault(), "%s%,d", currency, monthlyBudget.toLong())
-                val detailsStr = if (monthlyBudget > 0) "$spentFormatted of $budgetFormatted" else "$spentFormatted spent"
-                views.setTextViewText(R.id.widget_mood_details, detailsStr)
-
-                if (monthlyBudget > 0 && monthSpent > monthlyBudget) {
-                    views.setTextColor(R.id.widget_mood_details, 0xFFDC2626.toInt())
-                } else {
-                    views.setTextColor(R.id.widget_mood_details, 0xFF4F46E5.toInt())
-                }
-
-                views.setOnClickPendingIntent(R.id.widget_mood_root, pendingIntent)
-                appWidgetManager.updateAppWidget(appWidgetId, views)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error rendering MoneyMoodWidget", e)
-            }
-        }
-    }
-}
-`;
-
-// ─── ExpenzaAppWidgetProvider.kt source ─────────────────────────────────────
-const EXPENZA_APP_WIDGET_PROVIDER_KT = `package {{PACKAGE}}
-
-import android.app.PendingIntent
-import android.appwidget.AppWidgetManager
-import android.appwidget.AppWidgetProvider
-import android.content.ComponentName
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.util.Log
-import android.widget.RemoteViews
-import java.util.Locale
-import kotlin.math.abs
-import kotlin.math.min
-
-class ExpenzaAppWidgetProvider : AppWidgetProvider() {
-
-    companion object {
-        private const val TAG = "ExpenzaAppWidget"
+        private const val TAG = "BudgetProgressWidget"
         const val PREFS_NAME = "expenza_widget_data"
         const val KEY_TODAY_SPENT = "today_spent"
-        const val KEY_TODAY_COUNT = "today_count"
-        const val KEY_TODAY_TOP_CAT = "today_top_cat"
-        const val KEY_MONTHLY_BUDGET = "monthly_budget"
-        const val KEY_MONTH_SPENT = "month_spent"
-        const val KEY_MONTH_NAME = "month_name"
+        const val KEY_TODAY_BARS = "today_bars"
         const val KEY_CURRENCY = "currency"
-
-        const val KEY_CAT1_NAME = "cat1_name"
-        const val KEY_CAT1_AMOUNT = "cat1_amount"
-        const val KEY_CAT1_PCT = "cat1_pct"
-        const val KEY_CAT2_NAME = "cat2_name"
-        const val KEY_CAT2_AMOUNT = "cat2_amount"
-        const val KEY_CAT2_PCT = "cat2_pct"
-        const val KEY_CAT3_NAME = "cat3_name"
-        const val KEY_CAT3_AMOUNT = "cat3_amount"
-        const val KEY_CAT3_PCT = "cat3_pct"
-
-        const val KEY_MOOD_STATUS = "mood_status"
-        const val KEY_MOOD_SUBTITLE = "mood_subtitle"
-        const val KEY_MOOD_PCT = "mood_pct"
 
         fun updateAllWidgets(context: Context) {
             try {
-                TodaySpendingWidgetProvider.updateAllWidgets(context)
-                MonthlyBudgetWidgetProvider.updateAllWidgets(context)
-                QuickAddWidgetProvider.updateAllWidgets(context)
-                WhereDidItGoWidgetProvider.updateAllWidgets(context)
-                MoneyMoodWidgetProvider.updateAllWidgets(context)
-
                 val appWidgetManager = AppWidgetManager.getInstance(context)
-                val componentName = ComponentName(context, ExpenzaAppWidgetProvider::class.java)
+                val componentName = ComponentName(context, BudgetProgressWidgetProvider::class.java)
                 val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
                 if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
-                    val provider = ExpenzaAppWidgetProvider()
+                    val provider = BudgetProgressWidgetProvider()
                     provider.onUpdate(context, appWidgetManager, appWidgetIds)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error in updateAllWidgets", e)
+                Log.e(TAG, "Error updating budget progress widgets", e)
             }
         }
     }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val monthSpent = prefs.getFloat(KEY_MONTH_SPENT, 0f).toDouble()
-        val monthlyBudget = prefs.getFloat(KEY_MONTHLY_BUDGET, 0f).toDouble()
-        val monthName = prefs.getString(KEY_MONTH_NAME, "This month") ?: "This month"
+        val todaySpent = prefs.getFloat(KEY_TODAY_SPENT, 0f).toDouble()
+        val barsRaw = prefs.getString(KEY_TODAY_BARS, "") ?: ""
         val currency = prefs.getString(KEY_CURRENCY, "₹") ?: "₹"
+
+        val barValues = if (barsRaw.isNotEmpty()) {
+            try {
+                barsRaw.split(",").map { it.trim().toFloatOrNull() ?: 0f }.toFloatArray()
+            } catch (e: Exception) {
+                floatArrayOf()
+            }
+        } else {
+            floatArrayOf()
+        }
+
+        val dateFormat = SimpleDateFormat("dd.MM", Locale.getDefault())
+        val dateStr = dateFormat.format(Date())
 
         val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -1246,60 +1421,37 @@ class ExpenzaAppWidgetProvider : AppWidgetProvider() {
             PendingIntent.FLAG_UPDATE_CURRENT
         }
 
-        val openAppIntent = Intent(context, MainActivity::class.java).apply {
+        val openTodayIntent = Intent(context, MainActivity::class.java).apply {
+            action = "VIEW_TODAY_EXPENSES"
+            data = Uri.parse("expenza://today")
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra("action", "VIEW_TODAY_EXPENSES")
         }
-        val openAppPendingIntent = PendingIntent.getActivity(context, 0, openAppIntent, pendingFlags)
+        val pendingIntent = PendingIntent.getActivity(context, 306, openTodayIntent, pendingFlags)
 
         for (appWidgetId in appWidgetIds) {
             try {
-                val views = RemoteViews(context.packageName, R.layout.widget_expenza)
+                val views = RemoteViews(context.packageName, R.layout.widget_budget_progress)
 
-                val amountStr = if (monthSpent == 0.0) {
-                    "\${currency}0"
-                } else if (monthSpent == monthSpent.toLong().toDouble()) {
-                    String.format(Locale.getDefault(), "%s%,d", currency, monthSpent.toLong())
+                views.setTextViewText(R.id.widget_budget_prog_month, dateStr)
+
+                val amountStr = if (todaySpent == 0.0) {
+                    "0"
+                } else if (todaySpent == todaySpent.toLong().toDouble()) {
+                    String.format(Locale.getDefault(), "%,d", todaySpent.toLong())
                 } else {
-                    String.format(Locale.getDefault(), "%s%,.2f", currency, monthSpent)
+                    String.format(Locale.getDefault(), "%,.2f", todaySpent)
                 }
-                views.setTextViewText(R.id.widget_main_amount, amountStr)
+                views.setTextViewText(R.id.widget_budget_prog_remaining, amountStr)
+                views.setTextViewText(R.id.widget_budget_prog_target, " $currency")
 
-                if (monthlyBudget > 0) {
-                    val remaining = monthlyBudget - monthSpent
-                    val percentage = ((monthSpent / monthlyBudget) * 100).toInt()
-                    val progressVal = min(percentage, 100)
+                val equalizerBitmap = WidgetChartUtils.drawEqualizerBars(context, barValues, 260f, 68f)
+                views.setImageViewBitmap(R.id.widget_budget_prog_gauge, equalizerBitmap)
 
-                    views.setProgressBar(R.id.widget_main_circle_progress, 100, progressVal, false)
-                    views.setTextViewText(R.id.widget_main_percentage, "$percentage%")
-
-                    val budgetFormatted = if (monthlyBudget >= 1000) {
-                        String.format(Locale.getDefault(), "%s%dK", currency, (monthlyBudget / 1000).toLong())
-                    } else {
-                        String.format(Locale.getDefault(), "%s%d", currency, monthlyBudget.toLong())
-                    }
-                    views.setTextViewText(R.id.widget_main_budget_label, "$budgetFormatted BUDGET")
-
-                    if (remaining >= 0) {
-                        val leftFormatted = String.format(Locale.getDefault(), "%s%,d", currency, remaining.toLong())
-                        views.setTextViewText(R.id.widget_main_month_left, "$monthName \u2022 $leftFormatted left")
-                        views.setTextColor(R.id.widget_main_month_left, 0xFF4F46E5.toInt())
-                    } else {
-                        val overFormatted = String.format(Locale.getDefault(), "%s%,d", currency, abs(remaining).toLong())
-                        views.setTextViewText(R.id.widget_main_month_left, "$monthName \u2022 $overFormatted over")
-                        views.setTextColor(R.id.widget_main_month_left, 0xFFDC2626.toInt())
-                    }
-                } else {
-                    views.setProgressBar(R.id.widget_main_circle_progress, 100, 0, false)
-                    views.setTextViewText(R.id.widget_main_percentage, "0%")
-                    views.setTextViewText(R.id.widget_main_budget_label, "SET BUDGET")
-                    views.setTextViewText(R.id.widget_main_month_left, "$monthName \u2022 Tap to set budget")
-                    views.setTextColor(R.id.widget_main_month_left, 0xFF4F46E5.toInt())
-                }
-
-                views.setOnClickPendingIntent(R.id.widget_main_root, openAppPendingIntent)
+                views.setOnClickPendingIntent(R.id.widget_budget_prog_root, pendingIntent)
                 appWidgetManager.updateAppWidget(appWidgetId, views)
             } catch (e: Exception) {
-                Log.e(TAG, "Error rendering ExpenzaAppWidget", e)
+                Log.e(TAG, "Error rendering BudgetProgressWidget", e)
             }
         }
     }
@@ -1321,721 +1473,6 @@ class ShakeServicePackage : ReactPackage {
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> = emptyList()
 }
 `;
-
-// ─── Widget XML Sources ──────────────────────────────────────────────────────
-const WIDGET_BACKGROUND_XML = `<?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <solid android:color="#FFFFFF" />
-    <corners android:radius="16dp" />
-    <stroke
-        android:width="1dp"
-        android:color="#E5E7EB" />
-</shape>`;
-
-const WIDGET_BTN_BG_XML = `<?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <solid android:color="#4F46E5" />
-    <corners android:radius="10dp" />
-</shape>`;
-
-const WIDGET_BADGE_BG_XML = `<?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <solid android:color="#F1F5F9" />
-    <corners android:radius="6dp" />
-</shape>`;
-
-const WIDGET_PROGRESS_DRAWABLE_XML = `<?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:id="@android:id/background">
-        <shape>
-            <corners android:radius="4dp" />
-            <solid android:color="#F3F4F6" />
-        </shape>
-    </item>
-    <item android:id="@android:id/progress">
-        <clip>
-            <shape>
-                <corners android:radius="4dp" />
-                <solid android:color="#4F46E5" />
-            </shape>
-        </clip>
-    </item>
-</layer-list>`;
-
-const WIDGET_CIRCULAR_PROGRESS_DRAWABLE_XML = `<?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:id="@android:id/background">
-        <shape
-            android:innerRadiusRatio="2.7"
-            android:shape="ring"
-            android:thickness="3.5dp"
-            android:useLevel="false">
-            <solid android:color="#EEF2F6" />
-        </shape>
-    </item>
-    <item android:id="@android:id/progress">
-        <rotate
-            android:fromDegrees="270"
-            android:toDegrees="270">
-            <shape
-                android:innerRadiusRatio="2.7"
-                android:shape="ring"
-                android:thickness="3.5dp"
-                android:useLevel="true">
-                <solid android:color="#4F46E5" />
-            </shape>
-        </rotate>
-    </item>
-</layer-list>`;
-
-const EXPENZA_WIDGET_INFO_XML = `<?xml version="1.0" encoding="utf-8"?>
-<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="180dp"
-    android:minHeight="70dp"
-    android:targetCellWidth="3"
-    android:targetCellHeight="2"
-    android:updatePeriodMillis="1800000"
-    android:initialLayout="@layout/widget_expenza"
-    android:resizeMode="horizontal|vertical"
-    android:widgetCategory="home_screen"
-    android:description="@string/widget_main_description">
-</appwidget-provider>`;
-
-const TODAY_SPENDING_WIDGET_INFO_XML = `<?xml version="1.0" encoding="utf-8"?>
-<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="140dp"
-    android:minHeight="70dp"
-    android:targetCellWidth="2"
-    android:targetCellHeight="2"
-    android:updatePeriodMillis="1800000"
-    android:initialLayout="@layout/widget_today_spending"
-    android:resizeMode="horizontal|vertical"
-    android:widgetCategory="home_screen"
-    android:description="@string/widget_today_spending_description">
-</appwidget-provider>`;
-
-const MONTHLY_BUDGET_WIDGET_INFO_XML = `<?xml version="1.0" encoding="utf-8"?>
-<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="140dp"
-    android:minHeight="70dp"
-    android:targetCellWidth="2"
-    android:targetCellHeight="2"
-    android:updatePeriodMillis="1800000"
-    android:initialLayout="@layout/widget_monthly_budget"
-    android:resizeMode="horizontal|vertical"
-    android:widgetCategory="home_screen"
-    android:description="@string/widget_monthly_budget_description">
-</appwidget-provider>`;
-
-const QUICK_ADD_WIDGET_INFO_XML = `<?xml version="1.0" encoding="utf-8"?>
-<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="140dp"
-    android:minHeight="55dp"
-    android:targetCellWidth="2"
-    android:targetCellHeight="1"
-    android:updatePeriodMillis="0"
-    android:initialLayout="@layout/widget_quick_add"
-    android:resizeMode="horizontal|vertical"
-    android:widgetCategory="home_screen"
-    android:description="@string/widget_quick_add_description">
-</appwidget-provider>`;
-
-const WHERE_DID_IT_GO_WIDGET_INFO_XML = `<?xml version="1.0" encoding="utf-8"?>
-<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="180dp"
-    android:minHeight="85dp"
-    android:targetCellWidth="3"
-    android:targetCellHeight="2"
-    android:updatePeriodMillis="1800000"
-    android:initialLayout="@layout/widget_where_did_it_go"
-    android:resizeMode="horizontal|vertical"
-    android:widgetCategory="home_screen"
-    android:description="@string/widget_breakdown_description">
-</appwidget-provider>`;
-
-const MONEY_MOOD_WIDGET_INFO_XML = `<?xml version="1.0" encoding="utf-8"?>
-<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="140dp"
-    android:minHeight="70dp"
-    android:targetCellWidth="2"
-    android:targetCellHeight="2"
-    android:updatePeriodMillis="1800000"
-    android:initialLayout="@layout/widget_money_mood"
-    android:resizeMode="horizontal|vertical"
-    android:widgetCategory="home_screen"
-    android:description="@string/widget_money_mood_description">
-</appwidget-provider>`;
-
-const WIDGET_EXPENZA_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_main_root"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@drawable/widget_background"
-    android:padding="13dp">
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
-
-            <TextView
-                android:id="@+id/widget_main_title"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="TOTAL SPENT"
-                android:textColor="#6B7280"
-                android:textSize="10sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.04" />
-
-            <TextView
-                android:id="@+id/widget_main_amount"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="₹0"
-                android:textColor="#111827"
-                android:textSize="22sp"
-                android:textStyle="bold"
-                android:layout_marginTop="2dp" />
-
-            <TextView
-                android:id="@+id/widget_main_month_left"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="This month • Set budget"
-                android:textColor="#4F46E5"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:layout_marginTop="4dp" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:gravity="center_horizontal"
-            android:layout_marginStart="8dp">
-
-            <FrameLayout
-                android:layout_width="52dp"
-                android:layout_height="52dp">
-
-                <ProgressBar
-                    android:id="@+id/widget_main_circle_progress"
-                    style="?android:attr/progressBarStyleHorizontal"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:indeterminate="false"
-                    android:max="100"
-                    android:progress="0"
-                    android:progressDrawable="@drawable/widget_circular_progress_drawable" />
-
-                <TextView
-                    android:id="@+id/widget_main_percentage"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="center"
-                    android:text="0%"
-                    android:textColor="#111827"
-                    android:textSize="12sp"
-                    android:textStyle="bold" />
-            </FrameLayout>
-
-            <TextView
-                android:id="@+id/widget_main_budget_label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="BUDGET"
-                android:textColor="#6B7280"
-                android:textSize="9sp"
-                android:textStyle="bold"
-                android:layout_marginTop="2dp" />
-        </LinearLayout>
-
-    </LinearLayout>
-
-</LinearLayout>`;
-
-const WIDGET_TODAY_SPENDING_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_today_root"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@drawable/widget_background"
-    android:padding="13dp">
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <TextView
-            android:id="@+id/widget_today_label"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="TODAY'S SPENDING"
-            android:textColor="#6B7280"
-            android:textSize="10sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.04" />
-
-        <TextView
-            android:id="@+id/widget_today_badge"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Today"
-            android:textColor="#9CA3AF"
-            android:textSize="10sp" />
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/widget_today_amount"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="₹0"
-        android:textColor="#111827"
-        android:textSize="22sp"
-        android:textStyle="bold"
-        android:layout_marginTop="3dp" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="4dp"
-        android:gravity="center_vertical">
-
-        <TextView
-            android:id="@+id/widget_today_count"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="No expenses today"
-            android:textColor="#6B7280"
-            android:textSize="11sp" />
-
-        <TextView
-            android:id="@+id/widget_today_subbreakdown"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text=""
-            android:textColor="#4F46E5"
-            android:textSize="11sp"
-            android:textStyle="bold"
-            android:gravity="end" />
-    </LinearLayout>
-
-</LinearLayout>`;
-
-const WIDGET_MONTHLY_BUDGET_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_budget_root"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@drawable/widget_background"
-    android:padding="13dp">
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
-
-            <TextView
-                android:id="@+id/widget_budget_label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="MONTHLY BUDGET"
-                android:textColor="#6B7280"
-                android:textSize="10sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.04" />
-
-            <TextView
-                android:id="@+id/widget_budget_values"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Set your budget"
-                android:textColor="#111827"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                android:layout_marginTop="2dp" />
-
-            <TextView
-                android:id="@+id/widget_budget_subtext"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Tap to set monthly target"
-                android:textColor="#4F46E5"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:layout_marginTop="3dp" />
-        </LinearLayout>
-
-        <FrameLayout
-            android:layout_width="54dp"
-            android:layout_height="54dp"
-            android:layout_marginStart="8dp">
-
-            <ProgressBar
-                android:id="@+id/widget_budget_circle_progress"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:indeterminate="false"
-                android:max="100"
-                android:progress="0"
-                android:progressDrawable="@drawable/widget_circular_progress_drawable" />
-
-            <TextView
-                android:id="@+id/widget_budget_circle_pct"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:text="0%"
-                android:textColor="#111827"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-        </FrameLayout>
-
-    </LinearLayout>
-
-</LinearLayout>`;
-
-const WIDGET_QUICK_ADD_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_quick_add_root"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="horizontal"
-    android:background="@drawable/widget_background"
-    android:padding="12dp"
-    android:gravity="center_vertical">
-
-    <LinearLayout
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:orientation="vertical">
-
-        <TextView
-            android:id="@+id/widget_quick_add_title"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="ADD EXPENSE"
-            android:textColor="#6B7280"
-            android:textSize="10sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.04" />
-
-        <TextView
-            android:id="@+id/widget_quick_add_subtext"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Record what you spent"
-            android:textColor="#111827"
-            android:textSize="13sp"
-            android:textStyle="bold"
-            android:layout_marginTop="2dp" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:id="@+id/widget_quick_add_btn"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:background="@drawable/widget_btn_bg"
-        android:paddingStart="14dp"
-        android:paddingTop="8dp"
-        android:paddingEnd="14dp"
-        android:paddingBottom="8dp"
-        android:gravity="center">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="+ Add"
-            android:textColor="#FFFFFF"
-            android:textSize="13sp"
-            android:textStyle="bold" />
-    </LinearLayout>
-
-</LinearLayout>`;
-
-const WIDGET_WHERE_DID_IT_GO_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_breakdown_root"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@drawable/widget_background"
-    android:padding="12dp">
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <TextView
-            android:id="@+id/widget_breakdown_title"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="WHERE DID IT GO?"
-            android:textColor="#6B7280"
-            android:textSize="10sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.04" />
-
-        <TextView
-            android:id="@+id/widget_breakdown_month"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="This Month"
-            android:textColor="#9CA3AF"
-            android:textSize="10sp" />
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/widget_breakdown_empty"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="No spending recorded yet"
-        android:textColor="#9CA3AF"
-        android:textSize="12sp"
-        android:layout_marginTop="8dp"
-        android:visibility="gone" />
-
-    <LinearLayout
-        android:id="@+id/widget_breakdown_list"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:layout_marginTop="6dp">
-
-        <LinearLayout
-            android:id="@+id/widget_cat1_row"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginBottom="4dp">
-
-            <TextView
-                android:id="@+id/widget_cat1_name"
-                android:layout_width="64dp"
-                android:layout_height="wrap_content"
-                android:text="Food"
-                android:textColor="#111827"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:ellipsize="end"
-                android:maxLines="1" />
-
-            <ProgressBar
-                android:id="@+id/widget_cat1_bar"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="0dp"
-                android:layout_height="5dp"
-                android:layout_weight="1"
-                android:layout_marginStart="6dp"
-                android:layout_marginEnd="6dp"
-                android:max="100"
-                android:progress="60"
-                android:progressDrawable="@drawable/widget_progress_drawable" />
-
-            <TextView
-                android:id="@+id/widget_cat1_amount"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="₹0"
-                android:textColor="#111827"
-                android:textSize="11sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/widget_cat2_row"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginBottom="4dp">
-
-            <TextView
-                android:id="@+id/widget_cat2_name"
-                android:layout_width="64dp"
-                android:layout_height="wrap_content"
-                android:text="Shopping"
-                android:textColor="#111827"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:ellipsize="end"
-                android:maxLines="1" />
-
-            <ProgressBar
-                android:id="@+id/widget_cat2_bar"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="0dp"
-                android:layout_height="5dp"
-                android:layout_weight="1"
-                android:layout_marginStart="6dp"
-                android:layout_marginEnd="6dp"
-                android:max="100"
-                android:progress="40"
-                android:progressDrawable="@drawable/widget_progress_drawable" />
-
-            <TextView
-                android:id="@+id/widget_cat2_amount"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="₹0"
-                android:textColor="#111827"
-                android:textSize="11sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/widget_cat3_row"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:id="@+id/widget_cat3_name"
-                android:layout_width="64dp"
-                android:layout_height="wrap_content"
-                android:text="Transport"
-                android:textColor="#111827"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:ellipsize="end"
-                android:maxLines="1" />
-
-            <ProgressBar
-                android:id="@+id/widget_cat3_bar"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="0dp"
-                android:layout_height="5dp"
-                android:layout_weight="1"
-                android:layout_marginStart="6dp"
-                android:layout_marginEnd="6dp"
-                android:max="100"
-                android:progress="25"
-                android:progressDrawable="@drawable/widget_progress_drawable" />
-
-            <TextView
-                android:id="@+id/widget_cat3_amount"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="₹0"
-                android:textColor="#111827"
-                android:textSize="11sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-    </LinearLayout>
-
-</LinearLayout>`;
-
-const WIDGET_MONEY_MOOD_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_mood_root"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@drawable/widget_background"
-    android:padding="13dp">
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <TextView
-            android:id="@+id/widget_mood_label"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="MONEY MOOD"
-            android:textColor="#6B7280"
-            android:textSize="10sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.04" />
-
-        <TextView
-            android:id="@+id/widget_mood_indicator"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Status"
-            android:textColor="#9CA3AF"
-            android:textSize="10sp" />
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/widget_mood_status"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Comfortable"
-        android:textColor="#111827"
-        android:textSize="17sp"
-        android:textStyle="bold"
-        android:layout_marginTop="3dp" />
-
-    <TextView
-        android:id="@+id/widget_mood_subtitle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Spending is on track"
-        android:textColor="#6B7280"
-        android:textSize="11sp"
-        android:layout_marginTop="1dp" />
-
-    <ProgressBar
-        android:id="@+id/widget_mood_progress"
-        style="?android:attr/progressBarStyleHorizontal"
-        android:layout_width="match_parent"
-        android:layout_height="5dp"
-        android:layout_marginTop="6dp"
-        android:layout_marginBottom="4dp"
-        android:max="100"
-        android:progress="60"
-        android:progressDrawable="@drawable/widget_progress_drawable" />
-
-    <TextView
-        android:id="@+id/widget_mood_details"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="₹0 spent of ₹0"
-        android:textColor="#4F46E5"
-        android:textSize="10sp"
-        android:textStyle="bold" />
-
-</LinearLayout>`;
 
 // ─── Helper: resolve package directory path ──────────────────────────────────
 function getPackageDirPath(config) {
@@ -2070,48 +1507,26 @@ function withShakeServiceFiles(config) {
       fs.mkdirSync(path.join(resDir, "layout"), { recursive: true });
       fs.mkdirSync(path.join(resDir, "xml"), { recursive: true });
       fs.mkdirSync(path.join(resDir, "drawable"), { recursive: true });
+      fs.mkdirSync(path.join(resDir, "values"), { recursive: true });
+      fs.mkdirSync(path.join(resDir, "values-night"), { recursive: true });
 
       const files = {
         "ShakeService.kt": SHAKE_SERVICE_KT,
         "BootReceiver.kt": BOOT_RECEIVER_KT,
         "ShakeServiceModule.kt": SHAKE_SERVICE_MODULE_KT,
         "ShakeServicePackage.kt": SHAKE_SERVICE_PACKAGE_KT,
-        "ExpenzaAppWidgetProvider.kt": EXPENZA_APP_WIDGET_PROVIDER_KT,
+        "WidgetChartUtils.kt": WIDGET_CHART_UTILS_KT,
         "TodaySpendingWidgetProvider.kt": TODAY_SPENDING_WIDGET_PROVIDER_KT,
-        "MonthlyBudgetWidgetProvider.kt": MONTHLY_BUDGET_WIDGET_PROVIDER_KT,
         "QuickAddWidgetProvider.kt": QUICK_ADD_WIDGET_PROVIDER_KT,
+        "BudgetWidgetProvider.kt": BUDGET_WIDGET_PROVIDER_KT,
         "WhereDidItGoWidgetProvider.kt": WHERE_DID_IT_GO_WIDGET_PROVIDER_KT,
-        "MoneyMoodWidgetProvider.kt": MONEY_MOOD_WIDGET_PROVIDER_KT,
+        "BudgetProgressWidgetProvider.kt": BUDGET_PROGRESS_WIDGET_PROVIDER_KT,
         "ReminderReceiver.kt": REMINDER_RECEIVER_KT,
       };
 
       for (const [filename, content] of Object.entries(files)) {
         const filepath = path.join(javaDir, filename);
         fs.writeFileSync(filepath, content.replace(/\{\{PACKAGE\}\}/g, pkg));
-      }
-
-      const resFiles = [
-        { path: path.join(resDir, "xml", "expenza_widget_info.xml"), content: EXPENZA_WIDGET_INFO_XML },
-        { path: path.join(resDir, "xml", "today_spending_widget_info.xml"), content: TODAY_SPENDING_WIDGET_INFO_XML },
-        { path: path.join(resDir, "xml", "monthly_budget_widget_info.xml"), content: MONTHLY_BUDGET_WIDGET_INFO_XML },
-        { path: path.join(resDir, "xml", "quick_add_widget_info.xml"), content: QUICK_ADD_WIDGET_INFO_XML },
-        { path: path.join(resDir, "xml", "where_did_it_go_widget_info.xml"), content: WHERE_DID_IT_GO_WIDGET_INFO_XML },
-        { path: path.join(resDir, "xml", "money_mood_widget_info.xml"), content: MONEY_MOOD_WIDGET_INFO_XML },
-        { path: path.join(resDir, "layout", "widget_expenza.xml"), content: WIDGET_EXPENZA_LAYOUT_XML },
-        { path: path.join(resDir, "layout", "widget_today_spending.xml"), content: WIDGET_TODAY_SPENDING_LAYOUT_XML },
-        { path: path.join(resDir, "layout", "widget_monthly_budget.xml"), content: WIDGET_MONTHLY_BUDGET_LAYOUT_XML },
-        { path: path.join(resDir, "layout", "widget_quick_add.xml"), content: WIDGET_QUICK_ADD_LAYOUT_XML },
-        { path: path.join(resDir, "layout", "widget_where_did_it_go.xml"), content: WIDGET_WHERE_DID_IT_GO_LAYOUT_XML },
-        { path: path.join(resDir, "layout", "widget_money_mood.xml"), content: WIDGET_MONEY_MOOD_LAYOUT_XML },
-        { path: path.join(resDir, "drawable", "widget_background.xml"), content: WIDGET_BACKGROUND_XML },
-        { path: path.join(resDir, "drawable", "widget_btn_bg.xml"), content: WIDGET_BTN_BG_XML },
-        { path: path.join(resDir, "drawable", "widget_badge_bg.xml"), content: WIDGET_BADGE_BG_XML },
-        { path: path.join(resDir, "drawable", "widget_progress_drawable.xml"), content: WIDGET_PROGRESS_DRAWABLE_XML },
-        { path: path.join(resDir, "drawable", "widget_circular_progress_drawable.xml"), content: WIDGET_CIRCULAR_PROGRESS_DRAWABLE_XML },
-      ];
-
-      for (const { path: rPath, content } of resFiles) {
-        fs.writeFileSync(rPath, content);
       }
 
       return config;
@@ -2185,15 +1600,12 @@ function withShakeServiceManifest(config) {
       }
     }
 
-    // Register all 6 Home Screen Widgets
-    addReceiver(".ExpenzaAppWidgetProvider", "@string/widget_main_title", "@xml/expenza_widget_info");
     addReceiver(".TodaySpendingWidgetProvider", "@string/widget_today_spending_title", "@xml/today_spending_widget_info");
-    addReceiver(".MonthlyBudgetWidgetProvider", "@string/widget_monthly_budget_title", "@xml/monthly_budget_widget_info");
     addReceiver(".QuickAddWidgetProvider", "@string/widget_quick_add_title", "@xml/quick_add_widget_info");
+    addReceiver(".BudgetWidgetProvider", "@string/widget_budget_title", "@xml/budget_widget_info");
     addReceiver(".WhereDidItGoWidgetProvider", "@string/widget_breakdown_title", "@xml/where_did_it_go_widget_info");
-    addReceiver(".MoneyMoodWidgetProvider", "@string/widget_money_mood_title", "@xml/money_mood_widget_info");
+    addReceiver(".BudgetProgressWidgetProvider", "@string/widget_budget_progress_title", "@xml/budget_progress_widget_info");
 
-    // Register BootReceiver
     if (!receivers.some((r) => r.$?.["android:name"] === ".BootReceiver")) {
       receivers.push({
         $: {
@@ -2213,7 +1625,6 @@ function withShakeServiceManifest(config) {
       });
     }
 
-    // Register ReminderReceiver
     if (!receivers.some((r) => r.$?.["android:name"] === ".ReminderReceiver")) {
       receivers.push({
         $: {
@@ -2350,18 +1761,16 @@ function withShakeServiceStrings(config) {
 
     const stringMap = {
       app_name: "Expenza",
-      widget_main_title: '"Total Spent & Budget"',
-      widget_main_description: '"Overview of monthly spending and budget progress ring"',
       widget_today_spending_title: '"Today\'s Spending"',
       widget_today_spending_description: '"Glance at what you\'ve spent today"',
-      widget_monthly_budget_title: '"Monthly Budget"',
-      widget_monthly_budget_description: '"Track your monthly budget and remaining spend"',
-      widget_quick_add_title: '"Quick Add Expense"',
-      widget_quick_add_description: '"Quickly log a new expense in Expenza"',
+      widget_quick_add_title: '"Monthly Spending"',
+      widget_quick_add_description: '"View monthly total and quickly log expenses"',
+      widget_budget_title: '"Budget"',
+      widget_budget_description: '"View current monthly budget usage"',
       widget_breakdown_title: '"Where Did It Go?"',
-      widget_breakdown_description: '"Top category spending breakdown with progress bars"',
-      widget_money_mood_title: '"Money Mood"',
-      widget_money_mood_description: '"Real-time spending health and budget track"',
+      widget_breakdown_description: '"Monthly category spending breakdown"',
+      widget_budget_progress_title: '"Daily Activity"',
+      widget_budget_progress_description: '"Track daily spending equalizer histogram"',
     };
 
     for (const [name, value] of Object.entries(stringMap)) {

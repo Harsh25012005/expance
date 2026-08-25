@@ -4,9 +4,12 @@ import { toLocalDateString } from '../utils/analyticsHelpers';
 
 const { ShakeServiceModule } = NativeModules;
 
+// 4 Concentric Ring Colors matching Reference 4
+const RING_COLORS = ['#A78BFA', '#60A5FA', '#22D3EE', '#FB923C'];
+
 export const widgetService = {
   /**
-   * Synchronize current spending, category breakdown, and budget metrics with Android Home Screen AppWidgets
+   * Synchronize spending data with the 5 redesigned Android Home-Screen widgets
    */
   syncWidget(expenses: Expense[], settings: AppSettings): void {
     if (Platform.OS !== 'android' || !ShakeServiceModule?.updateWidgetData) {
@@ -18,15 +21,13 @@ export const widgetService = {
       const todayStr = toLocalDateString(now);
       const currentYear = now.getFullYear();
       const currentMonth = now.getMonth();
-      const dayOfMonth = now.getDate();
-      const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
 
-      const monthFormatter = new Intl.DateTimeFormat('en-US', { month: 'long' });
+      const monthFormatter = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' });
       const monthName = monthFormatter.format(now);
 
       let todaySpent = 0;
       let todayCount = 0;
-      const todayCategoryMap: Record<string, number> = {};
+      const todayHourlyBuckets: number[] = new Array(20).fill(0); // 20 equalizer bars
 
       let monthSpent = 0;
       const monthCategoryMap: Record<string, number> = {};
@@ -40,7 +41,9 @@ export const widgetService = {
         if (toLocalDateString(expDate) === todayStr) {
           todaySpent += amount;
           todayCount += 1;
-          todayCategoryMap[cat] = (todayCategoryMap[cat] || 0) + amount;
+          const hour = expDate.getHours();
+          const bucketIndex = Math.min(Math.floor((hour / 24) * 20), 19);
+          todayHourlyBuckets[bucketIndex] += amount;
         }
 
         // Check if created in current month
@@ -50,100 +53,59 @@ export const widgetService = {
         }
       }
 
-      // Today top category string
-      let todayTopCat = '';
-      const todaySortedCats = Object.entries(todayCategoryMap).sort((a, b) => b[1] - a[1]);
-      if (todaySortedCats.length > 0) {
-        const [topCat, topAmt] = todaySortedCats[0];
-        const formattedAmt = topAmt >= 1000 ? `${(topAmt / 1000).toFixed(1)}k` : `${Math.round(topAmt)}`;
-        todayTopCat = `${topCat} ${settings.currency || '₹'}${formattedAmt}`;
-      }
+      // Format dynamic 20-bar equalizer heights string
+      const maxBucket = Math.max(...todayHourlyBuckets, 1);
+      const todayBars = todayHourlyBuckets
+        .map((b) => (b > 0 ? (b / maxBucket).toFixed(2) : '0.15'))
+        .join(',');
 
-      // Top 3 Month categories
+      // Top 4 Month categories for Concentric Rings
       const monthSortedCats = Object.entries(monthCategoryMap).sort((a, b) => b[1] - a[1]);
       const totalMonthCatSpent = monthSpent > 0 ? monthSpent : 1;
 
-      const cat1 = monthSortedCats[0] || ['', 0];
-      const cat2 = monthSortedCats[1] || ['', 0];
-      const cat3 = monthSortedCats[2] || ['', 0];
+      const getCatData = (index: number) => {
+        if (index < monthSortedCats.length) {
+          const [name, amt] = monthSortedCats[index];
+          const pct = Math.max(1, Math.round((amt / totalMonthCatSpent) * 100));
+          const color = RING_COLORS[index] || '#A78BFA';
+          return { name, pct, color };
+        }
+        const defaultNames = ['FOOD', 'SHOP', 'TRANS', 'BILLS'];
+        return { name: defaultNames[index] || '', pct: 25 - index * 5, color: RING_COLORS[index] || '#A78BFA' };
+      };
 
-      const cat1Name = cat1[0];
-      const cat1Amount = cat1[1];
-      const cat1Pct = Math.round((cat1Amount / totalMonthCatSpent) * 100);
-
-      const cat2Name = cat2[0];
-      const cat2Amount = cat2[1];
-      const cat2Pct = Math.round((cat2Amount / totalMonthCatSpent) * 100);
-
-      const cat3Name = cat3[0];
-      const cat3Amount = cat3[1];
-      const cat3Pct = Math.round((cat3Amount / totalMonthCatSpent) * 100);
+      const cat1 = getCatData(0);
+      const cat2 = getCatData(1);
+      const cat3 = getCatData(2);
+      const cat4 = getCatData(3);
+      const cat5 = { name: '', pct: 0, color: '#A78BFA' };
 
       const monthlyBudget = Number(settings.monthlyBudget) || 0;
       const currency = settings.currency || '₹';
 
-      // Money mood status calculation
-      let moodStatus = 'Comfortable';
-      let moodSubtitle = 'Spending is on track';
-      let moodPct = 40;
-
-      if (monthlyBudget > 0) {
-        const spentRatio = monthSpent / monthlyBudget;
-        const monthProgress = dayOfMonth / daysInMonth;
-
-        if (spentRatio > 1.0) {
-          moodStatus = 'Over Budget';
-          moodSubtitle = 'Budget limit exceeded';
-          moodPct = 100;
-        } else if (spentRatio > 0.85) {
-          moodStatus = 'Caution';
-          moodSubtitle = 'Approaching monthly target';
-          moodPct = 85;
-        } else if (spentRatio > monthProgress + 0.15) {
-          moodStatus = 'Watch Spending';
-          moodSubtitle = 'Spending faster than usual';
-          moodPct = 70;
-        } else if (spentRatio > 0.5) {
-          moodStatus = 'On Track';
-          moodSubtitle = 'Well within monthly budget';
-          moodPct = 50;
-        } else {
-          moodStatus = 'Comfortable';
-          moodSubtitle = 'Spending is very healthy';
-          moodPct = 25;
-        }
-      } else {
-        if (monthSpent > 0) {
-          moodStatus = 'On Track';
-          moodSubtitle = 'Tracking monthly spending';
-          moodPct = 50;
-        } else {
-          moodStatus = 'Comfortable';
-          moodSubtitle = 'No spending recorded yet';
-          moodPct = 15;
-        }
-      }
-
       ShakeServiceModule.updateWidgetData(
         todaySpent,
         todayCount,
-        todayTopCat,
+        todayBars,
         monthlyBudget,
         monthSpent,
         monthName,
         currency,
-        cat1Name,
-        cat1Amount,
-        cat1Pct,
-        cat2Name,
-        cat2Amount,
-        cat2Pct,
-        cat3Name,
-        cat3Amount,
-        cat3Pct,
-        moodStatus,
-        moodSubtitle,
-        moodPct
+        cat1.name,
+        cat1.pct,
+        cat1.color,
+        cat2.name,
+        cat2.pct,
+        cat2.color,
+        cat3.name,
+        cat3.pct,
+        cat3.color,
+        cat4.name,
+        cat4.pct,
+        cat4.color,
+        cat5.name,
+        cat5.pct,
+        cat5.color
       );
     } catch (err) {
       console.warn('[WidgetService] Error updating native home screen widget:', err);
