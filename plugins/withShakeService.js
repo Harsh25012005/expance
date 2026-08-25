@@ -1208,6 +1208,7 @@ function withShakeServiceMainActivity(config) {
 
   private fun handleLaunchIntent(intent: Intent?, source: String) {
     if (intent == null) return
+    val uri = intent.dataString
     val action = intent.getStringExtra("action") ?: intent.action
     if (action == "ADD_EXPENSE" || (uri != null && (uri.contains("add-expense") || uri.contains("shake-open") || uri.contains("expenza://")))) {
       Log.d("MainActivity", "[SHAKE] Notification tapped")
