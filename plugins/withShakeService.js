@@ -1162,7 +1162,7 @@ const WIDGET_TODAY_SPENDING_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
         android:id="@+id/widget_today_label"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="TODAY\\'S SPENDING"
+        android:text="TODAY'S SPENDING"
         android:textColor="#6B7280"
         android:textSize="11sp"
         android:textStyle="bold" />
@@ -1374,7 +1374,7 @@ const WIDGET_EXPENZA_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="TODAY\\'S SPENT"
+                android:text="TODAY'S SPENT"
                 android:textColor="#6B7280"
                 android:textSize="10sp"
                 android:textStyle="bold" />
@@ -1724,12 +1724,12 @@ function withShakeServiceStrings(config) {
 
     const stringMap = {
       app_name: "Expenza",
-      widget_today_spending_title: "Today\\'s Spending",
-      widget_today_spending_description: "Glance at what you\\'ve spent today",
-      widget_monthly_budget_title: "Monthly Budget",
-      widget_monthly_budget_description: "Track your monthly budget and remaining spend",
-      widget_quick_add_title: "Quick Add Expense",
-      widget_quick_add_description: "Quickly log a new expense in Expenza",
+      widget_today_spending_title: '"Today\'s Spending"',
+      widget_today_spending_description: '"Glance at what you\'ve spent today"',
+      widget_monthly_budget_title: '"Monthly Budget"',
+      widget_monthly_budget_description: '"Track your monthly budget and remaining spend"',
+      widget_quick_add_title: '"Quick Add Expense"',
+      widget_quick_add_description: '"Quickly log a new expense in Expenza"',
     };
 
     for (const [name, value] of Object.entries(stringMap)) {
