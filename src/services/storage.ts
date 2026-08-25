@@ -13,6 +13,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   currency: '₹',
   currencyCode: 'INR',
   hapticsEnabled: true,
+  monthlyBudget: 0,
+  dailyReminderEnabled: false,
+  reminderTime: '20:00',
 };
 
 export async function loadStoredExpenses(): Promise<Expense[]> {

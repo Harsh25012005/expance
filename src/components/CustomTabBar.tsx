@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { LayoutDashboard, Receipt, PieChart, Sliders } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { TabScreen } from '../types/expense';
 import { useExpenses } from '../context/ExpenseContext';
@@ -20,21 +21,23 @@ const TABS: { id: TabScreen; label: string }[] = [
 
 export const CustomTabBar: React.FC<CustomTabBarProps> = ({ activeTab, onTabChange }) => {
   const { settings } = useExpenses();
+  const insets = useSafeAreaInsets();
 
   const handlePress = (tabId: TabScreen) => {
     if (tabId !== activeTab) {
       if (settings.hapticsEnabled) {
         try {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-        } catch {}
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
+        } catch { }
       }
       onTabChange(tabId);
     }
   };
 
   const renderTabIcon = (tabId: TabScreen, isActive: boolean) => {
-    const color = isActive ? theme.colors.textPrimary : theme.colors.textTertiary;
-    const strokeWidth = 1.5;
+    // High contrast white icons against the solid blue background
+    const color = isActive ? '#FFFFFF' : 'rgba(255, 255, 255, 0.65)';
+    const strokeWidth = isActive ? 2 : 1.75;
     const size = 18;
 
     switch (tabId) {
@@ -51,7 +54,7 @@ export const CustomTabBar: React.FC<CustomTabBarProps> = ({ activeTab, onTabChan
   };
 
   return (
-    <View style={styles.wrapper}>
+    <View style={[styles.wrapper, { bottom: Math.max(insets.bottom, 12) + 4 }]}>
       <View style={styles.container}>
         {TABS.map((tab) => {
           const isActive = activeTab === tab.id;
@@ -89,50 +92,52 @@ export const CustomTabBar: React.FC<CustomTabBarProps> = ({ activeTab, onTabChan
 const styles = StyleSheet.create({
   wrapper: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 24 : 16,
     left: 16,
     right: 16,
     alignItems: 'center',
+    zIndex: 10,
   },
   container: {
     flexDirection: 'row',
-    backgroundColor: theme.colors.glassBackground,
-    borderRadius: theme.borderRadius.container,
-    paddingVertical: 8,
-    paddingHorizontal: 8,
+    backgroundColor: theme.colors.primary, // Exact Set Budget button blue color
+    borderRadius: 100,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
     width: '100%',
     maxWidth: 380,
     justifyContent: 'space-between',
+    alignItems: 'center',
   },
   tabButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 6,
-    borderRadius: theme.borderRadius.md,
-    minHeight: 48,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderRadius: 100,
+    minHeight: 46,
   },
   activeTabButton: {
-    backgroundColor: theme.colors.backgroundSecondary,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
   },
   iconWrap: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
+    marginBottom: 3,
   },
   tabLabel: {
     ...theme.typography.caption,
     fontSize: 11,
+    includeFontPadding: false,
   },
   activeTabLabel: {
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   inactiveTabLabel: {
-    fontWeight: '400',
-    color: theme.colors.textTertiary,
+    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.65)',
   },
 });

@@ -9,6 +9,8 @@ import {
   saveStoredSettings,
 } from '../services/storage';
 import { shakeServiceBridge } from '../services/shakeServiceBridge';
+import { syncDailyReminder } from '../utils/reminderService';
+import { widgetService } from '../services/widgetService';
 
 interface ExpenseStats {
   totalSpending: number;
@@ -70,6 +72,20 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
     init();
   }, []);
+
+  // Sync daily reminders whenever settings or expenses change
+  useEffect(() => {
+    if (!loading) {
+      syncDailyReminder(settings, expenses);
+    }
+  }, [settings.dailyReminderEnabled, settings.reminderTime, expenses, loading]);
+
+  // Sync Android Home Screen AppWidget whenever settings or expenses change
+  useEffect(() => {
+    if (!loading) {
+      widgetService.syncWidget(expenses, settings);
+    }
+  }, [expenses, settings, loading]);
 
   const addExpense = useCallback(
     async (expenseData: {

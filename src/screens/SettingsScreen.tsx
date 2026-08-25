@@ -27,22 +27,34 @@ import {
   FileText,
   Table,
   Code2,
+  WalletCards,
+  Bell,
+  Clock,
+  LayoutDashboard,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useExpenses } from '../context/ExpenseContext';
 import { SUPPORTED_CURRENCIES } from '../constants/categories';
 import { ShakeSensitivity } from '../types/expense';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { SetBudgetModal } from '../components/SetBudgetModal';
+import { CustomTimePickerModal } from '../components/CustomTimePickerModal';
 import { exportExpenses, ExportFormat } from '../services/exportService';
+import { formatCurrency, formatTimeDisplay } from '../utils/formatters';
 import { theme } from '../constants/theme';
 import { AppLogo } from '../components/AppLogo';
 
 export const SettingsScreen: React.FC = () => {
   const { settings, updateSettings, expenses, eraseAllData } = useExpenses();
+  const insets = useSafeAreaInsets();
 
   const [showEraseAllConfirm, setShowEraseAllConfirm] = useState<boolean>(false);
   const [showCurrencyModal, setShowCurrencyModal] = useState<boolean>(false);
   const [showNameModal, setShowNameModal] = useState<boolean>(false);
+  const [showBudgetModal, setShowBudgetModal] = useState<boolean>(false);
+  const [showReminderTimeModal, setShowReminderTimeModal] = useState<boolean>(false);
+  const [showWidgetGuideModal, setShowWidgetGuideModal] = useState<boolean>(false);
   const [showExportModal, setShowExportModal] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [tempName, setTempName] = useState<string>(settings.userName || '');
@@ -105,7 +117,10 @@ export const SettingsScreen: React.FC = () => {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.contentContainer}
+      contentContainerStyle={[
+        styles.contentContainer,
+        { paddingBottom: 85 + Math.max(insets.bottom, 16) },
+      ]}
       showsVerticalScrollIndicator={false}
     >
       {/* ──────────────── 1. PREFERENCES SECTION ──────────────── */}
@@ -235,6 +250,33 @@ export const SettingsScreen: React.FC = () => {
 
           <View style={styles.divider} />
 
+          {/* Monthly Budget */}
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => {
+              triggerHaptic();
+              setShowBudgetModal(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={styles.rowLeft}>
+              <View style={styles.iconCircle}>
+                <WalletCards size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
+              </View>
+              <View>
+                <Text style={styles.rowTitle}>Monthly Budget</Text>
+                <Text style={styles.rowSubtitle}>
+                  {settings.monthlyBudget && settings.monthlyBudget > 0
+                    ? formatCurrency(settings.monthlyBudget, settings.currency)
+                    : 'Set your monthly budget'}
+                </Text>
+              </View>
+            </View>
+            <ChevronRight size={15} color={theme.colors.textTertiary} strokeWidth={1.5} />
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
           {/* Haptic Feedback Toggle */}
           <View style={styles.row}>
             <View style={styles.rowLeft}>
@@ -256,6 +298,86 @@ export const SettingsScreen: React.FC = () => {
               thumbColor="#FFFFFF"
             />
           </View>
+        </View>
+      </View>
+
+      {/* ──────────────── 2. EXPENSE REMINDERS SECTION ──────────────── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionHeader}>EXPENSE REMINDERS</Text>
+        <View style={styles.card}>
+          {/* Daily Reminder Toggle */}
+          <View style={styles.row}>
+            <View style={styles.rowLeft}>
+              <View style={styles.iconCircle}>
+                <Bell size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
+              </View>
+              <View>
+                <Text style={styles.rowTitle}>Daily reminder</Text>
+                <Text style={styles.rowSubtitle}>
+                  Remind if no expense recorded today
+                </Text>
+              </View>
+            </View>
+            <Switch
+              value={settings.dailyReminderEnabled || false}
+              onValueChange={(val) => {
+                triggerHaptic();
+                updateSettings({ dailyReminderEnabled: val });
+              }}
+              trackColor={{ false: theme.colors.border, true: theme.colors.textPrimary }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+
+          {/* Reminder Time Selector */}
+          {settings.dailyReminderEnabled && (
+            <>
+              <View style={styles.divider} />
+              <TouchableOpacity
+                style={styles.row}
+                onPress={() => {
+                  triggerHaptic();
+                  setShowReminderTimeModal(true);
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={styles.rowLeft}>
+                  <View style={styles.iconCircle}>
+                    <Clock size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
+                  </View>
+                  <View>
+                    <Text style={styles.rowTitle}>Preferred Time</Text>
+                    <Text style={styles.rowSubtitle}>
+                      {formatTimeDisplay(settings.reminderTime)}
+                    </Text>
+                  </View>
+                </View>
+                <ChevronRight size={15} color={theme.colors.textTertiary} strokeWidth={1.5} />
+              </TouchableOpacity>
+            </>
+          )}
+
+          {/* Home Screen Widget Guide */}
+          <View style={styles.divider} />
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => {
+              triggerHaptic();
+              setShowWidgetGuideModal(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={styles.rowLeft}>
+              <View style={styles.iconCircle}>
+                <LayoutDashboard size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
+              </View>
+              <View>
+                <Text style={styles.rowTitle}>Home Screen Widget</Text>
+                <Text style={styles.rowSubtitle}>Pin Expenza to your home screen</Text>
+              </View>
+            </View>
+            <ChevronRight size={15} color={theme.colors.textTertiary} strokeWidth={1.5} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -344,9 +466,10 @@ export const SettingsScreen: React.FC = () => {
         animationType="slide"
         transparent
         onRequestClose={() => !isExporting && setShowExportModal(false)}
+        statusBarTranslucent
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <View style={[styles.modalOverlay, { paddingTop: insets.top + 20 }]}>
+          <View style={[styles.modalContent, { paddingBottom: 24 + Math.max(insets.bottom, 16) }]}>
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalTitle}>Export Expenses</Text>
@@ -436,9 +559,10 @@ export const SettingsScreen: React.FC = () => {
         animationType="slide"
         transparent
         onRequestClose={() => setShowCurrencyModal(false)}
+        statusBarTranslucent
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <View style={[styles.modalOverlay, { paddingTop: insets.top + 20 }]}>
+          <View style={[styles.modalContent, { paddingBottom: 24 + Math.max(insets.bottom, 16) }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Currency</Text>
               <TouchableOpacity
@@ -489,8 +613,9 @@ export const SettingsScreen: React.FC = () => {
         animationType="fade"
         transparent
         onRequestClose={() => setShowNameModal(false)}
+        statusBarTranslucent
       >
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { justifyContent: 'center', alignItems: 'center', padding: 20, paddingTop: insets.top + 20, paddingBottom: Math.max(insets.bottom, 20) }]}>
           <View style={styles.nameModalCard}>
             <Text style={styles.modalTitle}>Your Name</Text>
             <Text style={styles.modalSubtitle}>What should we call you on the dashboard?</Text>
@@ -518,6 +643,114 @@ export const SettingsScreen: React.FC = () => {
                 <Text style={styles.nameSaveText}>Save</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Set Monthly Budget Modal */}
+      <SetBudgetModal
+        visible={showBudgetModal}
+        onClose={() => setShowBudgetModal(false)}
+      />
+
+      {/* Custom Mobile Time Picker Modal */}
+      <CustomTimePickerModal
+        visible={showReminderTimeModal}
+        initialTime={settings.reminderTime || '20:00'}
+        onSave={(timeStr) => updateSettings({ reminderTime: timeStr })}
+        onClose={() => setShowReminderTimeModal(false)}
+      />
+
+      {/* Home Screen Widget Guide Modal */}
+      <Modal
+        visible={showWidgetGuideModal}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setShowWidgetGuideModal(false)}
+        statusBarTranslucent
+      >
+        <View style={[styles.modalOverlay, { justifyContent: 'center', alignItems: 'center', padding: 20, paddingTop: insets.top + 20, paddingBottom: Math.max(insets.bottom, 20) }]}>
+          <View style={styles.widgetGuideCard}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Home Screen Widget</Text>
+                <Text style={styles.modalSubtitle}>Quickly track and add spending from your launcher</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowWidgetGuideModal(false)}
+                style={styles.modalClose}
+                accessibilityLabel="Close"
+              >
+                <X size={18} color={theme.colors.textSecondary} strokeWidth={1.5} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Widget Preview Mockup */}
+            <View style={styles.widgetMockup}>
+              <View style={styles.widgetMockupHeader}>
+                <View>
+                  <Text style={styles.widgetMockupBrand}>Expenza</Text>
+                  <Text style={styles.widgetMockupDate}>Today</Text>
+                </View>
+                <View style={styles.widgetMockupBtn}>
+                  <Text style={styles.widgetMockupBtnText}>+ Add</Text>
+                </View>
+              </View>
+
+              <View style={styles.widgetMockupMetrics}>
+                <View style={styles.widgetMockupCol}>
+                  <Text style={styles.widgetMockupLabel}>TODAY'S SPENT</Text>
+                  <Text style={styles.widgetMockupValue}>
+                    {formatCurrency(
+                      expenses
+                        .filter((e) => new Date(e.createdAt).toDateString() === new Date().toDateString())
+                        .reduce((sum, e) => sum + (Number(e.amount) || 0), 0),
+                      settings.currency
+                    )}
+                  </Text>
+                </View>
+
+                <View style={styles.widgetMockupDivider} />
+
+                <View style={styles.widgetMockupCol}>
+                  <Text style={styles.widgetMockupLabel}>MONTHLY BUDGET</Text>
+                  <Text style={[styles.widgetMockupValue, { color: theme.colors.primary, fontSize: 13 }]}>
+                    {settings.monthlyBudget ? `${formatCurrency(settings.monthlyBudget, settings.currency)} target` : 'No budget set'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Instructions */}
+            <View style={styles.guideSteps}>
+              <Text style={styles.guideStepsTitle}>HOW TO ADD TO HOME SCREEN:</Text>
+              <View style={styles.stepRow}>
+                <View style={styles.stepNumBadge}>
+                  <Text style={styles.stepNumText}>1</Text>
+                </View>
+                <Text style={styles.stepText}>Go to your phone's home screen and long-press an empty area.</Text>
+              </View>
+              <View style={styles.stepRow}>
+                <View style={styles.stepNumBadge}>
+                  <Text style={styles.stepNumText}>2</Text>
+                </View>
+                <Text style={styles.stepText}>Tap <Text style={{ fontWeight: '700' }}>Widgets</Text> from the bottom menu.</Text>
+              </View>
+              <View style={styles.stepRow}>
+                <View style={styles.stepNumBadge}>
+                  <Text style={styles.stepNumText}>3</Text>
+                </View>
+                <Text style={styles.stepText}>Find <Text style={{ fontWeight: '700' }}>Expenza</Text> and drag it to your screen.</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.guideGotItBtn}
+              onPress={() => setShowWidgetGuideModal(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.guideGotItBtnText}>Got It</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -869,6 +1102,134 @@ const styles = StyleSheet.create({
   nameSaveText: {
     ...theme.typography.secondary,
     fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  widgetGuideCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.container,
+    padding: 20,
+    width: '100%',
+    maxWidth: 380,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  widgetMockup: {
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.container,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginTop: 12,
+    marginBottom: 16,
+  },
+  widgetMockupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  widgetMockupBrand: {
+    ...theme.typography.body,
+    fontSize: 13,
+    fontWeight: '700',
+    color: theme.colors.textPrimary,
+  },
+  widgetMockupDate: {
+    ...theme.typography.caption,
+    fontSize: 10,
+    color: theme.colors.textSecondary,
+  },
+  widgetMockupBtn: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  widgetMockupBtnText: {
+    ...theme.typography.caption,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  widgetMockupMetrics: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: theme.colors.surface,
+    padding: 10,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.borderSubtle,
+  },
+  widgetMockupCol: {
+    flex: 1,
+  },
+  widgetMockupLabel: {
+    ...theme.typography.label,
+    fontSize: 9,
+    color: theme.colors.textSecondary,
+    marginBottom: 2,
+  },
+  widgetMockupValue: {
+    ...theme.typography.body,
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.colors.textPrimary,
+  },
+  widgetMockupDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: theme.colors.borderSubtle,
+    marginHorizontal: 8,
+  },
+  guideSteps: {
+    gap: 8,
+    marginBottom: 16,
+  },
+  guideStepsTitle: {
+    ...theme.typography.label,
+    fontSize: 10,
+    color: theme.colors.textSecondary,
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  stepNumBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: theme.colors.accentLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepNumText: {
+    ...theme.typography.caption,
+    fontSize: 11,
+    fontWeight: '700',
+    color: theme.colors.primary,
+  },
+  stepText: {
+    ...theme.typography.caption,
+    fontSize: 12,
+    color: theme.colors.textPrimary,
+    flex: 1,
+    lineHeight: 16,
+  },
+  guideGotItBtn: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 11,
+    borderRadius: theme.borderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guideGotItBtnText: {
+    ...theme.typography.body,
+    fontSize: 13,
+    fontWeight: '700',
     color: '#FFFFFF',
   },
 });

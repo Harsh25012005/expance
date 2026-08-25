@@ -2,10 +2,12 @@ import React, { createContext, useContext, useEffect, useState, useRef, useCallb
 import { AppState, AppStateStatus, Platform, Linking } from 'react-native';
 import { Accelerometer } from 'expo-sensors';
 import * as Haptics from 'expo-haptics';
+import * as Notifications from 'expo-notifications';
 import { useExpenses } from './ExpenseContext';
 import { Expense } from '../types/expense';
 import { shakeServiceBridge } from '../services/shakeServiceBridge';
 import { addShakeListener, emitShakeEvent } from '../utils/shakeEvents';
+import { showShakeExpenseNotification, setupNotificationChannel } from '../utils/shakeNotifications';
 
 export interface OpenModalOptions {
   triggeredByShake?: boolean;
@@ -53,12 +55,10 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     settingsRef.current = settings;
   }, [settings]);
 
-  // Track AppState properly via subscription
+  // Request notification permissions and setup channel on mount
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (nextState) => {
-      appStateRef.current = nextState;
-    });
-    return () => sub.remove();
+    setupNotificationChannel();
+    Notifications.requestPermissionsAsync().catch(() => {});
   }, []);
 
   /**
@@ -85,18 +85,13 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   /**
-   * handleShakeDetected / openAddExpenseFromShake —
-   * Authoritative foreground shake handler:
-   * Shake detected -> Log state -> Call openAddExpensePopup() -> STOP (no notification code).
+   * handleShakeDetected —
+   * - If AppState === 'active': Open popup directly
+   * - If AppState !== 'active': Trigger curated Expenza notification fallback
    */
   const handleShakeDetected = useCallback(() => {
-    const currentAppState = appStateRef.current;
+    const currentAppState = AppState.currentState;
     console.log('[SHAKE] DETECTED');
-    if (currentAppState === 'active') {
-      console.log('[SHAKE] APP STATE: active');
-    } else {
-      console.log(`[SHAKE] APP STATE: ${currentAppState}`);
-    }
 
     const now = Date.now();
     if (now - lastShakeTimeRef.current < SHAKE_COOLDOWN_MS) {
@@ -112,8 +107,15 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } catch {}
     }
 
-    console.log('[SHAKE] CALLING openAddExpensePopup()');
-    openAddExpensePopup({ triggeredByShake: true });
+    if (currentAppState === 'active') {
+      console.log('[SHAKE] APP STATE: active');
+      console.log('[SHAKE] Opening Add Expense popup');
+      openAddExpensePopup({ triggeredByShake: true });
+    } else {
+      console.log(`[SHAKE] APP STATE: ${currentAppState}`);
+      // Show varied, curated, emoji-free notification
+      showShakeExpenseNotification();
+    }
   }, [openAddExpensePopup]);
 
   const openAddExpenseFromShake = handleShakeDetected;
@@ -133,7 +135,7 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, [handleShakeDetected]);
 
-  // 2. Sync foreground state with native ShakeService
+  // 2. Sync foreground state with native ShakeService on initial mount
   useEffect(() => {
     shakeServiceBridge.setAppForeground(true);
     return () => {
@@ -141,23 +143,34 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, []);
 
-  // 3. Handle Deep Linking (from background native ShakeService intent)
-  //    Directly opens the popup when resumed via deep link
+  // 3. Notification Tap & Deep Link Listener (Opens Add Expense directly)
   useEffect(() => {
+    // A. Handle notification click response (from expo-notifications)
+    const responseSub = Notifications.addNotificationResponseReceivedListener(() => {
+      console.log('[SHAKE] Notification tapped');
+      console.log('[SHAKE] ADD_EXPENSE action requested');
+      console.log('[SHAKE] Opening Add Expense');
+      openAddExpensePopup({ triggeredByShake: true });
+    });
+
+    // B. Handle deep links (expenza://add-expense)
     const handleDeepLink = (event: { url: string }) => {
       const url = event.url;
       if (url && (url.includes('shake-open') || url.includes('add-expense') || url.includes('expenza://'))) {
-        console.log('[SHAKE DEBUG] Deep link received:', url);
-        emitShakeEvent();
+        console.log('[SHAKE] Notification tapped');
+        console.log('[SHAKE] ADD_EXPENSE action requested');
+        console.log('[SHAKE] Opening Add Expense');
+        openAddExpensePopup({ triggeredByShake: true });
       }
     };
 
-    // Check initial URL if app was cold started via deep link
     Linking.getInitialURL()
       .then((url) => {
         if (url && (url.includes('shake-open') || url.includes('add-expense') || url.includes('expenza://'))) {
-          console.log('[SHAKE DEBUG] Cold start deep link:', url);
-          emitShakeEvent();
+          console.log('[SHAKE] Notification tapped');
+          console.log('[SHAKE] ADD_EXPENSE action requested');
+          console.log('[SHAKE] Opening Add Expense');
+          openAddExpensePopup({ triggeredByShake: true });
         }
       })
       .catch(() => {});
@@ -165,11 +178,12 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const linkingSub = Linking.addEventListener('url', handleDeepLink);
 
     return () => {
+      responseSub.remove();
       linkingSub.remove();
     };
-  }, []);
+  }, [openAddExpensePopup]);
 
-  // 4. Foreground Accelerometer Sensor Listener (Calibrated for G-force units)
+  // 4. Foreground Accelerometer & AppState Lifecycle Management
   useEffect(() => {
     let sensorSubscription: { remove: () => void } | null = null;
 
@@ -227,20 +241,21 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     };
 
-    // App state changes handling (Foreground vs Background)
+    // App state changes handling (Foreground vs Background Lifecycle)
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      appStateRef.current = nextAppState;
+      console.log(`[SHAKE] AppState changed: ${nextAppState}`);
+
       if (nextAppState === 'active') {
-        console.log('[SHAKE] AppState changed to active');
         shakeServiceBridge.setAppForeground(true);
         setupAccelerometer();
       } else if (nextAppState === 'background' || nextAppState === 'inactive') {
-        console.log(`[SHAKE] AppState changed to ${nextAppState}`);
         shakeServiceBridge.setAppForeground(false);
         if (sensorSubscription) {
           sensorSubscription.remove();
           sensorSubscription = null;
         }
-        // Ensure background service is running on Android if enabled
+        // Ensure background native service is active on Android if enabled
         if (settingsRef.current.shakeEnabled && Platform.OS === 'android') {
           shakeServiceBridge.startService(settingsRef.current.shakeSensitivity);
         }
@@ -256,7 +271,7 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       appStateSub.remove();
     };
-  }, [settings.shakeEnabled, settings.shakeSensitivity]);
+  }, [settings.shakeEnabled, settings.shakeSensitivity, openAddExpensePopup]);
 
   return (
     <ShakeContext.Provider

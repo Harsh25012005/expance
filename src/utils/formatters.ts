@@ -65,6 +65,20 @@ export function formatPercentage(value: number): string {
   return `${Math.round(value)}%`;
 }
 
+export function formatTimeDisplay(timeStr?: string): string {
+  if (!timeStr) return '8:00 PM';
+  const [hStr, mStr] = timeStr.split(':');
+  let h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10) || 0;
+  if (isNaN(h)) return '8:00 PM';
+
+  const period = h >= 12 ? 'PM' : 'AM';
+  let hour12 = h % 12;
+  if (hour12 === 0) hour12 = 12;
+
+  return `${hour12}:${m.toString().padStart(2, '0')} ${period}`;
+}
+
 export interface GroupedExpenses {
   title: string;
   data: Expense[];

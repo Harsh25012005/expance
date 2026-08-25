@@ -25,6 +25,7 @@ import {
 import * as Notifications from 'expo-notifications';
 import { Accelerometer } from 'expo-sensors';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useExpenses } from '../context/ExpenseContext';
 import { SUPPORTED_CURRENCIES } from '../constants/categories';
 import { ShakeSensitivity } from '../types/expense';
@@ -35,6 +36,7 @@ type PermissionStatusType = 'granted' | 'denied' | 'undetermined' | 'checking';
 
 export const OnboardingScreen: React.FC = () => {
   const { completeOnboarding } = useExpenses();
+  const insets = useSafeAreaInsets();
 
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [userName, setUserName] = useState<string>('');
@@ -193,7 +195,7 @@ export const OnboardingScreen: React.FC = () => {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={styles.safeContainer}>
+      <View style={[styles.safeContainer, { paddingTop: insets.top + 16, paddingBottom: Math.max(insets.bottom, 16) }]}>
         {/* Top Progress Indicator: 5 steps */}
         <View style={styles.topBar}>
           <View style={styles.progressDots}>

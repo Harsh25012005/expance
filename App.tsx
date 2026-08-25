@@ -104,9 +104,6 @@ function MainApp() {
 
       {/* Glassmorphism Bottom Tab Bar */}
       <CustomTabBar activeTab={activeTab} onTabChange={setActiveTab} />
-
-      {/* Global Shake / Quick Add Popup Modal */}
-      <QuickExpenseModal />
     </SafeAreaView>
   );
 }
@@ -149,6 +146,8 @@ export default function App() {
       <ExpenseProvider>
         <ShakeProvider>
           <RootApp />
+          {/* Global Shake / Add Expense Popup Modal */}
+          <QuickExpenseModal />
         </ShakeProvider>
       </ExpenseProvider>
     </SafeAreaProvider>

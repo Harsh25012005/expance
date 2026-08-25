@@ -16,7 +16,6 @@ import {
 } from 'react-native';
 import {
   X,
-  Sparkles,
   ChevronRight,
   Utensils,
   Car,
@@ -29,6 +28,7 @@ import {
   MoreHorizontal,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useShake } from '../context/ShakeContext';
 import { useExpenses } from '../context/ExpenseContext';
 import { CategoryType } from '../types/expense';
@@ -36,8 +36,9 @@ import { CATEGORIES, CATEGORY_MAP } from '../constants/categories';
 import { theme } from '../constants/theme';
 
 export const QuickExpenseModal: React.FC = () => {
-  const { isQuickAddModalOpen, closeQuickAddModal, triggeredByShake, editingExpense } = useShake();
+  const { isQuickAddModalOpen, closeQuickAddModal, editingExpense } = useShake();
   const { addExpense, updateExpense, settings } = useExpenses();
+  const insets = useSafeAreaInsets();
 
   const [name, setName] = useState<string>('');
   const [amount, setAmount] = useState<string>('');
@@ -47,8 +48,6 @@ export const QuickExpenseModal: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Animation values for smooth popup entrance
-  const scaleAnim = useRef(new Animated.Value(0.96)).current;
-  const opacityAnim = useRef(new Animated.Value(0)).current;
   const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
@@ -68,26 +67,9 @@ export const QuickExpenseModal: React.FC = () => {
       setErrorMsg(null);
       setIsSubmitting(false);
 
-      // Fast, smooth spring/timing scale 96% -> 100% and opacity 0 -> 1
-      scaleAnim.setValue(0.96);
-      opacityAnim.setValue(0);
-      Animated.parallel([
-        Animated.timing(scaleAnim, {
-          toValue: 1,
-          duration: 180,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacityAnim, {
-          toValue: 1,
-          duration: 180,
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
-        // Auto-focus the name field immediately
-        setTimeout(() => {
-          inputRef.current?.focus();
-        }, 50);
-      });
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100);
     }
   }, [isQuickAddModalOpen, editingExpense]);
 
@@ -175,10 +157,6 @@ export const QuickExpenseModal: React.FC = () => {
     }
   };
 
-  if (!isQuickAddModalOpen) {
-    return null;
-  }
-
   const isValid = name.trim().length > 0 && parseFloat(amount) > 0;
   const currentCatInfo = CATEGORY_MAP[category] || CATEGORY_MAP.Other;
 
@@ -186,37 +164,30 @@ export const QuickExpenseModal: React.FC = () => {
     <Modal
       visible={isQuickAddModalOpen}
       transparent
-      animationType="none"
+      animationType="fade"
       onRequestClose={closeQuickAddModal}
+      statusBarTranslucent
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={styles.overlay}>
+        <View
+          style={[
+            styles.overlay,
+            {
+              paddingTop: insets.top + 16,
+              paddingBottom: Math.max(insets.bottom, 16),
+            },
+          ]}
+        >
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             style={styles.keyboardWrap}
           >
-            <Animated.View
-              style={[
-                styles.popupCard,
-                {
-                  opacity: opacityAnim,
-                  transform: [{ scale: scaleAnim }],
-                },
-              ]}
-            >
+            <View style={styles.popupCard}>
               {/* Header */}
               <View style={styles.header}>
-                <View style={styles.titleRow}>
-                  <Text style={styles.title}>
-                    {editingExpense ? 'Edit expense' : 'Add expense'}
-                  </Text>
-                  {triggeredByShake && (
-                    <View style={styles.shakeBadge}>
-                      <Sparkles size={10} color={theme.colors.primary} strokeWidth={1.5} />
-                      <Text style={styles.shakeBadgeText}>Shake</Text>
-                    </View>
-                  )}
-                </View>
+                <Text style={styles.title}>
+                  {editingExpense ? 'Edit expense' : 'Add expense'}
+                </Text>
 
                 <TouchableOpacity
                   style={styles.closeBtn}
@@ -375,7 +346,7 @@ export const QuickExpenseModal: React.FC = () => {
                   </Text>
                 </TouchableOpacity>
               </View>
-            </Animated.View>
+            </View>
           </KeyboardAvoidingView>
         </View>
       </TouchableWithoutFeedback>
@@ -415,28 +386,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.borderSubtle,
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
   title: {
     ...theme.typography.sectionHeading,
     color: theme.colors.textPrimary,
-  },
-  shakeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: theme.colors.accentLight,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  shakeBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: theme.colors.primary,
   },
   closeBtn: {
     width: 28,

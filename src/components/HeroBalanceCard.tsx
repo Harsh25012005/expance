@@ -92,7 +92,6 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.container,
     padding: 20,
-    marginHorizontal: 20,
     marginTop: 4,
     marginBottom: 16,
     borderWidth: 1,

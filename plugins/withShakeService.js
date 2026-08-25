@@ -51,17 +51,44 @@ class ShakeService : Service(), SensorEventListener {
     private var lastZ = 0f
     private var initialized = false
 
+    data class NotificationMessage(val title: String, val body: String)
+
     companion object {
         private const val TAG = "ShakeService"
         private const val ONGOING_CHANNEL_ID = "shake_service_channel"
-        private const val ALERT_CHANNEL_ID = "shake_alert_channel"
-        private const val NOTIFICATION_ID = 9001
-        private const val ALERT_NOTIFICATION_ID = 9002
-        private const val SHAKE_DEBOUNCE_MS = 2000L
+        private const val EXPENSE_CHANNEL_ID = "expense_tracking_channel"
+        private const val ONGOING_NOTIFICATION_ID = 9001
+        private const val NOTIFICATION_BASE_ID = 9100
+        private const val SHAKE_DEBOUNCE_MS = 1500L
+
+        private val NOTIFICATION_MESSAGES = arrayOf(
+            NotificationMessage("Add an expense", "Tap to quickly record what you just spent."),
+            NotificationMessage("Quick expense entry", "Ready to record your latest expense?"),
+            NotificationMessage("Record your spending", "Add the expense before you forget it."),
+            NotificationMessage("Expense ready to add", "Record your spending in just a few seconds."),
+            NotificationMessage("Track your spending", "Tap here to add your expense."),
+            NotificationMessage("Quick expense capture", "Keep your spending history up to date."),
+            NotificationMessage("Add your latest expense", "Quickly add what you just spent."),
+            NotificationMessage("Don't forget this expense", "Your expense tracker is ready for a new entry.")
+        )
+
+        private var lastMessageIndex: Int = -1
+        private var notificationCounter: Int = 0
+
         var shakeThreshold: Float = 20.0f
         var isRunning: Boolean = false
             private set
         var isAppInForeground: Boolean = true
+
+        private fun getNextNotificationMessage(): NotificationMessage {
+            val size = NOTIFICATION_MESSAGES.size
+            var nextIndex = (0 until size).random()
+            if (nextIndex == lastMessageIndex && size > 1) {
+                nextIndex = (nextIndex + 1) % size
+            }
+            lastMessageIndex = nextIndex
+            return NOTIFICATION_MESSAGES[nextIndex]
+        }
 
         fun start(context: Context, threshold: Float = 20.0f) {
             shakeThreshold = threshold
@@ -94,7 +121,7 @@ class ShakeService : Service(), SensorEventListener {
         super.onCreate()
         Log.d(TAG, "[SHAKE DEBUG] Sensor service started (native)")
         createNotificationChannels()
-        startForeground(NOTIFICATION_ID, createOngoingNotification())
+        startForeground(ONGOING_NOTIFICATION_ID, createOngoingNotification())
 
         try {
             val pm = getSystemService(POWER_SERVICE) as PowerManager
@@ -176,39 +203,36 @@ class ShakeService : Service(), SensorEventListener {
             val now = System.currentTimeMillis()
             if (now - lastShakeTime > SHAKE_DEBOUNCE_MS) {
                 lastShakeTime = now
-                Log.d(TAG, "[SHAKE DEBUG] Shake detected in native sensor (delta=\$delta, threshold=\$shakeThreshold)")
 
-                // FOREGROUND: open popup directly via JS event — NO notification
+                // FOREGROUND: open popup directly via JS event
                 if (isAppInForeground) {
                     Log.d(TAG, "[SHAKE] DETECTED")
-                    Log.d(TAG, "[SHAKE] APP_STATE: active (foreground)")
-                    Log.d(TAG, "[SHAKE] FOREGROUND PATH — emitting to JS, no notification")
+                    Log.d(TAG, "[SHAKE] APP STATE: active")
+                    Log.d(TAG, "[SHAKE] Opening Add Expense popup")
                     val emitted = ShakeServiceModule.emitShakeToJS()
                     if (!emitted) {
-                        Log.e(TAG, "[SHAKE ERROR] Failed to emit to JS while foreground — React instance not ready")
+                        Log.d(TAG, "[SHAKE] JS not ready in foreground, showing notification fallback")
+                        showExpenseNotification()
                     }
-                    // STOP — do NOT fall through to notification
                     return
                 }
 
-                // BACKGROUND: app is not in foreground, use notification/intent fallback
+                // BACKGROUND / CLOSED: show reliable, curated notification
                 Log.d(TAG, "[SHAKE] DETECTED")
-                Log.d(TAG, "[SHAKE] APP_STATE: background / inactive")
-                // Try to emit to JS first (app may still have active React instance)
-                val emittedToJS = ShakeServiceModule.emitShakeToJS()
-                if (emittedToJS) {
-                    Log.d(TAG, "[SHAKE] Emitted to JS from background — skipping notification")
-                    return
-                }
-                Log.d(TAG, "[SHAKE] Launching intent and notification fallback")
-                onShakeDetectedBackground()
+                Log.d(TAG, "[SHAKE] APP STATE: background")
+                showExpenseNotification()
             }
         }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
-    private fun onShakeDetectedBackground() {
+    private fun showExpenseNotification() {
+        val message = getNextNotificationMessage()
+        Log.d(TAG, "[SHAKE] Creating notification")
+        Log.d(TAG, "[SHAKE] Notification title: \${message.title}")
+        Log.d(TAG, "[SHAKE] Notification body: \${message.body}")
+
         try {
             val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             if (vibrator != null && vibrator.hasVibrator()) {
@@ -223,10 +247,15 @@ class ShakeService : Service(), SensorEventListener {
             Log.e(TAG, "Vibration failed", e)
         }
 
-        val shakeIntent = Intent(this, MainActivity::class.java).apply {
-            action = Intent.ACTION_VIEW
+        val tapIntent = Intent(this, MainActivity::class.java).apply {
+            action = "ADD_EXPENSE"
             data = Uri.parse("expenza://add-expense")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra("action", "ADD_EXPENSE")
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+            )
         }
 
         val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -235,37 +264,28 @@ class ShakeService : Service(), SensorEventListener {
             PendingIntent.FLAG_UPDATE_CURRENT
         }
 
-        val fullScreenPendingIntent = PendingIntent.getActivity(this, 101, shakeIntent, pendingIntentFlags)
-
-        // Try direct startActivity to bring app to foreground
-        try {
-            startActivity(shakeIntent)
-            Log.d(TAG, "[SHAKE DEBUG] Direct startActivity called to bring Expenza to foreground")
-        } catch (e: Exception) {
-            Log.d(TAG, "[SHAKE DEBUG] Direct startActivity restricted by OS, falling back to FullScreen notification", e)
-        }
+        val contentPendingIntent = PendingIntent.getActivity(this, 101, tapIntent, pendingIntentFlags)
 
         try {
             val iconRes = resources.getIdentifier("notification_icon", "drawable", packageName)
             val icon = if (iconRes != 0) iconRes else android.R.drawable.ic_input_add
 
-            val alertNotification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
+            val notification = NotificationCompat.Builder(this, EXPENSE_CHANNEL_ID)
                 .setSmallIcon(icon)
-                .setContentTitle("Shake Detected")
-                .setContentText("Tap to quickly log an expense")
-                .setPriority(NotificationCompat.PRIORITY_MAX)
-                .setCategory(NotificationCompat.CATEGORY_ALARM)
-                .setFullScreenIntent(fullScreenPendingIntent, true)
-                .setContentIntent(fullScreenPendingIntent)
+                .setContentTitle(message.title)
+                .setContentText(message.body)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(contentPendingIntent)
                 .setAutoCancel(true)
                 .setVibrate(longArrayOf(0, 150, 80, 150))
-                .addAction(android.R.drawable.ic_input_add, "Add Expense", fullScreenPendingIntent)
+                .addAction(android.R.drawable.ic_input_add, "Add Expense", contentPendingIntent)
                 .build()
 
+            val notificationId = NOTIFICATION_BASE_ID + (notificationCounter++ % 20)
             val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager?.notify(ALERT_NOTIFICATION_ID, alertNotification)
+            notificationManager?.notify(notificationId, notification)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to post alert notification", e)
+            Log.e(TAG, "[SHAKE] Failed to post expense notification: " + e.javaClass.simpleName + ": " + e.message, e)
         }
     }
 
@@ -282,12 +302,12 @@ class ShakeService : Service(), SensorEventListener {
                 enableLights(false)
             }
 
-            val alertChannel = NotificationChannel(
-                ALERT_CHANNEL_ID,
-                "Shake Expense Alerts",
+            val expenseChannel = NotificationChannel(
+                EXPENSE_CHANNEL_ID,
+                "Expense Tracking",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Instant alerts when shake is detected"
+                description = "Notifications for quick expense entry."
                 setShowBadge(true)
                 enableVibration(true)
                 enableLights(true)
@@ -296,7 +316,7 @@ class ShakeService : Service(), SensorEventListener {
 
             val nm = getSystemService(NotificationManager::class.java)
             nm?.createNotificationChannel(ongoingChannel)
-            nm?.createNotificationChannel(alertChannel)
+            nm?.createNotificationChannel(expenseChannel)
         }
     }
 
@@ -420,14 +440,165 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
     }
 
     @ReactMethod
-    fun setAppForeground(isForeground: Boolean) {
-        ShakeService.isAppInForeground = isForeground
-        Log.d(TAG, "[SHAKE DEBUG] Updated ShakeService isAppInForeground to \$isForeground")
+    fun requestAppResume() {
+        try {
+            Log.d("ShakeService", "[ANDROID SHAKE] DETECTED")
+            Log.d("ShakeService", "[ANDROID SHAKE] APP IS BACKGROUND")
+            Log.d("ShakeService", "[ANDROID SHAKE] Creating ADD_EXPENSE Intent")
+            Log.d("ShakeService", "[ANDROID SHAKE] Target Activity = MainActivity")
+            Log.d("ShakeService", "[ANDROID SHAKE] Calling startActivity()")
+
+            val context = reactApplicationContext
+            val intent = android.content.Intent(context, MainActivity::class.java).apply {
+                action = "ADD_EXPENSE"
+                data = android.net.Uri.parse("expenza://add-expense")
+                putExtra("action", "ADD_EXPENSE")
+                addFlags(
+                    android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                    android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                )
+            }
+
+            context.startActivity(intent)
+            Log.d("ShakeService", "[ANDROID SHAKE] startActivity() CALLED")
+        } catch (e: Exception) {
+            Log.e("ShakeService", "[ANDROID SHAKE] startActivity() FAILED: " + e.javaClass.simpleName + ": " + e.message, e)
+        }
     }
 
     @ReactMethod
     fun isRunning(promise: Promise) {
         promise.resolve(ShakeService.isRunning)
+    }
+
+    @ReactMethod
+    fun updateWidgetData(todaySpent: Double, monthlyBudget: Double, monthSpent: Double, currency: String) {
+        try {
+            val context = reactApplicationContext
+            val prefs = context.getSharedPreferences(ExpenzaAppWidgetProvider.PREFS_NAME, android.content.Context.MODE_PRIVATE)
+            prefs.edit().apply {
+                putFloat(ExpenzaAppWidgetProvider.KEY_TODAY_SPENT, todaySpent.toFloat())
+                putFloat(ExpenzaAppWidgetProvider.KEY_MONTHLY_BUDGET, monthlyBudget.toFloat())
+                putFloat(ExpenzaAppWidgetProvider.KEY_MONTH_SPENT, monthSpent.toFloat())
+                putString(ExpenzaAppWidgetProvider.KEY_CURRENCY, currency)
+                apply()
+            }
+            ExpenzaAppWidgetProvider.updateAllWidgets(context)
+            Log.d("ShakeServiceModule", "[WIDGET] Successfully updated widget data: today=$todaySpent, budget=$monthlyBudget, month=$monthSpent")
+        } catch (e: Exception) {
+            Log.e("ShakeServiceModule", "[WIDGET] Error updating widget data", e)
+        }
+    }
+}
+`;
+
+// ─── ExpenzaAppWidgetProvider.kt source ─────────────────────────────────────
+const EXPENZA_APP_WIDGET_PROVIDER_KT = `package {{PACKAGE}}
+
+import android.app.PendingIntent
+import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProvider
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.RemoteViews
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+class ExpenzaAppWidgetProvider : AppWidgetProvider() {
+
+    companion object {
+        const val PREFS_NAME = "expenza_widget_data"
+        const val KEY_TODAY_SPENT = "today_spent"
+        const val KEY_MONTHLY_BUDGET = "monthly_budget"
+        const val KEY_MONTH_SPENT = "month_spent"
+        const val KEY_CURRENCY = "currency"
+
+        fun updateAllWidgets(context: Context) {
+            val appWidgetManager = AppWidgetManager.getInstance(context)
+            val componentName = ComponentName(context, ExpenzaAppWidgetProvider::class.java)
+            val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
+            if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
+                val provider = ExpenzaAppWidgetProvider()
+                provider.onUpdate(context, appWidgetManager, appWidgetIds)
+            }
+        }
+    }
+
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val todaySpent = prefs.getFloat(KEY_TODAY_SPENT, 0f).toDouble()
+        val monthlyBudget = prefs.getFloat(KEY_MONTHLY_BUDGET, 0f).toDouble()
+        val monthSpent = prefs.getFloat(KEY_MONTH_SPENT, 0f).toDouble()
+        val currency = prefs.getString(KEY_CURRENCY, "₹") ?: "₹"
+
+        val dateFormat = SimpleDateFormat("EEEE, MMM d", Locale.getDefault())
+        val formattedDate = dateFormat.format(Date())
+
+        for (appWidgetId in appWidgetIds) {
+            val views = RemoteViews(context.packageName, R.layout.widget_expenza)
+
+            // 1. Set Date
+            views.setTextViewText(R.id.widget_date, formattedDate)
+
+            // 2. Set Today's Spending
+            val todayStr = String.format(Locale.getDefault(), "%s%,.2f", currency, todaySpent)
+            views.setTextViewText(R.id.widget_today_spent, todayStr)
+
+            // 3. Set Monthly Budget / Remaining
+            if (monthlyBudget > 0) {
+                val remaining = monthlyBudget - monthSpent
+                if (remaining >= 0) {
+                    views.setTextViewText(R.id.widget_budget_label, "REMAINING BUDGET")
+                    val remStr = String.format(Locale.getDefault(), "%s%,.0f left", currency, remaining)
+                    views.setTextViewText(R.id.widget_budget_value, remStr)
+                    views.setTextColor(R.id.widget_budget_value, 0xFF4F46E5.toInt())
+                } else {
+                    views.setTextViewText(R.id.widget_budget_label, "OVER BUDGET")
+                    val overStr = String.format(Locale.getDefault(), "%s%,.0f over", currency, Math.abs(remaining))
+                    views.setTextViewText(R.id.widget_budget_value, overStr)
+                    views.setTextColor(R.id.widget_budget_value, 0xFFDC2626.toInt())
+                }
+            } else {
+                views.setTextViewText(R.id.widget_budget_label, "THIS MONTH")
+                val monthStr = String.format(Locale.getDefault(), "%s%,.2f", currency, monthSpent)
+                views.setTextViewText(R.id.widget_budget_value, monthStr)
+                views.setTextColor(R.id.widget_budget_value, 0xFF737373.toInt())
+            }
+
+            // 4. Click Entire Widget -> Launch App Home
+            val openAppIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
+            val openAppPendingIntent = PendingIntent.getActivity(
+                context,
+                0,
+                openAppIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.widget_root, openAppPendingIntent)
+
+            // 5. Click '+ Add' Button -> Direct deep link to Add Expense
+            val addExpenseIntent = Intent(context, MainActivity::class.java).apply {
+                action = "com.harsh.expense.ACTION_ADD_EXPENSE"
+                data = Uri.parse("expenza://add-expense")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("action", "ADD_EXPENSE")
+            }
+            val addExpensePendingIntent = PendingIntent.getActivity(
+                context,
+                1,
+                addExpenseIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.widget_btn_add, addExpensePendingIntent)
+
+            appWidgetManager.updateAppWidget(appWidgetId, views)
+        }
     }
 }
 `;
@@ -456,12 +627,19 @@ function getPackageDirPath(config) {
   return { pkg, pkgDir };
 }
 
-// ─── 1. Write Kotlin files during prebuild ───────────────────────────────────
+// ─── 1. Write Kotlin and Resource files during prebuild ──────────────────────
 function withShakeServiceFiles(config) {
   return withDangerousMod(config, [
     "android",
     (config) => {
       const { pkg, pkgDir } = getPackageDirPath(config);
+      const resDir = path.join(
+        config.modRequest.platformProjectRoot,
+        "app",
+        "src",
+        "main",
+        "res"
+      );
       const javaDir = path.join(
         config.modRequest.platformProjectRoot,
         "app",
@@ -472,12 +650,16 @@ function withShakeServiceFiles(config) {
       );
 
       fs.mkdirSync(javaDir, { recursive: true });
+      fs.mkdirSync(path.join(resDir, "layout"), { recursive: true });
+      fs.mkdirSync(path.join(resDir, "xml"), { recursive: true });
+      fs.mkdirSync(path.join(resDir, "drawable"), { recursive: true });
 
       const files = {
         "ShakeService.kt": SHAKE_SERVICE_KT,
         "BootReceiver.kt": BOOT_RECEIVER_KT,
         "ShakeServiceModule.kt": SHAKE_SERVICE_MODULE_KT,
         "ShakeServicePackage.kt": SHAKE_SERVICE_PACKAGE_KT,
+        "ExpenzaAppWidgetProvider.kt": EXPENZA_APP_WIDGET_PROVIDER_KT,
       };
 
       for (const [filename, content] of Object.entries(files)) {
@@ -551,6 +733,37 @@ function withShakeServiceManifest(config) {
       console.log("[withShakeService] Registered BootReceiver in AndroidManifest.xml");
     }
 
+    // Register ExpenzaAppWidgetProvider
+    const widgetReceiverExists = receivers.some(
+      (r) => r.$?.["android:name"] === ".ExpenzaAppWidgetProvider"
+    );
+
+    if (!widgetReceiverExists) {
+      receivers.push({
+        $: {
+          "android:name": ".ExpenzaAppWidgetProvider",
+          "android:exported": "true",
+        },
+        "intent-filter": [
+          {
+            action: [
+              { $: { "android:name": "android.appwidget.action.APPWIDGET_UPDATE" } },
+            ],
+          },
+        ],
+        "meta-data": [
+          {
+            $: {
+              "android:name": "android.appwidget.provider",
+              "android:resource": "@xml/expenza_widget_info",
+            },
+          },
+        ],
+      });
+      app.receiver = receivers;
+      console.log("[withShakeService] Registered ExpenzaAppWidgetProvider in AndroidManifest.xml");
+    }
+
     const permissions = manifest.manifest["uses-permission"] || [];
     const requiredPermissions = [
       "android.permission.FOREGROUND_SERVICE",
@@ -622,9 +835,16 @@ function withShakeServiceMainActivity(config) {
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
-    val uri = intent.dataString
-    if (uri != null && (uri.contains("add-expense") || uri.contains("shake-open"))) {
-      Log.d("MainActivity", "[SHAKE DEBUG] onNewIntent received add-expense intent: \$uri")
+    handleLaunchIntent(intent, "onNewIntent")
+  }
+
+  private fun handleLaunchIntent(intent: Intent?, source: String) {
+    if (intent == null) return
+    val action = intent.getStringExtra("action") ?: intent.action
+    if (action == "ADD_EXPENSE" || (uri != null && (uri.contains("add-expense") || uri.contains("shake-open") || uri.contains("expenza://")))) {
+      Log.d("MainActivity", "[SHAKE] Notification tapped")
+      Log.d("MainActivity", "[SHAKE] ADD_EXPENSE action requested")
+      Log.d("MainActivity", "[SHAKE] Opening Add Expense")
       ShakeServiceModule.emitShakeToJS()
     }
   }`;

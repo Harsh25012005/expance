@@ -36,6 +36,9 @@ export interface AppSettings {
   currency: string;
   currencyCode: string;
   hapticsEnabled: boolean;
+  monthlyBudget?: number; // 0 or undefined when not set
+  dailyReminderEnabled?: boolean;
+  reminderTime?: string; // e.g. '20:00'
 }
 
 export type TabScreen = 'home' | 'expenses' | 'analytics' | 'settings';
@@ -46,4 +49,48 @@ export interface CategoryInfo {
   icon: string;
   color: string;
   bgColor: string;
+}
+
+export type BudgetStatus = 'no_budget' | 'healthy' | 'near_limit' | 'over_budget';
+
+export interface BudgetStats {
+  monthlyBudget: number;
+  spent: number;
+  remaining: number;
+  overAmount: number;
+  percentageUsed: number;
+  status: BudgetStatus;
+  hasBudget: boolean;
+}
+
+export type MoneyMoodType = 'Comfortable' | 'Moderate' | 'Tight';
+
+export interface MoneyMoodInfo {
+  mood: MoneyMoodType;
+  title: string;
+  description: string;
+  badgeColor: string;
+  textColor: string;
+  bgColor: string;
+}
+
+export interface StreakStats {
+  trackingStreak: number;
+  noSpendStreak: number;
+  underBudgetStreak: number;
+  totalSpendingDaysThisMonth: number;
+  totalNoSpendDaysThisMonth: number;
+}
+
+export interface MoneyReplayData {
+  monthName: string;
+  year: number;
+  totalSpent: number;
+  topCategory: { category: CategoryType; amount: number; percentage: number } | null;
+  spendingDaysCount: number;
+  noSpendDaysCount: number;
+  biggestExpense: Expense | null;
+  budgetPercentage: number | null;
+  hasBudget: boolean;
+  hasExpenses: boolean;
 }
