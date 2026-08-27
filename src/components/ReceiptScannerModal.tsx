@@ -11,6 +11,7 @@ import {
   Dimensions,
   ScrollView,
   Alert,
+  TextInput,
 } from 'react-native';
 import {
   Camera,
@@ -20,11 +21,14 @@ import {
   CheckCircle2,
   ScanLine,
   Receipt,
+  Edit3,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { CategoryType } from '../types/expense';
 import { useExpenses } from '../context/ExpenseContext';
 import { formatCurrency } from '../utils/formatters';
+import { parseReceiptText, ParsedReceiptData } from '../utils/receiptParser';
+import { CATEGORIES } from '../constants/categories';
 
 interface ParsedReceiptResult {
   merchant: string;
@@ -52,6 +56,20 @@ async function getSafeImagePicker(): Promise<typeof import('expo-image-picker') 
   }
 }
 
+// Safe dynamic ML Kit loader
+async function recognizeReceiptImage(imageUri: string): Promise<string | null> {
+  try {
+    const TextRecognition = require('@react-native-ml-kit/text-recognition').default;
+    if (TextRecognition && typeof TextRecognition.recognize === 'function') {
+      const result = await TextRecognition.recognize(imageUri);
+      return result.text || '';
+    }
+  } catch (err) {
+    console.warn('[MLKit] Native ML Kit module not compiled in current development binary:', err);
+  }
+  return null;
+}
+
 export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
   visible,
   onClose,
@@ -63,6 +81,11 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
   const [scanProgress, setScanProgress] = useState<number>(0);
   const [parsedResult, setParsedResult] = useState<ParsedReceiptResult | null>(null);
 
+  // Editable fields for user adjustment
+  const [editableMerchant, setEditableMerchant] = useState<string>('');
+  const [editableAmount, setEditableAmount] = useState<string>('');
+  const [editableCategory, setEditableCategory] = useState<CategoryType>('Shopping');
+
   // Laser scanning animation line
   const laserAnim = useRef(new Animated.Value(0)).current;
 
@@ -72,6 +95,9 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       setIsScanning(false);
       setParsedResult(null);
       setScanProgress(0);
+      setEditableMerchant('');
+      setEditableAmount('');
+      setEditableCategory('Shopping');
     }
   }, [visible]);
 
@@ -99,8 +125,8 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
     ).start();
   };
 
-  // Rule-based Smart OCR simulation based on image metadata and heuristic keywords
-  const processImageOCR = (imageUri: string) => {
+  // Run Google ML Kit Text Recognition on the captured photo
+  const processImageOCR = async (imageUri: string) => {
     setIsScanning(true);
     setScanProgress(0.2);
     startLaserAnimation();
@@ -111,31 +137,56 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
           clearInterval(progressInterval);
           return 0.95;
         }
-        return prev + 0.25;
+        return prev + 0.2;
       });
-    }, 350);
+    }, 250);
 
-    setTimeout(() => {
+    try {
+      // 1. Run Real Google ML Kit Text Recognition on the photo
+      const rawText = await recognizeReceiptImage(imageUri);
+
+      // 2. Intelligently parse receipt line items, merchant, amount, category & date
+      let parsed: ParsedReceiptData;
+      if (rawText && rawText.trim().length > 0) {
+        parsed = parseReceiptText(rawText);
+      } else {
+        parsed = {
+          merchant: 'Receipt Purchase',
+          amount: 0,
+          category: 'Shopping',
+          date: new Date().toISOString(),
+          confidence: 0,
+        };
+      }
+
       clearInterval(progressInterval);
       setIsScanning(false);
       laserAnim.stopAnimation();
 
-      // Dynamic smart extraction from camera/gallery photo
-      const randomAmount = Math.round((12 + Math.random() * 45) * 100) / 100;
       setParsedResult({
-        merchant: 'Receipt Purchase',
-        amount: randomAmount,
-        category: 'Shopping',
-        date: new Date().toISOString(),
+        merchant: parsed.merchant,
+        amount: parsed.amount,
+        category: parsed.category,
+        date: parsed.date,
+        tax: parsed.tax,
         rawImageUri: imageUri,
       });
+
+      setEditableMerchant(parsed.merchant);
+      setEditableAmount(parsed.amount > 0 ? parsed.amount.toString() : '');
+      setEditableCategory(parsed.category);
 
       if (settings.hapticsEnabled) {
         try {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         } catch {}
       }
-    }, 1800);
+    } catch (err) {
+      clearInterval(progressInterval);
+      setIsScanning(false);
+      laserAnim.stopAnimation();
+      console.error('Receipt recognition error:', err);
+    }
   };
 
   const handlePickFromGallery = async () => {
@@ -220,7 +271,15 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
   const handleApplyResult = () => {
     if (parsedResult) {
       triggerHaptic();
-      onReceiptScanned(parsedResult);
+      const finalAmount = parseFloat(editableAmount) || parsedResult.amount || 0;
+      onReceiptScanned({
+        merchant: editableMerchant.trim() || parsedResult.merchant,
+        amount: finalAmount,
+        category: editableCategory || parsedResult.category,
+        date: parsedResult.date,
+        tax: parsedResult.tax,
+        rawImageUri: parsedResult.rawImageUri,
+      });
       onClose();
     }
   };
@@ -243,7 +302,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
               </View>
               <View>
                 <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>AI Receipt Scanner</Text>
-                <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>Smart OCR & Bill Extractor</Text>
+                <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>Google ML Kit On-Device OCR</Text>
               </View>
             </View>
 
@@ -288,7 +347,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                     Snap or upload any bill receipt
                   </Text>
                   <Text style={[styles.emptyPromptSubtitle, { color: theme.colors.textSecondary }]}>
-                    Automatically detects merchant name, total amount & category
+                    Reads merchant name, total price & category using on-device ML
                   </Text>
                 </View>
               )}
@@ -299,7 +358,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
               <View style={[styles.scanningBanner, { backgroundColor: theme.colors.primaryLight, borderColor: theme.colors.primary }]}>
                 <ActivityIndicator size="small" color={theme.colors.primary} />
                 <Text style={[styles.scanningText, { color: theme.colors.primary }]}>
-                  Analyzing receipt with smart OCR... ({Math.round(scanProgress * 100)}%)
+                  Reading text with Google ML Kit... ({Math.round(scanProgress * 100)}%)
                 </Text>
               </View>
             )}
@@ -309,26 +368,62 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
               <View style={[styles.resultsCard, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}>
                 <View style={styles.resultBadgeRow}>
                   <CheckCircle2 size={16} color={theme.colors.positive} strokeWidth={2} />
-                  <Text style={[styles.resultSuccessLabel, { color: theme.colors.positive }]}>Receipt Extracted Successfully</Text>
+                  <Text style={[styles.resultSuccessLabel, { color: theme.colors.positive }]}>Receipt Extracted with ML Kit</Text>
                 </View>
 
+                {/* Editable Merchant */}
                 <View style={styles.resultItemRow}>
                   <Text style={[styles.resultLabel, { color: theme.colors.textSecondary }]}>Merchant</Text>
-                  <Text style={[styles.resultValue, { color: theme.colors.textPrimary }]}>{parsedResult.merchant}</Text>
+                  <TextInput
+                    style={[styles.resultInput, { color: theme.colors.textPrimary, borderColor: theme.colors.borderSubtle }]}
+                    value={editableMerchant}
+                    onChangeText={setEditableMerchant}
+                    placeholder="Merchant name"
+                    placeholderTextColor={theme.colors.textTertiary}
+                  />
                 </View>
 
+                {/* Editable Total Amount */}
                 <View style={styles.resultItemRow}>
                   <Text style={[styles.resultLabel, { color: theme.colors.textSecondary }]}>Total Amount</Text>
-                  <Text style={[styles.resultAmountValue, { color: theme.colors.textPrimary }]}>
-                    {formatCurrency(parsedResult.amount, settings.currency)}
-                  </Text>
+                  <View style={styles.amountInputWrap}>
+                    <Text style={[styles.currencyPrefix, { color: theme.colors.textPrimary }]}>{settings.currency}</Text>
+                    <TextInput
+                      style={[styles.resultAmountInput, { color: theme.colors.textPrimary, borderColor: theme.colors.borderSubtle }]}
+                      value={editableAmount}
+                      onChangeText={setEditableAmount}
+                      placeholder="0.00"
+                      keyboardType="decimal-pad"
+                      placeholderTextColor={theme.colors.textTertiary}
+                    />
+                  </View>
                 </View>
 
-                <View style={styles.resultItemRow}>
-                  <Text style={[styles.resultLabel, { color: theme.colors.textSecondary }]}>Category</Text>
-                  <View style={[styles.categoryTag, { backgroundColor: theme.colors.surfaceSubtle, borderColor: theme.colors.border }]}>
-                    <Text style={[styles.categoryTagText, { color: theme.colors.textPrimary }]}>{parsedResult.category}</Text>
-                  </View>
+                {/* Category Pills Selector */}
+                <View style={styles.categoryRowBlock}>
+                  <Text style={[styles.resultLabel, { color: theme.colors.textSecondary, marginBottom: 6 }]}>Category</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryPillsScroll}>
+                    {CATEGORIES.map((cat) => {
+                      const isSelected = editableCategory === cat.id;
+                      return (
+                        <TouchableOpacity
+                          key={cat.id}
+                          style={[
+                            styles.categoryPill,
+                            { backgroundColor: isSelected ? theme.colors.primaryLight : theme.colors.surface, borderColor: isSelected ? theme.colors.primary : theme.colors.border },
+                          ]}
+                          onPress={() => {
+                            triggerHaptic();
+                            setEditableCategory(cat.id);
+                          }}
+                        >
+                          <Text style={[styles.categoryPillText, { color: isSelected ? theme.colors.primary : theme.colors.textSecondary, fontWeight: isSelected ? '700' : '500' }]}>
+                            {cat.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
                 </View>
 
                 <TouchableOpacity
@@ -505,30 +600,58 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(150, 150, 150, 0.1)',
   },
   resultLabel: {
     fontSize: 13,
   },
-  resultValue: {
+  resultInput: {
     fontSize: 14,
     fontWeight: '600',
+    textAlign: 'right',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderRadius: 8,
+    minWidth: 140,
   },
-  resultAmountValue: {
-    fontSize: 16,
+  amountInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  currencyPrefix: {
+    fontSize: 15,
     fontWeight: '700',
   },
-  categoryTag: {
-    paddingHorizontal: 10,
+  resultAmountInput: {
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'right',
     paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderWidth: 1,
     borderRadius: 8,
+    minWidth: 90,
+  },
+  categoryRowBlock: {
+    paddingVertical: 10,
+  },
+  categoryPillsScroll: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingVertical: 4,
+  },
+  categoryPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 9999,
     borderWidth: 1,
   },
-  categoryTagText: {
+  categoryPillText: {
     fontSize: 12,
-    fontWeight: '600',
   },
   applyResultBtn: {
     flexDirection: 'row',
