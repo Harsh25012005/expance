@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,10 @@ import {
 import { SafeAreaPage } from './SafeAreaPage';
 import {
   X,
-  PieChart,
-  ChevronDown,
-  ChevronUp,
+  ChevronLeft,
+  ChevronRight,
+  TrendingDown,
+  TrendingUp,
   Utensils,
   Car,
   ShoppingBag,
@@ -22,16 +23,16 @@ import {
   Plane,
   GraduationCap,
   MoreHorizontal,
+  PieChart,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useExpenses } from '../context/ExpenseContext';
-import { useShake } from '../context/ShakeContext';
-import { CATEGORIES } from '../constants/categories';
-import { CategoryType, Expense } from '../types/expense';
-import { formatCurrency, formatPercentage } from '../utils/formatters';
-import { getMonthName, toLocalDateString } from '../utils/analyticsHelpers';
+import { CATEGORIES, CATEGORY_MAP } from '../constants/categories';
+import { CategoryType } from '../types/expense';
+import { formatCurrency } from '../utils/formatters';
+import { getMonthName } from '../utils/analyticsHelpers';
 import { theme } from '../constants/theme';
-import { ExpenseListItem } from './ExpenseListItem';
 
 interface WhereDidItGoModalProps {
   visible: boolean;
@@ -39,47 +40,12 @@ interface WhereDidItGoModalProps {
 }
 
 export const WhereDidItGoModal: React.FC<WhereDidItGoModalProps> = ({ visible, onClose }) => {
-  const { expenses, settings, deleteExpense } = useExpenses();
-  const { openQuickAddModal } = useShake();
-  const [selectedCategory, setSelectedCategory] = useState<CategoryType | null>(null);
+  const { expenses, settings } = useExpenses();
+  const insets = useSafeAreaInsets();
 
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
-  const currentMonthName = getMonthName(currentMonth);
-
-  // Current month expenses only
-  const monthExpenses = expenses.filter((exp) => {
-    const d = new Date(exp.createdAt);
-    return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
-  });
-
-  const totalMonthSpent = monthExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
-
-  // Category breakdown
-  const categoryTotals: Record<CategoryType, number> = {
-    Food: 0,
-    Transport: 0,
-    Shopping: 0,
-    Bills: 0,
-    Entertainment: 0,
-    Health: 0,
-    Travel: 0,
-    Education: 0,
-    Other: 0,
-  };
-
-  for (const exp of monthExpenses) {
-    categoryTotals[exp.category] = (categoryTotals[exp.category] || 0) + (Number(exp.amount) || 0);
-  }
-
-  const activeCategories = CATEGORIES.map((cat) => ({
-    ...cat,
-    amount: categoryTotals[cat.id] || 0,
-    percentage: totalMonthSpent > 0 ? (categoryTotals[cat.id] / totalMonthSpent) * 100 : 0,
-  }))
-    .filter((cat) => cat.amount > 0)
-    .sort((a, b) => b.amount - a.amount);
+  const today = new Date();
+  const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<number>(today.getMonth());
 
   const triggerHaptic = () => {
     try {
@@ -87,34 +53,124 @@ export const WhereDidItGoModal: React.FC<WhereDidItGoModalProps> = ({ visible, o
     } catch {}
   };
 
-  const renderCategoryIcon = (catId: CategoryType, size: number = 14, color: string = theme.colors.textPrimary) => {
-    switch (catId) {
-      case 'Food':
-        return <Utensils size={size} color={color} strokeWidth={1.5} />;
-      case 'Transport':
-        return <Car size={size} color={color} strokeWidth={1.5} />;
-      case 'Shopping':
-        return <ShoppingBag size={size} color={color} strokeWidth={1.5} />;
-      case 'Bills':
-        return <Zap size={size} color={color} strokeWidth={1.5} />;
-      case 'Entertainment':
-        return <Film size={size} color={color} strokeWidth={1.5} />;
-      case 'Health':
-        return <HeartPulse size={size} color={color} strokeWidth={1.5} />;
-      case 'Travel':
-        return <Plane size={size} color={color} strokeWidth={1.5} />;
-      case 'Education':
-        return <GraduationCap size={size} color={color} strokeWidth={1.5} />;
-      case 'Other':
-      default:
-        return <MoreHorizontal size={size} color={color} strokeWidth={1.5} />;
+  const handlePrevMonth = () => {
+    triggerHaptic();
+    if (selectedMonth === 0) {
+      setSelectedMonth(11);
+      setSelectedYear((prev) => prev - 1);
+    } else {
+      setSelectedMonth((prev) => prev - 1);
     }
   };
 
-  // Filtered transactions for selected drill-down category
-  const filteredCategoryExpenses = selectedCategory
-    ? monthExpenses.filter((exp) => exp.category === selectedCategory)
-    : [];
+  const handleNextMonth = () => {
+    triggerHaptic();
+    if (selectedMonth === 11) {
+      setSelectedMonth(0);
+      setSelectedYear((prev) => prev + 1);
+    } else {
+      setSelectedMonth((prev) => prev + 1);
+    }
+  };
+
+  // 1. Current Selected Month Expenses & Total
+  const currentMonthExpenses = useMemo(() => {
+    return expenses.filter((exp) => {
+      const d = new Date(exp.createdAt);
+      return d.getFullYear() === selectedYear && d.getMonth() === selectedMonth;
+    });
+  }, [expenses, selectedYear, selectedMonth]);
+
+  const totalSpent = useMemo(() => {
+    return currentMonthExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+  }, [currentMonthExpenses]);
+
+  // 2. Previous Month Expenses & Comparison
+  const lastMonthTotal = useMemo(() => {
+    const prevMonthDate = new Date(selectedYear, selectedMonth - 1, 1);
+    const prevYear = prevMonthDate.getFullYear();
+    const prevMonth = prevMonthDate.getMonth();
+
+    const prevMonthExpenses = expenses.filter((exp) => {
+      const d = new Date(exp.createdAt);
+      return d.getFullYear() === prevYear && d.getMonth() === prevMonth;
+    });
+
+    return prevMonthExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+  }, [expenses, selectedYear, selectedMonth]);
+
+  // Month-over-Month percentage change
+  const comparisonInfo = useMemo(() => {
+    if (totalSpent === 0 && lastMonthTotal === 0) return null;
+    if (lastMonthTotal === 0) return { text: 'First month of tracking', type: 'neutral' as const };
+
+    const diff = totalSpent - lastMonthTotal;
+    const pct = Math.round((Math.abs(diff) / lastMonthTotal) * 100);
+
+    if (diff > 0) {
+      return { text: `+${pct}% vs last month`, type: 'negative' as const };
+    } else if (diff < 0) {
+      return { text: `-${pct}% vs last month`, type: 'positive' as const };
+    }
+    return { text: '0% vs last month', type: 'neutral' as const };
+  }, [totalSpent, lastMonthTotal]);
+
+  // 3. Category Distribution (Sorted Highest -> Lowest)
+  const categoryBreakdown = useMemo(() => {
+    const totals: Record<CategoryType, number> = {
+      Food: 0,
+      Transport: 0,
+      Shopping: 0,
+      Bills: 0,
+      Entertainment: 0,
+      Health: 0,
+      Travel: 0,
+      Education: 0,
+      Other: 0,
+    };
+
+    for (const exp of currentMonthExpenses) {
+      totals[exp.category] = (totals[exp.category] || 0) + (Number(exp.amount) || 0);
+    }
+
+    return CATEGORIES.map((cat) => ({
+      ...cat,
+      amount: totals[cat.id] || 0,
+      percentage: totalSpent > 0 ? Math.round((totals[cat.id] / totalSpent) * 100) : 0,
+    }))
+      .filter((cat) => cat.amount > 0)
+      .sort((a, b) => b.amount - a.amount);
+  }, [currentMonthExpenses, totalSpent]);
+
+  // 4. Biggest Category
+  const topCategory = categoryBreakdown[0] || null;
+
+  const renderCategoryIcon = (catId: CategoryType, size: number = 14, color?: string) => {
+    const iconColor = color || theme.colors.textPrimary;
+    switch (catId) {
+      case 'Food':
+        return <Utensils size={size} color={iconColor} strokeWidth={1.5} />;
+      case 'Transport':
+        return <Car size={size} color={iconColor} strokeWidth={1.5} />;
+      case 'Shopping':
+        return <ShoppingBag size={size} color={iconColor} strokeWidth={1.5} />;
+      case 'Bills':
+        return <Zap size={size} color={iconColor} strokeWidth={1.5} />;
+      case 'Entertainment':
+        return <Film size={size} color={iconColor} strokeWidth={1.5} />;
+      case 'Health':
+        return <HeartPulse size={size} color={iconColor} strokeWidth={1.5} />;
+      case 'Travel':
+        return <Plane size={size} color={iconColor} strokeWidth={1.5} />;
+      case 'Education':
+        return <GraduationCap size={size} color={iconColor} strokeWidth={1.5} />;
+      case 'Other':
+      default:
+        return <MoreHorizontal size={size} color={iconColor} strokeWidth={1.5} />;
+    }
+  };
+
+  const monthLabel = `${getMonthName(selectedMonth)} ${selectedYear}`;
 
   return (
     <Modal
@@ -124,16 +180,11 @@ export const WhereDidItGoModal: React.FC<WhereDidItGoModalProps> = ({ visible, o
       statusBarTranslucent
     >
       <SafeAreaPage topSpacing={6} bottomSpacing={16}>
-        {/* Header */}
+        {/* ─── Compact Header ─── */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <View style={styles.iconCircle}>
-              <PieChart size={18} color={theme.colors.primary} strokeWidth={1.5} />
-            </View>
-            <View>
-              <Text style={styles.title}>Where did it go?</Text>
-              <Text style={styles.subtitle}>{currentMonthName} spending breakdown</Text>
-            </View>
+            <Text style={styles.title}>Where did it go?</Text>
+            <Text style={styles.subtitle}>A simple breakdown of your spending.</Text>
           </View>
 
           <TouchableOpacity
@@ -142,116 +193,160 @@ export const WhereDidItGoModal: React.FC<WhereDidItGoModalProps> = ({ visible, o
             activeOpacity={0.7}
             accessibilityLabel="Close"
           >
-            <X size={18} color={theme.colors.textPrimary} strokeWidth={1.5} />
+            <X size={18} color={theme.colors.textPrimary} strokeWidth={1.75} />
           </TouchableOpacity>
         </View>
 
         <ScrollView
           style={styles.content}
-          contentContainerStyle={styles.contentContainer}
+          contentContainerStyle={[
+            styles.contentContainer,
+            { paddingBottom: 30 + Math.max(insets.bottom, 16) },
+          ]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Total Spent Banner */}
-          <View style={styles.totalCard}>
-            <Text style={styles.totalLabel}>TOTAL SPENT IN {currentMonthName.toUpperCase()}</Text>
-            <Text style={styles.totalValue}>
-              {formatCurrency(totalMonthSpent, settings.currency)}
-            </Text>
-            <Text style={styles.totalSubtext}>
-              {monthExpenses.length} {monthExpenses.length === 1 ? 'transaction' : 'transactions'} across {activeCategories.length} {activeCategories.length === 1 ? 'category' : 'categories'}
-            </Text>
+          {/* ─── Month Switcher Card ─── */}
+          <View style={styles.monthSwitcherCard}>
+            <TouchableOpacity
+              style={styles.monthNavBtn}
+              onPress={handlePrevMonth}
+              activeOpacity={0.7}
+            >
+              <ChevronLeft size={18} color={theme.colors.textPrimary} strokeWidth={1.75} />
+            </TouchableOpacity>
+
+            <Text style={styles.monthSwitcherText}>{monthLabel}</Text>
+
+            <TouchableOpacity
+              style={styles.monthNavBtn}
+              onPress={handleNextMonth}
+              activeOpacity={0.7}
+            >
+              <ChevronRight size={18} color={theme.colors.textPrimary} strokeWidth={1.75} />
+            </TouchableOpacity>
           </View>
 
-          {activeCategories.length > 0 ? (
-            <View style={styles.categoriesSection}>
-              <Text style={styles.sectionHeading}>Category Breakdown</Text>
-              <Text style={styles.sectionSub}>Tap a category to see its transactions</Text>
+          {/* ─── Hero Spending Breakdown Card (Expenza Surface Card) ─── */}
+          <View style={styles.heroCard}>
+            <View style={styles.heroTopRow}>
+              <Text style={styles.heroLabel}>TOTAL SPENT</Text>
+              <Text style={styles.heroMonthLabel}>{getMonthName(selectedMonth)}</Text>
+            </View>
 
+            <View style={styles.amountContainer}>
+              <Text style={styles.amountText}>
+                {formatCurrency(totalSpent, settings.currency)}
+              </Text>
+            </View>
+
+            {comparisonInfo && (
+              <View style={styles.trendRow}>
+                {comparisonInfo.type === 'negative' ? (
+                  <View style={styles.trendBadge}>
+                    <TrendingUp size={12} color={theme.colors.negative} strokeWidth={2} />
+                    <Text style={styles.trendNegativeText}>{comparisonInfo.text}</Text>
+                  </View>
+                ) : comparisonInfo.type === 'positive' ? (
+                  <View style={styles.trendBadge}>
+                    <TrendingDown size={12} color={theme.colors.positive} strokeWidth={2} />
+                    <Text style={styles.trendPositiveText}>{comparisonInfo.text}</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.trendNeutralText}>{comparisonInfo.text}</Text>
+                )}
+              </View>
+            )}
+
+            {/* Multi-segment Horizontal Progress Bar */}
+            {categoryBreakdown.length > 0 && (
+              <View style={styles.multiBarTrack}>
+                {categoryBreakdown.map((cat) => (
+                  <View
+                    key={cat.id}
+                    style={[
+                      styles.multiBarSegment,
+                      {
+                        flex: Math.max(cat.percentage, 4),
+                        backgroundColor: cat.color || theme.colors.primary,
+                      },
+                    ]}
+                  />
+                ))}
+              </View>
+            )}
+
+            {/* Inline Biggest Category Highlight */}
+            {topCategory && (
+              <View style={styles.topCategoryHighlight}>
+                <Text style={styles.topCatTag}>Biggest Category</Text>
+                <Text style={styles.topCatText}>
+                  {topCategory.label} · {formatCurrency(topCategory.amount, settings.currency)} ({topCategory.percentage}%)
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {categoryBreakdown.length > 0 ? (
+            /* ─── Category Breakdown Card List ─── */
+            <View style={styles.breakdownCard}>
+              <Text style={styles.breakdownSectionTitle}>Category Breakdown</Text>
               <View style={styles.categoryList}>
-                {activeCategories.map((cat) => {
-                  const isSelected = selectedCategory === cat.id;
-
-                  return (
-                    <View key={cat.id} style={styles.categoryWrapper}>
-                      <TouchableOpacity
-                        style={[
-                          styles.categoryCard,
-                          isSelected && styles.categoryCardSelected,
-                        ]}
-                        onPress={() => {
-                          triggerHaptic();
-                          setSelectedCategory(isSelected ? null : cat.id);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <View style={styles.catRowTop}>
-                          <View style={styles.catLeft}>
-                            <View style={[styles.catIconWrap, { backgroundColor: cat.bgColor }]}>
-                              {renderCategoryIcon(cat.id, 15, cat.color)}
-                            </View>
-                            <View>
-                              <Text style={styles.catLabel}>{cat.label}</Text>
-                              <Text style={styles.catPercent}>
-                                {cat.label} — {formatPercentage(cat.percentage)}
-                              </Text>
-                            </View>
-                          </View>
-
-                          <View style={styles.catRight}>
-                            <Text style={styles.catAmount}>
-                              {formatCurrency(cat.amount, settings.currency)}
-                            </Text>
-                            {isSelected ? (
-                              <ChevronUp size={14} color={theme.colors.textSecondary} strokeWidth={1.5} />
-                            ) : (
-                              <ChevronDown size={14} color={theme.colors.textSecondary} strokeWidth={1.5} />
-                            )}
-                          </View>
+                {categoryBreakdown.map((cat, idx) => (
+                  <View
+                    key={cat.id}
+                    style={[
+                      styles.categoryRow,
+                      idx > 0 && styles.categoryRowDivider,
+                    ]}
+                  >
+                    <View style={styles.catRowHeader}>
+                      <View style={styles.catHeaderLeft}>
+                        <View
+                          style={[
+                            styles.catIconCircle,
+                            { backgroundColor: cat.bgColor || theme.colors.backgroundSecondary },
+                          ]}
+                        >
+                          {renderCategoryIcon(cat.id, 14, cat.color || theme.colors.primary)}
                         </View>
-
-                        {/* Progress Bar */}
-                        <View style={styles.track}>
-                          <View
-                            style={[
-                              styles.fill,
-                              {
-                                width: `${Math.min(Math.max(cat.percentage, 4), 100)}%`,
-                                backgroundColor: cat.color || theme.colors.primary,
-                              },
-                            ]}
-                          />
+                        <View>
+                          <Text style={styles.catName}>{cat.label}</Text>
+                          <Text style={styles.catPercentage}>{cat.percentage}% of total</Text>
                         </View>
-                      </TouchableOpacity>
+                      </View>
 
-                      {/* Drill-down transactions */}
-                      {isSelected && (
-                        <View style={styles.drillDownBox}>
-                          <Text style={styles.drillDownHeading}>
-                            {filteredCategoryExpenses.length} {filteredCategoryExpenses.length === 1 ? 'transaction' : 'transactions'} in {cat.label}
-                          </Text>
-                          {filteredCategoryExpenses.map((exp) => (
-                            <ExpenseListItem
-                              key={exp.id}
-                              expense={exp}
-                              onEdit={(item) => openQuickAddModal({ initialExpense: item })}
-                              onDelete={() => deleteExpense(exp.id)}
-                            />
-                          ))}
-                        </View>
-                      )}
+                      <View style={styles.catHeaderRight}>
+                        <Text style={styles.catAmount}>
+                          {formatCurrency(cat.amount, settings.currency)}
+                        </Text>
+                      </View>
                     </View>
-                  );
-                })}
+
+                    {/* Progress Bar with Category Color */}
+                    <View style={styles.track}>
+                      <View
+                        style={[
+                          styles.fill,
+                          {
+                            width: `${Math.min(Math.max(cat.percentage, 4), 100)}%`,
+                            backgroundColor: cat.color || theme.colors.primary,
+                          },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                ))}
               </View>
             </View>
           ) : (
-            <View style={styles.emptyState}>
+            /* ─── Minimal Expenza Empty State ─── */
+            <View style={styles.emptyCard}>
               <View style={styles.emptyIconCircle}>
                 <PieChart size={24} color={theme.colors.textTertiary} strokeWidth={1.5} />
               </View>
-              <Text style={styles.emptyTitle}>No expenses this month</Text>
+              <Text style={styles.emptyTitle}>Nothing to show yet</Text>
               <Text style={styles.emptySubtitle}>
-                Add expenses to see your spending breakdown across categories.
+                Add your first expense to see where your money goes.
               </Text>
             </View>
           )}
@@ -262,190 +357,250 @@ export const WhereDidItGoModal: React.FC<WhereDidItGoModalProps> = ({ visible, o
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.borderSubtle,
+    backgroundColor: theme.colors.background,
   },
   headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  iconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    backgroundColor: theme.colors.accentLight,
-    alignItems: 'center',
-    justifyContent: 'center',
+    flex: 1,
+    marginRight: 12,
   },
   title: {
-    ...theme.typography.sectionHeading,
-    fontSize: 16,
+    ...theme.typography.pageHeading,
+    fontSize: 20,
     color: theme.colors.textPrimary,
   },
   subtitle: {
     ...theme.typography.caption,
+    fontSize: 12,
     color: theme.colors.textSecondary,
+    marginTop: 2,
   },
   closeBtn: {
     width: 32,
     height: 32,
-    borderRadius: 8,
-    backgroundColor: theme.colors.backgroundSecondary,
+    borderRadius: 16,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   content: {
     flex: 1,
+    backgroundColor: theme.colors.background,
   },
   contentContainer: {
-    padding: 20,
-    paddingBottom: 40,
+    paddingHorizontal: 20,
+    paddingTop: 14,
   },
-  totalCard: {
+  /* Month Switcher Card */
+  monthSwitcherCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.container,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginBottom: 14,
+  },
+  monthNavBtn: {
+    padding: 6,
+    borderRadius: 9999,
+  },
+  monthSwitcherText: {
+    ...theme.typography.body,
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.textPrimary,
+  },
+  /* Hero Card */
+  heroCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.container,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginBottom: 14,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  heroLabel: {
+    ...theme.typography.label,
+    color: theme.colors.textSecondary,
+  },
+  heroMonthLabel: {
+    ...theme.typography.caption,
+    color: theme.colors.textTertiary,
+    fontWeight: '500',
+  },
+  amountContainer: {
+    marginVertical: 4,
+  },
+  amountText: {
+    ...theme.typography.amount,
+    color: theme.colors.textPrimary,
+  },
+  trendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    marginBottom: 14,
+  },
+  trendBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  trendNegativeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.colors.negative,
+  },
+  trendPositiveText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.colors.positive,
+  },
+  trendNeutralText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: theme.colors.textSecondary,
+  },
+  multiBarTrack: {
+    flexDirection: 'row',
+    height: 8,
+    backgroundColor: theme.colors.backgroundSecondary,
+    borderRadius: 9999,
+    overflow: 'hidden',
+    gap: 2,
+    marginBottom: 14,
+  },
+  multiBarSegment: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  topCategoryHighlight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.borderSubtle,
+  },
+  topCatTag: {
+    ...theme.typography.caption,
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.colors.textSecondary,
+  },
+  topCatText: {
+    ...theme.typography.caption,
+    fontSize: 12,
+    fontWeight: '700',
+    color: theme.colors.textPrimary,
+  },
+  /* Breakdown Card */
+  breakdownCard: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.container,
     padding: 18,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    marginBottom: 20,
-    alignItems: 'center',
   },
-  totalLabel: {
-    ...theme.typography.label,
-    fontSize: 11,
-    color: theme.colors.textSecondary,
-    marginBottom: 4,
-  },
-  totalValue: {
-    ...theme.typography.display,
-    fontSize: 28,
-    fontWeight: '700',
-    color: theme.colors.textPrimary,
-    marginBottom: 4,
-  },
-  totalSubtext: {
-    ...theme.typography.caption,
-    color: theme.colors.textSecondary,
-  },
-  categoriesSection: {
-    marginBottom: 10,
-  },
-  sectionHeading: {
+  breakdownSectionTitle: {
     ...theme.typography.sectionHeading,
     fontSize: 15,
     color: theme.colors.textPrimary,
-  },
-  sectionSub: {
-    ...theme.typography.caption,
-    color: theme.colors.textSecondary,
     marginBottom: 14,
   },
   categoryList: {
-    gap: 10,
+    gap: 14,
   },
-  categoryWrapper: {
-    borderRadius: theme.borderRadius.container,
-    overflow: 'hidden',
+  categoryRow: {
+    gap: 8,
   },
-  categoryCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.container,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+  categoryRowDivider: {
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.borderSubtle,
   },
-  categoryCardSelected: {
-    borderColor: theme.colors.primary,
-    backgroundColor: '#F8FAFC',
-  },
-  catRowTop: {
+  catRowHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
   },
-  catLeft: {
+  catHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    flex: 1,
   },
-  catIconWrap: {
+  catIconCircle: {
     width: 32,
     height: 32,
-    borderRadius: 8,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  catLabel: {
+  catName: {
     ...theme.typography.body,
+    fontSize: 13,
     fontWeight: '600',
     color: theme.colors.textPrimary,
   },
-  catPercent: {
+  catPercentage: {
     ...theme.typography.caption,
     fontSize: 11,
     color: theme.colors.textSecondary,
+    marginTop: 1,
   },
-  catRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  catHeaderRight: {
+    alignItems: 'flex-end',
   },
   catAmount: {
     ...theme.typography.body,
+    fontSize: 14,
     fontWeight: '700',
     color: theme.colors.textPrimary,
   },
   track: {
     height: 4,
     backgroundColor: theme.colors.backgroundSecondary,
-    borderRadius: 2,
+    borderRadius: 9999,
     overflow: 'hidden',
   },
   fill: {
     height: '100%',
-    borderRadius: 2,
+    borderRadius: 9999,
   },
-  drillDownBox: {
-    backgroundColor: theme.colors.backgroundSecondary,
-    padding: 12,
-    borderBottomLeftRadius: theme.borderRadius.container,
-    borderBottomRightRadius: theme.borderRadius.container,
-    borderTopWidth: 0,
-    borderWidth: 1,
-    borderColor: theme.colors.borderSubtle,
-  },
-  drillDownHeading: {
-    ...theme.typography.caption,
-    fontWeight: '600',
-    color: theme.colors.textSecondary,
-    marginBottom: 8,
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 50,
+  /* Empty Card */
+  emptyCard: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.container,
+    paddingVertical: 48,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
   emptyIconCircle: {
     width: 48,
     height: 48,
-    borderRadius: 12,
+    borderRadius: 24,
     backgroundColor: theme.colors.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -459,8 +614,10 @@ const styles = StyleSheet.create({
   },
   emptySubtitle: {
     ...theme.typography.caption,
+    fontSize: 13,
     color: theme.colors.textSecondary,
     textAlign: 'center',
     maxWidth: 240,
+    lineHeight: 18,
   },
 });

@@ -42,8 +42,6 @@ interface MoneyReplayModalProps {
   onClose: () => void;
 }
 
-const { width } = Dimensions.get('window');
-
 export const MoneyReplayModal: React.FC<MoneyReplayModalProps> = ({ visible, onClose }) => {
   const { expenses, settings } = useExpenses();
   const [currentStep, setCurrentStep] = useState<number>(0);
@@ -51,9 +49,8 @@ export const MoneyReplayModal: React.FC<MoneyReplayModalProps> = ({ visible, onC
   const now = new Date();
   const replayData = generateMoneyReplayData(expenses, settings.monthlyBudget || 0, now);
 
-  const totalSteps = 7; // 6 cards + 1 final summary
+  const totalSteps = 7;
 
-  // Animation values for smooth card transitions
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(15)).current;
   const countAnim = useRef(new Animated.Value(0)).current;
@@ -88,7 +85,6 @@ export const MoneyReplayModal: React.FC<MoneyReplayModalProps> = ({ visible, onC
       }),
     ]).start();
 
-    // Animate number count-up for Card 0
     if (currentStep === 0 && replayData.totalSpent > 0) {
       countAnim.addListener(({ value }) => {
         setDisplayedCount(Math.round(value));
@@ -166,7 +162,6 @@ export const MoneyReplayModal: React.FC<MoneyReplayModalProps> = ({ visible, onC
     }
 
     switch (currentStep) {
-      // Card 1: Total Spent
       case 0:
         return (
           <View style={styles.cardInner}>
@@ -181,7 +176,6 @@ export const MoneyReplayModal: React.FC<MoneyReplayModalProps> = ({ visible, onC
           </View>
         );
 
-      // Card 2: Biggest Category
       case 1:
         return (
           <View style={styles.cardInner}>
@@ -209,7 +203,6 @@ export const MoneyReplayModal: React.FC<MoneyReplayModalProps> = ({ visible, onC
           </View>
         );
 
-      // Card 3: Spending Days
       case 2:
         return (
           <View style={styles.cardInner}>
@@ -226,7 +219,6 @@ export const MoneyReplayModal: React.FC<MoneyReplayModalProps> = ({ visible, onC
           </View>
         );
 
-      // Card 4: No-Spend Days
       case 3:
         return (
           <View style={styles.cardInner}>
@@ -243,7 +235,6 @@ export const MoneyReplayModal: React.FC<MoneyReplayModalProps> = ({ visible, onC
           </View>
         );
 
-      // Card 5: Biggest Expense
       case 4:
         return (
           <View style={styles.cardInner}>
@@ -270,7 +261,6 @@ export const MoneyReplayModal: React.FC<MoneyReplayModalProps> = ({ visible, onC
           </View>
         );
 
-      // Card 6: Budget
       case 5:
         return (
           <View style={styles.cardInner}>
@@ -292,7 +282,6 @@ export const MoneyReplayModal: React.FC<MoneyReplayModalProps> = ({ visible, onC
           </View>
         );
 
-      // Final Card: Summary
       case 6:
       default:
         return (
@@ -349,7 +338,7 @@ export const MoneyReplayModal: React.FC<MoneyReplayModalProps> = ({ visible, onC
       statusBarTranslucent
     >
       <SafeAreaPage topSpacing={8} bottomSpacing={12} backgroundColor={theme.colors.surface}>
-        {/* Top Progress Bars (Story Style) */}
+        {/* Top Progress Bars */}
         <View style={styles.progressBarsContainer}>
           {Array.from({ length: totalSteps }).map((_, idx) => (
             <View key={idx} style={styles.progressBarItem}>
@@ -379,7 +368,7 @@ export const MoneyReplayModal: React.FC<MoneyReplayModalProps> = ({ visible, onC
           </TouchableOpacity>
         </View>
 
-        {/* Swipe / Tap Body Area */}
+        {/* Card Body Area */}
         <View style={styles.cardContainer}>
           <TouchableWithoutFeedback onPress={handlePrev}>
             <View style={styles.tapLeftZone} />
@@ -436,10 +425,6 @@ export const MoneyReplayModal: React.FC<MoneyReplayModalProps> = ({ visible, onC
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: theme.colors.surface,
-  },
   progressBarsContainer: {
     flexDirection: 'row',
     gap: 4,
@@ -474,7 +459,7 @@ const styles = StyleSheet.create({
   closeBtn: {
     width: 32,
     height: 32,
-    borderRadius: 8,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -522,7 +507,7 @@ const styles = StyleSheet.create({
   iconCircleLarge: {
     width: 64,
     height: 64,
-    borderRadius: 18,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.accentLight,
     alignItems: 'center',
     justifyContent: 'center',
@@ -584,9 +569,9 @@ const styles = StyleSheet.create({
   },
   percentagePill: {
     backgroundColor: theme.colors.accentLight,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 9999, // Fully rounded
   },
   percentagePillText: {
     ...theme.typography.caption,
@@ -615,7 +600,7 @@ const styles = StyleSheet.create({
   summaryGrid: {
     width: '100%',
     backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: 14,
     padding: 16,
     borderWidth: 1,
     borderColor: theme.colors.borderSubtle,
@@ -645,8 +630,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: 16,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.backgroundSecondary,
   },
   navBtnPrevText: {
@@ -660,8 +645,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: 22,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.primary,
   },
   navBtnNextText: {

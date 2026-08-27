@@ -5,8 +5,6 @@ import {
   Modal,
   StyleSheet,
   TouchableOpacity,
-  TouchableWithoutFeedback,
-  ScrollView,
 } from 'react-native';
 import { Clock, Plus, Minus, X, Check } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -78,7 +76,6 @@ export const CustomTimePickerModal: React.FC<CustomTimePickerModalProps> = ({
 
   const handleSave = () => {
     triggerHaptic();
-    // Convert 12h to 24h HH:mm format
     let h24 = selectedHour;
     if (selectedPeriod === 'PM') {
       if (h24 < 12) h24 += 12;
@@ -94,7 +91,6 @@ export const CustomTimePickerModal: React.FC<CustomTimePickerModalProps> = ({
     onClose();
   };
 
-  // Live formatted time label (e.g. "8:35 PM")
   const formattedDisplay = `${selectedHour}:${selectedMinute.toString().padStart(2, '0')} ${selectedPeriod}`;
 
   const HOURS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
@@ -184,7 +180,6 @@ export const CustomTimePickerModal: React.FC<CustomTimePickerModalProps> = ({
           <View style={styles.selectorSection}>
             <View style={styles.minuteHeaderRow}>
               <Text style={styles.sectionLabel}>MINUTE</Text>
-              {/* Stepper for fine-tuning minute by minute */}
               <View style={styles.stepperWrap}>
                 <TouchableOpacity
                   style={styles.stepperBtn}
@@ -283,7 +278,7 @@ const styles = StyleSheet.create({
   iconCircle: {
     width: 34,
     height: 34,
-    borderRadius: 8,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.accentLight,
     alignItems: 'center',
     justifyContent: 'center',
@@ -302,7 +297,7 @@ const styles = StyleSheet.create({
   closeBtn: {
     width: 28,
     height: 28,
-    borderRadius: 6,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -312,7 +307,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: theme.colors.backgroundSecondary,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 12,
     marginBottom: 16,
@@ -329,7 +324,7 @@ const styles = StyleSheet.create({
   periodSwitch: {
     flexDirection: 'row',
     backgroundColor: theme.colors.surface,
-    borderRadius: 8,
+    borderRadius: 9999, // Fully rounded
     padding: 3,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -337,7 +332,7 @@ const styles = StyleSheet.create({
   periodBtn: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 9999, // Fully rounded
   },
   periodBtnActive: {
     backgroundColor: theme.colors.primary,
@@ -375,14 +370,14 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.backgroundSecondary,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: 9999, // Fully rounded
     borderWidth: 1,
     borderColor: theme.colors.borderSubtle,
   },
   stepperBtn: {
     width: 22,
     height: 22,
-    borderRadius: 4,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
@@ -403,7 +398,7 @@ const styles = StyleSheet.create({
   chipBtn: {
     width: '15.2%',
     height: 32,
-    borderRadius: 6,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -432,7 +427,7 @@ const styles = StyleSheet.create({
   cancelBtn: {
     flex: 1,
     paddingVertical: 11,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -452,7 +447,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     paddingVertical: 11,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.primary,
   },
   saveBtnText: {

@@ -52,7 +52,7 @@ export const Header: React.FC<HeaderProps> = ({
             accessibilityLabel="Add expense"
             accessibilityRole="button"
           >
-            <Plus size={16} color="#FFFFFF" strokeWidth={2} />
+            <Plus size={16} color="#FFFFFF" strokeWidth={2.5} />
           </TouchableOpacity>
         </View>
       )}
@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
   addBtn: {
     width: 36,
     height: 36,
-    borderRadius: 10,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.textPrimary,
     alignItems: 'center',
     justifyContent: 'center',

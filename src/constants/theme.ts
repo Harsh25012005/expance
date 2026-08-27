@@ -124,7 +124,9 @@ export const theme = {
     md: 12,
     lg: 16,
     container: 20,
-    full: 999,
+    full: 9999,
+    button: 9999,
+    pill: 9999,
   },
   // STRICT RULE: No shadows anywhere.
   shadows: {

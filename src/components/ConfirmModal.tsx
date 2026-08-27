@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
   iconWrapper: {
     width: 40,
     height: 40,
-    borderRadius: 10,
+    borderRadius: 9999, // Fully rounded
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
@@ -143,7 +143,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 9999, // Fully rounded
     borderWidth: 1,
     borderColor: theme.colors.border,
     backgroundColor: theme.colors.surface,
@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 9999, // Fully rounded
   },
   confirmNormal: {
     backgroundColor: theme.colors.textPrimary,

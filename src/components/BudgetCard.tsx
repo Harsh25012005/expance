@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
-import { WalletCards, Plus, ChevronRight, Edit3 } from 'lucide-react-native';
+import { WalletCards, Plus, Edit3 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useExpenses } from '../context/ExpenseContext';
 import { getMonthlyBudgetStats, getMonthName } from '../utils/analyticsHelpers';
@@ -82,7 +82,7 @@ export const BudgetCard: React.FC = () => {
     remainingColor = theme.colors.danger;
     remainingText = `${formatCurrency(budgetStats.overAmount, settings.currency)} over budget`;
   } else if (budgetStats.status === 'near_limit') {
-    barColor = '#F59E0B'; // Amber
+    barColor = '#F59E0B';
     remainingColor = '#B45309';
     remainingText = `${formatCurrency(budgetStats.remaining, settings.currency)} remaining`;
   }
@@ -184,9 +184,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 9,
+    paddingHorizontal: 12,
     paddingVertical: 5,
-    borderRadius: 6,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.accentLight,
   },
   editBtnText: {
@@ -211,7 +211,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.backgroundSecondary,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 5,
+    borderRadius: 9999, // Fully rounded
   },
   percentBadgeText: {
     ...theme.typography.caption,
@@ -222,13 +222,13 @@ const styles = StyleSheet.create({
   progressBarTrack: {
     height: 7,
     backgroundColor: theme.colors.backgroundSecondary,
-    borderRadius: 4,
+    borderRadius: 9999, // Fully rounded track
     overflow: 'hidden',
     marginBottom: 8,
   },
   progressBarFill: {
     height: '100%',
-    borderRadius: 4,
+    borderRadius: 9999,
   },
   spentRow: {
     flexDirection: 'row',
@@ -257,7 +257,7 @@ const styles = StyleSheet.create({
   iconCircle: {
     width: 38,
     height: 38,
-    borderRadius: 10,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.accentLight,
     alignItems: 'center',
     justifyContent: 'center',
@@ -279,7 +279,7 @@ const styles = StyleSheet.create({
     gap: 6,
     backgroundColor: theme.colors.primary,
     paddingVertical: 10,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: 9999, // Fully rounded
   },
   setBudgetBtnText: {
     ...theme.typography.body,

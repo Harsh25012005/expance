@@ -60,7 +60,6 @@ export async function setupReminderChannel(): Promise<void> {
         showBadge: true,
         enableLights: true,
         enableVibrate: true,
-        sound: 'default',
       });
     } catch (err) {
       console.warn('[ReminderService] Error setting up reminder channel:', err);

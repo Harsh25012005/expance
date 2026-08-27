@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 14,
     marginBottom: 8,
@@ -124,7 +124,7 @@ const styles = StyleSheet.create({
   iconCircle: {
     width: 36,
     height: 36,
-    borderRadius: 10,
+    borderRadius: 9999, // Fully rounded
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -158,6 +158,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   actionBtn: {
-    padding: 2,
+    padding: 4,
+    borderRadius: 9999,
   },
 });

@@ -10,7 +10,6 @@ import {
 } from '../services/storage';
 import { shakeServiceBridge } from '../services/shakeServiceBridge';
 import { syncDailyReminder } from '../utils/reminderService';
-import { widgetService } from '../services/widgetService';
 
 interface ExpenseStats {
   totalSpending: number;
@@ -58,7 +57,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setExpenses(loadedExpenses);
         setSettings(loadedSettings);
 
-        // Sync native shake service with loaded settings
+        // Sync native shake service with loaded persisted settings
         if (loadedSettings.shakeEnabled) {
           shakeServiceBridge.startService(loadedSettings.shakeSensitivity);
         } else {
@@ -79,13 +78,6 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       syncDailyReminder(settings, expenses);
     }
   }, [settings.dailyReminderEnabled, settings.reminderTime, expenses, loading]);
-
-  // Sync Android Home Screen AppWidget whenever settings or expenses change
-  useEffect(() => {
-    if (!loading) {
-      widgetService.syncWidget(expenses, settings);
-    }
-  }, [expenses, settings, loading]);
 
   const addExpense = useCallback(
     async (expenseData: {
@@ -226,7 +218,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     await saveStoredSettings(updated);
   }, [settings]);
 
-  // Compute live analytics based ONLY on genuine local records
+  // Compute live analytics based ONLY on genuine local records (No dummy data)
   const stats = useMemo<ExpenseStats>(() => {
     const now = new Date();
     const currentYear = now.getFullYear();

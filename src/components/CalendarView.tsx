@@ -4,23 +4,40 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
 } from 'react-native';
-import { ChevronLeft, ChevronRight, CalendarDays, Plus } from 'lucide-react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Calendar as CalendarIcon,
+  Utensils,
+  Car,
+  ShoppingBag,
+  Zap,
+  Film,
+  HeartPulse,
+  Plane,
+  GraduationCap,
+  MoreHorizontal,
+} from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useExpenses } from '../context/ExpenseContext';
 import { useShake } from '../context/ShakeContext';
-import { Expense } from '../types/expense';
-import { formatCurrency } from '../utils/formatters';
-import { getMonthName, getDailySpendingMap, toLocalDateString } from '../utils/analyticsHelpers';
-import { ExpenseListItem } from './ExpenseListItem';
+import { CategoryType, Expense } from '../types/expense';
+import { formatCurrency, formatTime, formatAndroidDate } from '../utils/formatters';
+import { getMonthName, getDailySpendingMap } from '../utils/analyticsHelpers';
 import { theme } from '../constants/theme';
 
-export const CalendarView: React.FC = () => {
-  const { expenses, settings, deleteExpense } = useExpenses();
-  const { openQuickAddModal } = useShake();
-  const insets = useSafeAreaInsets();
+interface CalendarViewProps {
+  onEditExpense?: (expense: Expense) => void;
+  onDeleteExpense?: (expense: Expense) => void;
+}
+
+export const CalendarView: React.FC<CalendarViewProps> = ({
+  onEditExpense,
+}) => {
+  const { expenses, settings } = useExpenses();
+  const { openAddExpensePopup } = useShake();
 
   const today = new Date();
   const [currentYear, setCurrentYear] = useState<number>(today.getFullYear());
@@ -56,89 +73,136 @@ export const CalendarView: React.FC = () => {
     setSelectedDay(1);
   };
 
-  // Days in selected month & offset
+  const handleJumpToToday = () => {
+    triggerHaptic();
+    setCurrentYear(today.getFullYear());
+    setCurrentMonth(today.getMonth());
+    setSelectedDay(today.getDate());
+  };
+
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-  
-  // Starting day of week (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
-  // Adjusted for Monday start (0 = Mon, 1 = Tue, ..., 6 = Sun)
   const firstDayOfWeek = (new Date(currentYear, currentMonth, 1).getDay() + 6) % 7;
 
-  // Daily spending map for this month
   const dailySpendMap = useMemo(() => {
     return getDailySpendingMap(expenses, currentYear, currentMonth);
   }, [expenses, currentYear, currentMonth]);
 
+  // Total spent in this selected calendar month
+  const monthTotalSpent = useMemo(() => {
+    return Object.values(dailySpendMap).reduce((sum, d) => sum + (d.total || 0), 0);
+  }, [dailySpendMap]);
+
   const selectedDayData = dailySpendMap[selectedDay] || { total: 0, count: 0, expenses: [] };
 
   const selectedDateObj = new Date(currentYear, currentMonth, selectedDay);
-  const selectedDateLabel = `${selectedDay} ${getMonthName(currentMonth)}`;
-  const isToday =
+  const isCurrentTodaySelected =
     today.getFullYear() === currentYear &&
     today.getMonth() === currentMonth &&
     today.getDate() === selectedDay;
 
-  const handleAddExpenseForDay = () => {
-    triggerHaptic();
-    const dateStr = selectedDateObj.toISOString();
-    openQuickAddModal({ triggeredByShake: false });
+  const isViewingCurrentMonth =
+    today.getFullYear() === currentYear && today.getMonth() === currentMonth;
+
+  const selectedDateHeading = useMemo(() => {
+    if (isCurrentTodaySelected) return 'TODAY';
+    const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+    if (
+      yesterday.getFullYear() === currentYear &&
+      yesterday.getMonth() === currentMonth &&
+      yesterday.getDate() === selectedDay
+    ) {
+      return 'YESTERDAY';
+    }
+    return formatAndroidDate(selectedDateObj, true).toUpperCase();
+  }, [selectedDateObj, isCurrentTodaySelected, currentYear, currentMonth, selectedDay, today]);
+
+  const weekDays = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+
+  const renderCategoryIcon = (category: CategoryType, size: number = 14) => {
+    switch (category) {
+      case 'Food':
+        return <Utensils size={size} color={theme.colors.textPrimary} strokeWidth={1.5} />;
+      case 'Transport':
+        return <Car size={size} color={theme.colors.textPrimary} strokeWidth={1.5} />;
+      case 'Shopping':
+        return <ShoppingBag size={size} color={theme.colors.textPrimary} strokeWidth={1.5} />;
+      case 'Bills':
+        return <Zap size={size} color={theme.colors.textPrimary} strokeWidth={1.5} />;
+      case 'Entertainment':
+        return <Film size={size} color={theme.colors.textPrimary} strokeWidth={1.5} />;
+      case 'Health':
+        return <HeartPulse size={size} color={theme.colors.textPrimary} strokeWidth={1.5} />;
+      case 'Travel':
+        return <Plane size={size} color={theme.colors.textPrimary} strokeWidth={1.5} />;
+      case 'Education':
+        return <GraduationCap size={size} color={theme.colors.textPrimary} strokeWidth={1.5} />;
+      case 'Other':
+      default:
+        return <MoreHorizontal size={size} color={theme.colors.textPrimary} strokeWidth={1.5} />;
+    }
   };
 
-  const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={[
-        styles.contentContainer,
-        { paddingBottom: 85 + Math.max(insets.bottom, 16) },
-      ]}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* 1. Month Navigation Header */}
+    <View style={styles.container}>
+      {/* ─── 1. Calendar Header & Month Switcher Card ─── */}
       <View style={styles.calendarCard}>
-        <View style={styles.navRow}>
-          <TouchableOpacity
-            style={styles.navBtn}
-            onPress={handlePrevMonth}
-            activeOpacity={0.7}
-            accessibilityLabel="Previous month"
-          >
-            <ChevronLeft size={18} color={theme.colors.textPrimary} strokeWidth={1.5} />
-          </TouchableOpacity>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.monthNavGroup}>
+            <TouchableOpacity
+              style={styles.navArrowBtn}
+              onPress={handlePrevMonth}
+              activeOpacity={0.7}
+            >
+              <ChevronLeft size={16} color={theme.colors.textPrimary} strokeWidth={2} />
+            </TouchableOpacity>
 
-          <View style={styles.monthHeaderCenter}>
-            <Text style={styles.monthTitle}>
+            <Text style={styles.monthYearTitle}>
               {getMonthName(currentMonth)} {currentYear}
             </Text>
+
+            <TouchableOpacity
+              style={styles.navArrowBtn}
+              onPress={handleNextMonth}
+              activeOpacity={0.7}
+            >
+              <ChevronRight size={16} color={theme.colors.textPrimary} strokeWidth={2} />
+            </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={styles.navBtn}
-            onPress={handleNextMonth}
-            activeOpacity={0.7}
-            accessibilityLabel="Next month"
-          >
-            <ChevronRight size={18} color={theme.colors.textPrimary} strokeWidth={1.5} />
-          </TouchableOpacity>
+          <View style={styles.headerRightActions}>
+            {!isViewingCurrentMonth || selectedDay !== today.getDate() ? (
+              <TouchableOpacity
+                style={styles.todayPillBtn}
+                onPress={handleJumpToToday}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.todayPillText}>Today</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.monthTotalBadge}>
+                <Text style={styles.monthTotalText}>
+                  {formatCurrency(monthTotalSpent, settings.currency)}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
 
-        {/* 2. Days of Week Header */}
+        {/* ─── 2. Weekdays Header ─── */}
         <View style={styles.weekDaysRow}>
           {weekDays.map((wd) => (
-            <Text key={wd} style={styles.weekDayText}>
-              {wd}
-            </Text>
+            <View key={wd} style={styles.weekDayCol}>
+              <Text style={styles.weekDayText}>{wd}</Text>
+            </View>
           ))}
         </View>
 
-        {/* 3. Calendar Grid */}
+        {/* ─── 3. Days Grid ─── */}
         <View style={styles.grid}>
-          {/* Empty offset cells */}
           {Array.from({ length: firstDayOfWeek }).map((_, idx) => (
-            <View key={`empty-${idx}`} style={styles.dayCellEmpty} />
+            <View key={`empty-${idx}`} style={styles.dayCellCol} />
           ))}
 
-          {/* Day cells */}
           {Array.from({ length: daysInMonth }).map((_, idx) => {
             const dayNum = idx + 1;
             const isSelected = dayNum === selectedDay;
@@ -150,173 +214,257 @@ export const CalendarView: React.FC = () => {
               today.getDate() === dayNum;
 
             return (
-              <TouchableOpacity
-                key={`day-${dayNum}`}
-                style={[
-                  styles.dayCell,
-                  isSelected && styles.dayCellSelected,
-                  isCurrentToday && !isSelected && styles.dayCellToday,
-                ]}
-                onPress={() => {
-                  triggerHaptic();
-                  setSelectedDay(dayNum);
-                }}
-                activeOpacity={0.7}
-              >
-                <Text
+              <View key={`day-${dayNum}`} style={styles.dayCellCol}>
+                <TouchableOpacity
                   style={[
-                    styles.dayNumText,
-                    isSelected && styles.dayNumTextSelected,
-                    isCurrentToday && !isSelected && styles.dayNumTextToday,
+                    styles.dayCell,
+                    isSelected && styles.dayCellSelected,
+                    isCurrentToday && !isSelected && styles.dayCellToday,
                   ]}
+                  onPress={() => {
+                    triggerHaptic();
+                    setSelectedDay(dayNum);
+                  }}
+                  activeOpacity={0.7}
                 >
-                  {dayNum}
-                </Text>
-
-                {/* Spending Indicator Dot */}
-                {hasSpending && (
-                  <View
+                  <Text
                     style={[
-                      styles.spendDot,
-                      isSelected && styles.spendDotSelected,
+                      styles.dayNumText,
+                      isSelected && styles.dayNumTextSelected,
+                      isCurrentToday && !isSelected && styles.dayNumTextToday,
                     ]}
-                  />
-                )}
-              </TouchableOpacity>
+                  >
+                    {dayNum}
+                  </Text>
+
+                  {hasSpending && (
+                    <View
+                      style={[
+                        styles.spendDot,
+                        isSelected && styles.spendDotSelected,
+                      ]}
+                    />
+                  )}
+                </TouchableOpacity>
+              </View>
             );
           })}
         </View>
       </View>
 
-      {/* 4. Selected Date Spending Details */}
-      <View style={styles.detailsCard}>
-        <View style={styles.detailsHeader}>
-          <View>
-            <Text style={styles.detailsDateTitle}>
-              {selectedDateLabel} {isToday ? '(Today)' : ''}
-            </Text>
-            <Text style={styles.detailsSpentText}>
-              {formatCurrency(selectedDayData.total, settings.currency)} spent
+      {/* ─── 4. Selected Day Story Group ─── */}
+      <View style={styles.storyGroup}>
+        <View style={styles.dateSummaryRow}>
+          <View style={styles.dateHeadingCol}>
+            <Text style={styles.dateGroupHeading}>{selectedDateHeading}</Text>
+            <Text style={styles.dateSubHeading}>
+              {selectedDayData.count} {selectedDayData.count === 1 ? 'transaction' : 'transactions'} ·{' '}
+              {formatCurrency(selectedDayData.total, settings.currency)}
             </Text>
           </View>
 
           <TouchableOpacity
             style={styles.addBtn}
-            onPress={handleAddExpenseForDay}
+            onPress={() => {
+              triggerHaptic();
+              openAddExpensePopup();
+            }}
             activeOpacity={0.7}
           >
-            <Plus size={13} color={theme.colors.surface} strokeWidth={2} />
+            <Plus size={13} color={theme.colors.textPrimary} strokeWidth={2} />
             <Text style={styles.addBtnText}>Add</Text>
           </TouchableOpacity>
         </View>
 
         {selectedDayData.expenses.length > 0 ? (
-          <View style={styles.expensesList}>
-            {selectedDayData.expenses.map((exp) => (
-              <ExpenseListItem
+          <View style={styles.storyCard}>
+            {selectedDayData.expenses.map((exp, idx) => (
+              <TouchableOpacity
                 key={exp.id}
-                expense={exp}
-                onEdit={(item) => openQuickAddModal({ initialExpense: item })}
-                onDelete={() => deleteExpense(exp.id)}
-              />
+                style={[
+                  styles.expenseItemRow,
+                  idx > 0 && styles.expenseItemRowDivider,
+                ]}
+                onPress={() => {
+                  triggerHaptic();
+                  if (onEditExpense) onEditExpense(exp);
+                  else openAddExpensePopup({ initialExpense: exp });
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={styles.itemLeft}>
+                  <View style={styles.iconCircle}>
+                    {renderCategoryIcon(exp.category, 14)}
+                  </View>
+                  <View style={styles.itemTextCol}>
+                    <Text style={styles.itemName}>{exp.name}</Text>
+                    <View style={styles.itemMetaRow}>
+                      <Text style={styles.itemCategory}>{exp.category}</Text>
+                      <Text style={styles.itemDot}>·</Text>
+                      <Text style={styles.itemTime}>{formatTime(exp.createdAt)}</Text>
+                      {exp.notes ? (
+                        <>
+                          <Text style={styles.itemDot}>·</Text>
+                          <Text style={styles.itemNotes} numberOfLines={1}>
+                            {exp.notes}
+                          </Text>
+                        </>
+                      ) : null}
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.itemRight}>
+                  <Text style={styles.itemAmount}>
+                    {formatCurrency(exp.amount, settings.currency)}
+                  </Text>
+                </View>
+              </TouchableOpacity>
             ))}
           </View>
         ) : (
-          <View style={styles.emptyDayBox}>
+          <View style={styles.emptyDayCard}>
+            <View style={styles.emptyIconCircle}>
+              <CalendarIcon size={20} color={theme.colors.textTertiary} strokeWidth={1.5} />
+            </View>
             <Text style={styles.emptyDayTitle}>No expenses recorded</Text>
             <Text style={styles.emptyDaySubtitle}>
-              You did not record any spending for {selectedDateLabel}.
+              No spending logged on {formatAndroidDate(selectedDateObj, false)}.
             </Text>
             <TouchableOpacity
-              style={styles.emptyDayAddBtn}
-              onPress={handleAddExpenseForDay}
+              style={styles.emptyAddBtn}
+              onPress={() => {
+                triggerHaptic();
+                openAddExpensePopup();
+              }}
               activeOpacity={0.7}
             >
-              <Plus size={13} color={theme.colors.primary} strokeWidth={2} />
-              <Text style={styles.emptyDayAddBtnText}>Add Expense</Text>
+              <Plus size={13} color={theme.colors.textPrimary} strokeWidth={2} />
+              <Text style={styles.emptyAddBtnText}>Add Expense</Text>
             </TouchableOpacity>
           </View>
         )}
       </View>
-    </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    gap: 16,
   },
-  contentContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 14,
-    paddingBottom: 110,
-  },
+  /* Calendar Card */
   calendarCard: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.container,
-    padding: 16,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    marginBottom: 16,
+    padding: 16,
   },
-  navRow: {
+  cardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    marginBottom: 16,
   },
-  monthHeaderCenter: {
+  monthNavGroup: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
-  monthTitle: {
-    ...theme.typography.sectionHeading,
-    fontSize: 16,
-    color: theme.colors.textPrimary,
-  },
-  navBtn: {
+  navArrowBtn: {
     width: 32,
     height: 32,
-    borderRadius: 8,
+    borderRadius: 16,
     backgroundColor: theme.colors.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  weekDaysRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  weekDayText: {
-    flex: 1,
+  monthYearTitle: {
+    ...theme.typography.body,
+    fontSize: 15,
+    fontWeight: '700',
+    color: theme.colors.textPrimary,
+    minWidth: 110,
     textAlign: 'center',
+  },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  todayPillBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 9999,
+    backgroundColor: theme.colors.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  todayPillText: {
     ...theme.typography.caption,
     fontSize: 11,
     fontWeight: '600',
+    color: theme.colors.textPrimary,
+  },
+  monthTotalBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 9999,
+    backgroundColor: theme.colors.accentLight,
+  },
+  monthTotalText: {
+    ...theme.typography.caption,
+    fontSize: 11,
+    fontWeight: '700',
+    color: theme.colors.primary,
+  },
+  weekDaysRow: {
+    flexDirection: 'row',
+    width: '100%',
+    marginBottom: 8,
+  },
+  weekDayCol: {
+    width: '14.2857%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekDayText: {
+    ...theme.typography.label,
+    fontSize: 10,
+    fontWeight: '700',
     color: theme.colors.textTertiary,
+    textAlign: 'center',
+    letterSpacing: 0.5,
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    rowGap: 6,
+    justifyContent: 'flex-start',
+    width: '100%',
   },
-  dayCellEmpty: {
-    width: '14.28%',
-    height: 40,
-  },
-  dayCell: {
-    width: '14.28%',
-    height: 40,
+  dayCellCol: {
+    width: '14.2857%',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 8,
+    marginVertical: 3,
+  },
+  dayCell: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 18,
     position: 'relative',
   },
   dayCellSelected: {
-    backgroundColor: theme.colors.primary,
+    backgroundColor: theme.colors.textPrimary,
   },
   dayCellToday: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.accentLight,
   },
   dayNumText: {
     ...theme.typography.body,
@@ -325,98 +473,193 @@ const styles = StyleSheet.create({
     color: theme.colors.textPrimary,
   },
   dayNumTextSelected: {
-    color: theme.colors.surface,
+    color: '#FFFFFF',
     fontWeight: '700',
   },
   dayNumTextToday: {
-    color: theme.colors.primary,
     fontWeight: '700',
+    color: theme.colors.primary,
   },
   spendDot: {
+    position: 'absolute',
+    bottom: 5,
     width: 4,
     height: 4,
     borderRadius: 2,
     backgroundColor: theme.colors.primary,
-    position: 'absolute',
-    bottom: 4,
   },
   spendDotSelected: {
-    backgroundColor: theme.colors.surface,
+    backgroundColor: '#FFFFFF',
   },
-  detailsCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.container,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+  /* Selected Day Story Group */
+  storyGroup: {
+    gap: 8,
   },
-  detailsHeader: {
+  dateSummaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.borderSubtle,
-    paddingBottom: 12,
+    paddingHorizontal: 4,
   },
-  detailsDateTitle: {
-    ...theme.typography.sectionHeading,
-    fontSize: 15,
-    color: theme.colors.textPrimary,
+  dateHeadingCol: {
+    gap: 2,
   },
-  detailsSpentText: {
+  dateGroupHeading: {
+    ...theme.typography.label,
+    fontSize: 11,
+    fontWeight: '700',
+    color: theme.colors.textTertiary,
+    letterSpacing: 0.5,
+  },
+  dateSubHeading: {
     ...theme.typography.caption,
     fontSize: 12,
-    fontWeight: '600',
-    color: theme.colors.primary,
-    marginTop: 2,
+    color: theme.colors.textSecondary,
   },
   addBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 10,
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: theme.borderRadius.sm,
-    backgroundColor: theme.colors.primary,
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   addBtnText: {
     ...theme.typography.caption,
+    fontSize: 12,
     fontWeight: '600',
-    color: theme.colors.surface,
+    color: theme.colors.textPrimary,
   },
-  expensesList: {
-    gap: 8,
+  /* Story Card (Matching AllExpenses list) */
+  storyCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.container,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
   },
-  emptyDayBox: {
+  expenseItemRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 24,
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+  },
+  expenseItemRowDivider: {
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.borderSubtle,
+  },
+  itemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    marginRight: 12,
+  },
+  iconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.backgroundSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  itemTextCol: {
+    flex: 1,
+  },
+  itemName: {
+    ...theme.typography.body,
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.textPrimary,
+  },
+  itemMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  itemCategory: {
+    ...theme.typography.caption,
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+  },
+  itemDot: {
+    ...theme.typography.caption,
+    fontSize: 12,
+    color: theme.colors.textTertiary,
+  },
+  itemTime: {
+    ...theme.typography.caption,
+    fontSize: 12,
+    color: theme.colors.textTertiary,
+  },
+  itemNotes: {
+    ...theme.typography.caption,
+    fontSize: 12,
+    color: theme.colors.textTertiary,
+    flex: 1,
+  },
+  itemRight: {
+    alignItems: 'flex-end',
+  },
+  itemAmount: {
+    ...theme.typography.body,
+    fontSize: 15,
+    fontWeight: '700',
+    color: theme.colors.textPrimary,
+  },
+  /* Empty Day Card */
+  emptyDayCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.container,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: theme.colors.backgroundSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
   },
   emptyDayTitle: {
     ...theme.typography.sectionHeading,
     fontSize: 14,
     color: theme.colors.textPrimary,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   emptyDaySubtitle: {
     ...theme.typography.caption,
+    fontSize: 12,
     color: theme.colors.textSecondary,
-    marginBottom: 12,
+    textAlign: 'center',
+    marginBottom: 14,
   },
-  emptyDayAddBtn: {
+  emptyAddBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: theme.borderRadius.md,
     backgroundColor: theme.colors.backgroundSecondary,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 9999,
     borderWidth: 1,
-    borderColor: theme.colors.borderSubtle,
+    borderColor: theme.colors.border,
   },
-  emptyDayAddBtnText: {
+  emptyAddBtnText: {
     ...theme.typography.caption,
+    fontSize: 12,
     fontWeight: '600',
-    color: theme.colors.primary,
+    color: theme.colors.textPrimary,
   },
 });

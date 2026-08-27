@@ -11,7 +11,6 @@ import {
   Platform,
   TouchableWithoutFeedback,
   Keyboard,
-  Animated,
   Dimensions,
 } from 'react-native';
 import {
@@ -47,13 +46,10 @@ export const QuickExpenseModal: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Animation values for smooth popup entrance
   const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (isQuickAddModalOpen) {
-      console.log('[ADD EXPENSE] POPUP VISIBLE');
-
       if (editingExpense) {
         setName(editingExpense.name);
         setAmount(editingExpense.amount.toString());
@@ -393,7 +389,7 @@ const styles = StyleSheet.create({
   closeBtn: {
     width: 28,
     height: 28,
-    borderRadius: 6,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -416,7 +412,7 @@ const styles = StyleSheet.create({
   },
   textInput: {
     backgroundColor: theme.colors.background,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 14,
@@ -430,7 +426,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: theme.colors.background,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 9,
     borderWidth: 1,
@@ -444,7 +440,7 @@ const styles = StyleSheet.create({
   categoryIconWrap: {
     width: 28,
     height: 28,
-    borderRadius: 6,
+    borderRadius: 9999, // Fully rounded
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -460,7 +456,7 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: 8,
     backgroundColor: theme.colors.background,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: 14,
     padding: 8,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -469,7 +465,7 @@ const styles = StyleSheet.create({
     width: '31%',
     alignItems: 'center',
     paddingVertical: 6,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 10,
     backgroundColor: theme.colors.surface,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -481,7 +477,7 @@ const styles = StyleSheet.create({
   gridIconWrap: {
     width: 24,
     height: 24,
-    borderRadius: 6,
+    borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 2,
@@ -498,7 +494,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: theme.colors.background,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 5,
     borderWidth: 1,
@@ -525,22 +521,22 @@ const styles = StyleSheet.create({
   },
   quickPill: {
     backgroundColor: theme.colors.surface,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: theme.borderRadius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 9999, // Fully rounded
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
   quickPillText: {
     ...theme.typography.caption,
     fontSize: 11,
-    fontWeight: '500',
+    fontWeight: '600',
     color: theme.colors.textPrimary,
   },
   errorContainer: {
     backgroundColor: theme.colors.negativeLight,
     padding: 8,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: theme.colors.negative,
     marginTop: 4,
@@ -560,7 +556,7 @@ const styles = StyleSheet.create({
   saveButton: {
     backgroundColor: theme.colors.textPrimary,
     height: 44,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 9999, // Fully rounded button
     alignItems: 'center',
     justifyContent: 'center',
   },

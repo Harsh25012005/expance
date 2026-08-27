@@ -12,7 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, WalletCards, Check } from 'lucide-react-native';
+import { X, WalletCards } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useExpenses } from '../context/ExpenseContext';
 import { formatCurrency } from '../utils/formatters';
@@ -151,7 +151,7 @@ export const SetBudgetModal: React.FC<SetBudgetModalProps> = ({ visible, onClose
                     onPress={handleRemoveBudget}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.removeBtnText}>Remove budget</Text>
+                    <Text style={styles.removeBtnText}>Remove</Text>
                   </TouchableOpacity>
                 ) : null}
 
@@ -208,7 +208,7 @@ const styles = StyleSheet.create({
   iconCircle: {
     width: 32,
     height: 32,
-    borderRadius: 8,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.accentLight,
     alignItems: 'center',
     justifyContent: 'center',
@@ -220,7 +220,7 @@ const styles = StyleSheet.create({
   closeBtn: {
     width: 28,
     height: 28,
-    borderRadius: 6,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -235,7 +235,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: theme.colors.backgroundSecondary,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderWidth: 1,
@@ -264,16 +264,16 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   presetChip: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.backgroundSecondary,
     borderWidth: 1,
     borderColor: theme.colors.borderSubtle,
   },
   presetText: {
     ...theme.typography.caption,
-    fontWeight: '500',
+    fontWeight: '600',
     color: theme.colors.textSecondary,
   },
   actionsRow: {
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
   removeBtn: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -294,13 +294,13 @@ const styles = StyleSheet.create({
   removeBtnText: {
     ...theme.typography.body,
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '600',
     color: theme.colors.danger,
   },
   saveBtn: {
     flex: 2,
     paddingVertical: 12,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.primary,
     alignItems: 'center',
     justifyContent: 'center',

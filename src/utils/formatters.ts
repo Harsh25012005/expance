@@ -79,6 +79,39 @@ export function formatTimeDisplay(timeStr?: string): string {
   return `${hour12}:${m.toString().padStart(2, '0')} ${period}`;
 }
 
+export function formatAndroidDate(dateInput: string | Date, includeWeekday: boolean = false): string {
+  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (isNaN(date.getTime())) return '';
+
+  const day = date.getDate();
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = months[date.getMonth()];
+  const year = date.getFullYear();
+
+  if (includeWeekday) {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const weekday = days[date.getDay()];
+    return `${weekday}, ${day} ${month} ${year}`;
+  }
+
+  return `${day} ${month} ${year}`;
+}
+
+export function formatCustomDateDisplay(dateStr?: string): string {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    const d = new Date(year, month, day);
+    if (!isNaN(d.getTime())) {
+      return formatAndroidDate(d);
+    }
+  }
+  return dateStr;
+}
+
 export interface GroupedExpenses {
   title: string;
   data: Expense[];
@@ -100,3 +133,4 @@ export function groupExpensesByDate(expenses: Expense[]): GroupedExpenses[] {
     data,
   }));
 }
+

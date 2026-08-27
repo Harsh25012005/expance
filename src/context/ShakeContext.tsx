@@ -33,7 +33,8 @@ export interface ShakeContextType {
 
 const ShakeContext = createContext<ShakeContextType | undefined>(undefined);
 
-const SHAKE_COOLDOWN_MS = 1500;
+// 1.0-second cooldown debounce for reliable repeated shakes
+const SHAKE_COOLDOWN_MS = 1000;
 
 export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { settings } = useExpenses();
@@ -52,15 +53,31 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const lastZRef = useRef<number>(0);
   const initializedRef = useRef<boolean>(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const shakePeaksRef = useRef<number>(0);
+  const shakeWindowStartRef = useRef<number>(0);
 
   useEffect(() => {
+    const prevEnabled = settingsRef.current.shakeEnabled;
     settingsRef.current = settings;
+
+    if (prevEnabled !== settings.shakeEnabled) {
+      console.log(`[SHAKE SETTINGS] enabled = ${settings.shakeEnabled}`);
+      if (settings.shakeEnabled) {
+        if (Platform.OS === 'android') {
+          shakeServiceBridge.startService(settings.shakeSensitivity);
+        }
+      } else {
+        shakeServiceBridge.stopService();
+      }
+    }
   }, [settings]);
 
-  // Request notification permissions and setup channel on mount
+  // Request notification permissions, setup channel and ensure service on mount
   useEffect(() => {
     setupNotificationChannel();
-    Notifications.requestPermissionsAsync().catch(() => {});
+    if (settingsRef.current.shakeEnabled && Platform.OS === 'android') {
+      shakeServiceBridge.startService(settingsRef.current.shakeSensitivity);
+    }
   }, []);
 
   const openAddExpensePopup = useCallback((options?: OpenModalOptions) => {
@@ -91,16 +108,26 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const handleShakeDetected = useCallback(() => {
-    const currentAppState = AppState.currentState;
-    console.log('[SHAKE] DETECTED');
-
-    const now = Date.now();
-    if (now - lastShakeTimeRef.current < SHAKE_COOLDOWN_MS) {
-      console.log('[SHAKE] Cooldown active, ignoring');
+    // 1. Strict Shake OFF Verification
+    if (!settingsRef.current.shakeEnabled) {
+      console.log('[SHAKE] DISABLED — ignoring event');
       return;
     }
+
+    const currentAppState = AppState.currentState;
+    const now = Date.now();
+
+    // 2. Debounce Protection (Only 1 notification / modal per shake gesture within 1s)
+    if (now - lastShakeTimeRef.current < SHAKE_COOLDOWN_MS) {
+      console.log(`[SHAKE] Debounce active (${now - lastShakeTimeRef.current}ms), ignoring duplicate event`);
+      return;
+    }
+
     lastShakeTimeRef.current = now;
     setLastShakeTimestamp(now);
+
+    console.log('[SHAKE] DETECTED');
+    console.log(`[SHAKE] APP STATE: ${currentAppState}`);
 
     if (settingsRef.current.hapticsEnabled) {
       try {
@@ -108,18 +135,24 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } catch {}
     }
 
+    // Always show notification on every shake in all app states
+    showShakeExpenseNotification().catch((err) => {
+      console.warn('[SHAKE] Notification dispatch failed:', err);
+    });
+
     if (currentAppState === 'active') {
-      console.log('[SHAKE] APP STATE: active -> Opening Add Expense popup');
+      console.log('[SHAKE] Opening Add Expense popup');
       openAddExpensePopup({ triggeredByShake: true });
-    } else {
-      console.log(`[SHAKE] APP STATE: ${currentAppState} -> Posting notification`);
-      showShakeExpenseNotification();
     }
   }, [openAddExpensePopup]);
 
   const openAddExpenseFromShake = handleShakeDetected;
 
   const simulateShake = useCallback(() => {
+    if (!settingsRef.current.shakeEnabled) {
+      console.log('[SHAKE] DISABLED — ignoring simulateShake');
+      return;
+    }
     console.log('[SHAKE DEBUG] simulateShake called');
     emitShakeEvent();
   }, []);
@@ -144,8 +177,9 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // 3. Notification Tap & Deep Link Listener (Dispatches to Add Expense, Set Budget, or Today's Expenses)
   useEffect(() => {
-    // A. Handle notification click response (from expo-notifications)
     const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      console.log('[SHAKE] Notification tapped');
+      console.log('[SHAKE] ADD_EXPENSE action requested');
       const data = response.notification.request.content.data;
       const action = data?.action;
       const url = data?.url as string | undefined;
@@ -161,18 +195,19 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     });
 
-    // B. Handle deep links
     const processDeepLink = (url: string | null) => {
       if (!url) return;
       console.log(`[DEEP LINK] Received: ${url}`);
-      if (url.includes('set-budget')) {
+      if (url.includes('add-expense') || url.includes('shake-open')) {
+        console.log('[SHAKE] Notification tapped');
+        console.log('[SHAKE] ADD_EXPENSE action requested');
+        openAddExpensePopup({ triggeredByShake: false });
+      } else if (url.includes('set-budget')) {
         openSetBudgetModal();
       } else if (url.includes('breakdown')) {
         setNavigationTarget('analytics');
       } else if (url.includes('today') || url.includes('expenses')) {
         setNavigationTarget('expenses');
-      } else if (url.includes('add-expense') || url.includes('shake-open')) {
-        openAddExpensePopup({ triggeredByShake: false });
       }
     };
 
@@ -196,13 +231,17 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
 
       if (!settings.shakeEnabled) {
+        console.log('[SHAKE SETTINGS] enabled = false — Accelerometer listener stopped');
         return;
       }
 
       Accelerometer.setUpdateInterval(50);
 
       sensorSubscription = Accelerometer.addListener((data) => {
-        if (!settingsRef.current.shakeEnabled) return;
+        if (!settingsRef.current.shakeEnabled) {
+          console.log('[SHAKE] DISABLED — ignoring event');
+          return;
+        }
 
         const { x, y, z } = data;
 
@@ -214,6 +253,7 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return;
         }
 
+        const now = Date.now();
         const deltaX = Math.abs(x - lastXRef.current);
         const deltaY = Math.abs(y - lastYRef.current);
         const deltaZ = Math.abs(z - lastZRef.current);
@@ -223,15 +263,29 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         lastYRef.current = y;
         lastZRef.current = z;
 
+        // Intentional peak thresholds (Gs)
         const threshold =
           settingsRef.current.shakeSensitivity === 'low'
-            ? 3.0
+            ? 3.6
             : settingsRef.current.shakeSensitivity === 'high'
-            ? 1.5
-            : 2.2;
+            ? 2.0
+            : 2.8;
+
+        // Multi-direction shake algorithm: Requires 2-3 rapid reversals within 550ms
+        const requiredPeaks = settingsRef.current.shakeSensitivity === 'low' ? 3 : 2;
 
         if (delta > threshold) {
-          emitShakeEvent();
+          if (shakePeaksRef.current === 0 || now - shakeWindowStartRef.current > 550) {
+            shakeWindowStartRef.current = now;
+            shakePeaksRef.current = 1;
+          } else {
+            shakePeaksRef.current += 1;
+          }
+
+          if (shakePeaksRef.current >= requiredPeaks) {
+            shakePeaksRef.current = 0;
+            emitShakeEvent();
+          }
         }
       });
     };
@@ -250,6 +304,8 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
         if (settingsRef.current.shakeEnabled && Platform.OS === 'android') {
           shakeServiceBridge.startService(settingsRef.current.shakeSensitivity);
+        } else if (!settingsRef.current.shakeEnabled) {
+          shakeServiceBridge.stopService();
         }
       }
     };

@@ -8,11 +8,8 @@ import {
   Animated,
 } from 'react-native';
 import {
-  ArrowRight,
   Smartphone,
   Plus,
-  Receipt,
-  ChevronRight,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,7 +21,6 @@ import { WhereDidItGoWidget } from '../components/WhereDidItGoWidget';
 import { WhereDidItGoModal } from '../components/WhereDidItGoModal';
 import { MoneyMoodCard } from '../components/MoneyMoodCard';
 import { StreaksCard } from '../components/StreaksCard';
-import { ExpenseListItem } from '../components/ExpenseListItem';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { Expense } from '../types/expense';
 import { theme } from '../constants/theme';
@@ -62,12 +58,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToExpenses }) 
 
   const triggerHaptic = () => {
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
-    } catch { }
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    } catch {}
   };
-
-  const recentExpenses = expenses.slice(0, 5);
-  const hasExpenses = expenses.length > 0;
 
   const handleDeleteConfirm = async () => {
     if (deletingExpense) {
@@ -193,7 +186,7 @@ const styles = StyleSheet.create({
   shakeIconCircle: {
     width: 34,
     height: 34,
-    borderRadius: 8,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.accentLight,
     alignItems: 'center',
     justifyContent: 'center',
@@ -218,9 +211,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    borderRadius: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 9999, // Fully rounded
     backgroundColor: theme.colors.backgroundSecondary,
     borderWidth: 1,
     borderColor: theme.colors.borderSubtle,
@@ -230,73 +223,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: theme.colors.textPrimary,
-  },
-  recentSection: {
-    marginBottom: 16,
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  sectionTitle: {
-    ...theme.typography.sectionHeading,
-    fontSize: 14,
-    color: theme.colors.textPrimary,
-  },
-  seeAllBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  seeAllText: {
-    ...theme.typography.caption,
-    fontSize: 12,
-    fontWeight: '600',
-    color: theme.colors.primary,
-  },
-  expenseListCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.container,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  itemDivider: {
-    height: 1,
-    backgroundColor: theme.colors.borderSubtle,
-  },
-  emptyCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.container,
-    padding: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  emptyIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: theme.colors.backgroundSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  emptyTitle: {
-    ...theme.typography.body,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
-    marginBottom: 4,
-  },
-  emptySubtitle: {
-    ...theme.typography.caption,
-    color: theme.colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 16,
-    maxWidth: 240,
   },
 });

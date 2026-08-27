@@ -2,9 +2,7 @@
  * Expo Config Plugin: withShakeService
  *
  * Injects the native Android ShakeService foreground service, ShakeServiceModule,
- * ShakeServicePackage, BootReceiver, ReminderReceiver, RingRenderer, and the
- * single Category Concentric Rings Widget:
- * - CategoryWidgetProvider (with dynamic per-category colors)
+ * ShakeServicePackage, BootReceiver, and ReminderReceiver.
  */
 const {
   withAndroidManifest,
@@ -23,6 +21,7 @@ const SHAKE_SERVICE_KT = `package {{PACKAGE}}
 import android.app.*
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -45,48 +44,62 @@ class ShakeService : Service(), SensorEventListener {
     private var lastY = 0f
     private var lastZ = 0f
     private var initialized = false
+    private var shakePeaks = 0
+    private var shakeWindowStartTime = 0L
+    private val SHAKE_WINDOW_MS = 550L
+    private val REQUIRED_PEAKS = 2
 
     data class NotificationMessage(val title: String, val body: String)
 
     companion object {
         private const val TAG = "ShakeService"
+        const val PREFS_NAME = "expenza_prefs"
+        const val KEY_SHAKE_ENABLED = "shake_enabled"
+        const val KEY_SHAKE_SENSITIVITY = "shake_sensitivity"
+
         private const val ONGOING_CHANNEL_ID = "shake_service_channel"
         private const val EXPENSE_CHANNEL_ID = "expense_tracking_channel"
         private const val ONGOING_NOTIFICATION_ID = 9001
-        private const val NOTIFICATION_BASE_ID = 9100
-        private const val SHAKE_DEBOUNCE_MS = 2000L
+        const val SHAKE_NOTIFICATION_ID = 9100
 
+        // 1.0-second cooldown debounce for reliable repeated shakes
+        private const val SHAKE_COOLDOWN_MS = 1000L
+
+        // 5 distinct non-emoji notification messages that cycle sequentially
         private val NOTIFICATION_MESSAGES = arrayOf(
-            NotificationMessage("Add an expense", "Tap to quickly record what you just spent."),
-            NotificationMessage("Quick expense entry", "Ready to record your latest expense?"),
-            NotificationMessage("Record your spending", "Add the expense before you forget it."),
-            NotificationMessage("Expense ready to add", "Record your spending in just a few seconds."),
-            NotificationMessage("Track your spending", "Tap here to add your expense."),
-            NotificationMessage("Quick expense capture", "Keep your spending history up to date."),
-            NotificationMessage("Add your latest expense", "Quickly add what you just spent."),
-            NotificationMessage("Don't forget this expense", "Your expense tracker is ready for a new entry.")
+            NotificationMessage("Add an expense", "Tap to record what you just spent."),
+            NotificationMessage("Quick expense entry", "Your latest expense is ready to record."),
+            NotificationMessage("Track your spending", "Add your expense before you forget."),
+            NotificationMessage("Record your expense", "Keep your spending history up to date."),
+            NotificationMessage("Expense ready to add", "Quickly record what you spent.")
         )
 
         private var lastMessageIndex: Int = -1
-        private var notificationCounter: Int = 0
 
-        var shakeThreshold: Float = 24.0f
+        // Calibrated sensitivity thresholds (Low = 48.0f, Medium = 38.0f, High = 28.0f)
+        var shakeThreshold: Float = 38.0f
         var isRunning: Boolean = false
             private set
 
         var isAppInForeground: Boolean = false
 
+        fun isShakeEnabled(context: Context): Boolean {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            return prefs.getBoolean(KEY_SHAKE_ENABLED, true)
+        }
+
         private fun getNextNotificationMessage(): NotificationMessage {
             val size = NOTIFICATION_MESSAGES.size
-            var nextIndex = (0 until size).random()
-            if (nextIndex == lastMessageIndex && size > 1) {
-                nextIndex = (nextIndex + 1) % size
-            }
+            val nextIndex = (lastMessageIndex + 1) % size
             lastMessageIndex = nextIndex
             return NOTIFICATION_MESSAGES[nextIndex]
         }
 
-        fun start(context: Context, threshold: Float = 24.0f) {
+        fun start(context: Context, threshold: Float = 48.0f) {
+            if (!isShakeEnabled(context)) {
+                Log.d(TAG, "[SHAKE SETTINGS] enabled = false — ignoring start request")
+                return
+            }
             shakeThreshold = threshold
             val intent = Intent(context, ShakeService::class.java)
             try {
@@ -115,6 +128,12 @@ class ShakeService : Service(), SensorEventListener {
 
     override fun onCreate() {
         super.onCreate()
+        if (!isShakeEnabled(this)) {
+            Log.d(TAG, "[SHAKE SETTINGS] enabled = false in onCreate — stopping self")
+            stopSelf()
+            return
+        }
+
         Log.d(TAG, "Sensor service onCreate (native foreground service)")
         createNotificationChannels()
         startForeground(ONGOING_NOTIFICATION_ID, createOngoingNotification())
@@ -133,6 +152,10 @@ class ShakeService : Service(), SensorEventListener {
     }
 
     private fun registerSensorListener() {
+        if (!isShakeEnabled(this)) {
+            Log.d(TAG, "[SHAKE] DISABLED — ignoring registration")
+            return
+        }
         if (sensorManager == null) {
             sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         }
@@ -147,6 +170,11 @@ class ShakeService : Service(), SensorEventListener {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!isShakeEnabled(this)) {
+            Log.d(TAG, "[SHAKE SETTINGS] enabled = false in onStartCommand — stopping self")
+            stopSelf()
+            return START_NOT_STICKY
+        }
         Log.d(TAG, "ShakeService onStartCommand")
         registerSensorListener()
         return START_STICKY
@@ -165,6 +193,12 @@ class ShakeService : Service(), SensorEventListener {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        if (!isShakeEnabled(this)) {
+            Log.d(TAG, "[SHAKE SETTINGS] enabled = false onTaskRemoved — not restarting")
+            super.onTaskRemoved(rootIntent)
+            return
+        }
+
         Log.d(TAG, "App task removed from recents - maintaining service for background shake detection")
         isAppInForeground = false
         try {
@@ -183,6 +217,12 @@ class ShakeService : Service(), SensorEventListener {
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
+        // Critical: Strict verification that shake is enabled
+        if (!isShakeEnabled(this)) {
+            Log.d(TAG, "[SHAKE] DISABLED — ignoring event")
+            return
+        }
+
         if (event?.sensor?.type != Sensor.TYPE_ACCELEROMETER) return
         val x = event.values[0]
         val y = event.values[1]
@@ -205,23 +245,35 @@ class ShakeService : Service(), SensorEventListener {
         lastY = y
         lastZ = z
 
+        val now = System.currentTimeMillis()
+
         if (delta > shakeThreshold) {
-            val now = System.currentTimeMillis()
-            if (now - lastShakeTime > SHAKE_DEBOUNCE_MS) {
+            // Guard: Debounce within same physical shake gesture
+            if (now - lastShakeTime <= SHAKE_COOLDOWN_MS) {
+                return
+            }
+
+            if (shakePeaks == 0 || now - shakeWindowStartTime > SHAKE_WINDOW_MS) {
+                shakeWindowStartTime = now
+                shakePeaks = 1
+            } else {
+                shakePeaks++
+            }
+
+            if (shakePeaks >= REQUIRED_PEAKS) {
+                shakePeaks = 0
                 lastShakeTime = now
 
-                if (isAppInForeground) {
-                    Log.d(TAG, "[SHAKE] DETECTED (app foreground)")
-                    val emitted = ShakeServiceModule.emitShakeToJS()
-                    if (!emitted) {
-                        Log.d(TAG, "[SHAKE] JS not ready in foreground, showing notification fallback")
-                        showExpenseNotification()
-                    }
-                    return
-                }
+                val appState = if (isAppInForeground) "foreground" else "background"
+                Log.d(TAG, "[SHAKE] DETECTED (Multi-direction shake confirmed)")
+                Log.d(TAG, "[SHAKE] APP STATE: " + appState)
 
-                Log.d(TAG, "[SHAKE] DETECTED (app closed/background)")
+                // Always show notification on every shake in all app states
                 showExpenseNotification()
+
+                if (isAppInForeground) {
+                    ShakeServiceModule.emitShakeToJS()
+                }
             }
         }
     }
@@ -230,10 +282,22 @@ class ShakeService : Service(), SensorEventListener {
 
     private fun showExpenseNotification() {
         val message = getNextNotificationMessage()
-        Log.d(TAG, "[SHAKE] Posting notification: " + message.title + " - " + message.body)
+        Log.d(TAG, "[SHAKE] Creating notification")
+        Log.d(TAG, "[SHAKE] Cancelling previous shake notification")
+
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager?.cancel(SHAKE_NOTIFICATION_ID)
+
+        Log.d(TAG, "[SHAKE] Showing new shake notification")
 
         try {
-            val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vm = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? android.os.VibratorManager
+                vm?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            }
             if (vibrator != null && vibrator.hasVibrator()) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     vibrator.vibrate(VibrationEffect.createOneShot(150, VibrationEffect.DEFAULT_AMPLITUDE))
@@ -279,9 +343,8 @@ class ShakeService : Service(), SensorEventListener {
                 .addAction(android.R.drawable.ic_input_add, "Add Expense", contentPendingIntent)
                 .build()
 
-            val notificationId = NOTIFICATION_BASE_ID + (notificationCounter++ % 20)
-            val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager?.notify(notificationId, notification)
+            // Using consistent ID replaces any active previous notification
+            notificationManager?.notify(SHAKE_NOTIFICATION_ID, notification)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to post expense notification", e)
         }
@@ -359,242 +422,11 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
         if (action == Intent.ACTION_BOOT_COMPLETED || action == "android.intent.action.QUICKBOOT_POWERON" || action == "com.htc.intent.action.QUICKBOOT_POWERON") {
-            Log.d(TAG, "Device booted ($action) - starting ShakeService")
-            ShakeService.start(context)
-        }
-    }
-}
-`;
-
-// ─── RingRenderer.kt source ──────────────────────────────────────────────────
-const RING_RENDERER_KT = `package {{PACKAGE}}
-
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.RectF
-
-object RingRenderer {
-
-    private val defaultColors = listOf(
-        "#F59E0B",
-        "#EC4899",
-        "#38BDF8",
-        "#A78BFA"
-    )
-
-    fun draw(
-        sizePx: Int,
-        values: List<Float>,
-        colors: List<String> = defaultColors,
-        strokeWidthPx: Float = sizePx * 0.055f
-    ): Bitmap {
-        val safeValues = if (values.size >= 4) values else listOf(0.52f, 0.32f, 0.15f, 0.77f)
-
-        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-
-        val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = strokeWidthPx
-            strokeCap = Paint.Cap.ROUND
-        }
-
-        val progressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = strokeWidthPx
-            strokeCap = Paint.Cap.ROUND
-        }
-
-        val gap = strokeWidthPx * 1.5f
-        val center = sizePx / 2f
-        var radius = center - strokeWidthPx
-        val startAngle = -90f
-
-        for (i in 0 until 4) {
-            val rect = RectF(
-                center - radius, center - radius,
-                center + radius, center + radius
-            )
-
-            val colorHex = if (i < colors.size && colors[i].isNotEmpty()) colors[i] else defaultColors[i % defaultColors.size]
-            val parsedColor = try {
-                Color.parseColor(colorHex)
-            } catch (e: Exception) {
-                Color.parseColor(defaultColors[i % defaultColors.size])
-            }
-
-            trackPaint.color = Color.argb(
-                55,
-                Color.red(parsedColor),
-                Color.green(parsedColor),
-                Color.blue(parsedColor)
-            )
-            canvas.drawArc(rect, 0f, 360f, false, trackPaint)
-
-            val pct = safeValues[i].coerceIn(0.04f, 1f)
-            progressPaint.color = parsedColor
-            canvas.drawArc(rect, startAngle, 360f * pct, false, progressPaint)
-
-            radius -= gap
-        }
-
-        return bitmap
-    }
-}
-`;
-
-// ─── CategoryWidgetProvider.kt source ───────────────────────────────────────
-const CATEGORY_WIDGET_PROVIDER_KT = `package {{PACKAGE}}
-
-import android.app.PendingIntent
-import android.appwidget.AppWidgetManager
-import android.appwidget.AppWidgetProvider
-import android.content.ComponentName
-import android.content.Context
-import android.content.Intent
-import android.graphics.Color
-import android.net.Uri
-import android.os.Build
-import android.util.Log
-import android.widget.RemoteViews
-
-class CategoryWidgetProvider : AppWidgetProvider() {
-
-    companion object {
-        private const val TAG = "CategoryWidgetProvider"
-        const val PREFS_NAME = "expenza_widget_data"
-
-        const val KEY_CAT1_NAME = "cat1_name"
-        const val KEY_CAT1_PCT = "cat1_pct"
-        const val KEY_CAT1_COLOR = "cat1_color"
-
-        const val KEY_CAT2_NAME = "cat2_name"
-        const val KEY_CAT2_PCT = "cat2_pct"
-        const val KEY_CAT2_COLOR = "cat2_color"
-
-        const val KEY_CAT3_NAME = "cat3_name"
-        const val KEY_CAT3_PCT = "cat3_pct"
-        const val KEY_CAT3_COLOR = "cat3_color"
-
-        const val KEY_CAT4_NAME = "cat4_name"
-        const val KEY_CAT4_PCT = "cat4_pct"
-        const val KEY_CAT4_COLOR = "cat4_color"
-
-        fun updateAllWidgets(context: Context) {
-            try {
-                val appWidgetManager = AppWidgetManager.getInstance(context)
-                val componentName = ComponentName(context, CategoryWidgetProvider::class.java)
-                val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-                if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
-                    val provider = CategoryWidgetProvider()
-                    provider.onUpdate(context, appWidgetManager, appWidgetIds)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error updating category widget", e)
-            }
-        }
-
-        private fun shortenLabel(name: String): String {
-            return when (name.uppercase()) {
-                "FOOD", "FOOD & DRINK", "GROCERIES", "FOOD & DINING" -> "FOOD"
-                "SHOPPING" -> "SHOP"
-                "TRANSPORTATION", "TRAVEL", "TRANSPORT" -> "TRANS"
-                "BILLS", "UTILITIES", "BILLS & UTILITIES" -> "BILLS"
-                "ENTERTAINMENT" -> "FUN"
-                "HEALTH", "HEALTH & MEDICAL" -> "HLTH"
-                "EDUCATION" -> "EDU"
-                else -> if (name.length > 5) name.substring(0, 4).uppercase() else name.uppercase()
-            }
-        }
-
-        private fun parseColorSafe(colorHex: String, fallbackHex: String): Int {
-            return try {
-                Color.parseColor(colorHex)
-            } catch (e: Exception) {
-                Color.parseColor(fallbackHex)
-            }
-        }
-    }
-
-    override fun onUpdate(
-        context: Context,
-        appWidgetManager: AppWidgetManager,
-        appWidgetIds: IntArray
-    ) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
-        val cat1Name = prefs.getString(KEY_CAT1_NAME, "FOOD")?.takeIf { it.isNotEmpty() } ?: "FOOD"
-        val cat1Pct = prefs.getInt(KEY_CAT1_PCT, 52)
-        val cat1Color = prefs.getString(KEY_CAT1_COLOR, "#F59E0B") ?: "#F59E0B"
-
-        val cat2Name = prefs.getString(KEY_CAT2_NAME, "SHOP")?.takeIf { it.isNotEmpty() } ?: "SHOP"
-        val cat2Pct = prefs.getInt(KEY_CAT2_PCT, 32)
-        val cat2Color = prefs.getString(KEY_CAT2_COLOR, "#EC4899") ?: "#EC4899"
-
-        val cat3Name = prefs.getString(KEY_CAT3_NAME, "TRANS")?.takeIf { it.isNotEmpty() } ?: "TRANS"
-        val cat3Pct = prefs.getInt(KEY_CAT3_PCT, 15)
-        val cat3Color = prefs.getString(KEY_CAT3_COLOR, "#38BDF8") ?: "#38BDF8"
-
-        val cat4Name = prefs.getString(KEY_CAT4_NAME, "BILLS")?.takeIf { it.isNotEmpty() } ?: "BILLS"
-        val cat4Pct = prefs.getInt(KEY_CAT4_PCT, 77)
-        val cat4Color = prefs.getString(KEY_CAT4_COLOR, "#A78BFA") ?: "#A78BFA"
-
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        } else {
-            PendingIntent.FLAG_UPDATE_CURRENT
-        }
-
-        val openAppIntent = Intent(context, MainActivity::class.java).apply {
-            action = "VIEW_ANALYTICS"
-            data = Uri.parse("expenza://breakdown")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            putExtra("action", "VIEW_ANALYTICS")
-        }
-        val pendingIntent = PendingIntent.getActivity(context, 401, openAppIntent, flags)
-
-        val ringValues = listOf(
-            (cat1Pct / 100f).coerceIn(0.05f, 1f),
-            (cat2Pct / 100f).coerceIn(0.05f, 1f),
-            (cat3Pct / 100f).coerceIn(0.05f, 1f),
-            (cat4Pct / 100f).coerceIn(0.05f, 1f)
-        )
-
-        val ringColors = listOf(cat1Color, cat2Color, cat3Color, cat4Color)
-
-        val density = context.resources.displayMetrics.density
-        val ringSizePx = (160 * density).toInt().coerceAtLeast(200)
-        val bitmap = RingRenderer.draw(sizePx = ringSizePx, values = ringValues, colors = ringColors)
-
-        for (widgetId in appWidgetIds) {
-            try {
-                val views = RemoteViews(context.packageName, R.layout.widget_category_card)
-
-                views.setImageViewBitmap(R.id.widget_category_rings, bitmap)
-
-                views.setTextViewText(R.id.widget_stat_deep_label, shortenLabel(cat1Name))
-                views.setTextColor(R.id.widget_stat_deep_label, parseColorSafe(cat1Color, "#F59E0B"))
-                views.setTextViewText(R.id.widget_stat_deep_value, "$cat1Pct%")
-
-                views.setTextViewText(R.id.widget_stat_light_label, shortenLabel(cat2Name))
-                views.setTextColor(R.id.widget_stat_light_label, parseColorSafe(cat2Color, "#EC4899"))
-                views.setTextViewText(R.id.widget_stat_light_value, "$cat2Pct%")
-
-                views.setTextViewText(R.id.widget_stat_awake_label, shortenLabel(cat3Name))
-                views.setTextColor(R.id.widget_stat_awake_label, parseColorSafe(cat3Color, "#38BDF8"))
-                views.setTextViewText(R.id.widget_stat_awake_value, "$cat3Pct%")
-
-                views.setTextViewText(R.id.widget_stat_quality_label, shortenLabel(cat4Name))
-                views.setTextColor(R.id.widget_stat_quality_label, parseColorSafe(cat4Color, "#A78BFA"))
-                views.setTextViewText(R.id.widget_stat_quality_value, "$cat4Pct%")
-
-                views.setOnClickPendingIntent(R.id.widget_category_root, pendingIntent)
-
-                appWidgetManager.updateAppWidget(widgetId, views)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error updating widgetId: $widgetId", e)
+            if (ShakeService.isShakeEnabled(context)) {
+                Log.d(TAG, "[SHAKE SETTINGS] enabled = true — starting ShakeService on device boot ($action)")
+                ShakeService.start(context)
+            } else {
+                Log.d(TAG, "[SHAKE SETTINGS] enabled = false — skipping ShakeService on device boot ($action)")
             }
         }
     }
@@ -609,13 +441,14 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.Promise
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import android.content.Context
 import android.util.Log
 
 class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
     companion object {
         private const val TAG = "ShakeServiceModule"
+        const val PREFS_NAME = "expenza_prefs"
         var reactContextInstance: ReactApplicationContext? = null
-        const val PREFS_NAME = "expenza_widget_data"
 
         fun emitShakeToJS(): Boolean {
             return try {
@@ -634,14 +467,6 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
                 false
             }
         }
-
-        fun updateAllWidgets(context: android.content.Context) {
-            try {
-                CategoryWidgetProvider.updateAllWidgets(context)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error triggering updateAllWidgets", e)
-            }
-        }
     }
 
     init {
@@ -650,34 +475,58 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
 
     override fun getName(): String = "ShakeServiceModule"
 
+    private fun getThresholdForSensitivity(sensitivity: String): Float {
+        return when (sensitivity.lowercase()) {
+            "low" -> 48.0f
+            "medium" -> 36.0f
+            "high" -> 26.0f
+            else -> 48.0f
+        }
+    }
+
     @ReactMethod
     fun startService(sensitivity: String) {
-        val threshold = when (sensitivity.lowercase()) {
-            "low" -> 32.0f
-            "medium" -> 24.0f
-            "high" -> 16.0f
-            else -> 32.0f
+        val threshold = getThresholdForSensitivity(sensitivity)
+        try {
+            val prefs = reactApplicationContext.getSharedPreferences(ShakeService.PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit().apply {
+                putBoolean(ShakeService.KEY_SHAKE_ENABLED, true)
+                putString(ShakeService.KEY_SHAKE_SENSITIVITY, sensitivity)
+                apply()
+            }
+            Log.d(TAG, "[SHAKE SETTINGS] enabled = true (sensitivity=$sensitivity, threshold=$threshold)")
+            ShakeService.start(reactApplicationContext, threshold)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in startService", e)
         }
-        Log.d(TAG, "startService called with sensitivity=$sensitivity (threshold=$threshold)")
-        ShakeService.start(reactApplicationContext, threshold)
     }
 
     @ReactMethod
     fun stopService() {
-        Log.d(TAG, "stopService called")
-        ShakeService.stop(reactApplicationContext)
+        try {
+            val prefs = reactApplicationContext.getSharedPreferences(ShakeService.PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit().apply {
+                putBoolean(ShakeService.KEY_SHAKE_ENABLED, false)
+                apply()
+            }
+            Log.d(TAG, "[SHAKE SETTINGS] enabled = false")
+            ShakeService.stop(reactApplicationContext)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in stopService", e)
+        }
     }
 
     @ReactMethod
     fun updateSensitivity(sensitivity: String) {
-        val threshold = when (sensitivity.lowercase()) {
-            "low" -> 32.0f
-            "medium" -> 24.0f
-            "high" -> 16.0f
-            else -> 32.0f
-        }
+        val threshold = getThresholdForSensitivity(sensitivity)
         ShakeService.shakeThreshold = threshold
-        Log.d(TAG, "updateSensitivity updated threshold to $threshold")
+        try {
+            val prefs = reactApplicationContext.getSharedPreferences(ShakeService.PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit().putString(ShakeService.KEY_SHAKE_SENSITIVITY, sensitivity).apply()
+            Log.d(TAG, "updateSensitivity updated threshold to $threshold (sensitivity=$sensitivity)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error persisting sensitivity", e)
+        }
     }
 
     @ReactMethod
@@ -711,66 +560,6 @@ class ShakeServiceModule(reactContext: ReactApplicationContext) : ReactContextBa
     @ReactMethod
     fun isRunning(promise: Promise) {
         promise.resolve(ShakeService.isRunning)
-    }
-
-    @ReactMethod
-    fun updateWidgetData(
-        todaySpent: Double,
-        todayCount: Double,
-        todayBars: String,
-        monthlyBudget: Double,
-        monthSpent: Double,
-        monthName: String,
-        currency: String,
-        cat1Name: String,
-        cat1Pct: Double,
-        cat1Color: String,
-        cat2Name: String,
-        cat2Pct: Double,
-        cat2Color: String,
-        cat3Name: String,
-        cat3Pct: Double,
-        cat3Color: String,
-        cat4Name: String,
-        cat4Pct: Double,
-        cat4Color: String,
-        cat5Name: String,
-        cat5Pct: Double,
-        cat5Color: String
-    ) {
-        try {
-            val context = reactApplicationContext
-            val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
-            prefs.edit().apply {
-                putFloat("today_spent", todaySpent.toFloat())
-                putInt("today_count", todayCount.toInt())
-                putFloat("monthly_budget", monthlyBudget.toFloat())
-                putFloat("month_spent", monthSpent.toFloat())
-                putString("currency", currency)
-
-                putString(CategoryWidgetProvider.KEY_CAT1_NAME, cat1Name)
-                putInt(CategoryWidgetProvider.KEY_CAT1_PCT, cat1Pct.toInt())
-                putString(CategoryWidgetProvider.KEY_CAT1_COLOR, cat1Color)
-
-                putString(CategoryWidgetProvider.KEY_CAT2_NAME, cat2Name)
-                putInt(CategoryWidgetProvider.KEY_CAT2_PCT, cat2Pct.toInt())
-                putString(CategoryWidgetProvider.KEY_CAT2_COLOR, cat2Color)
-
-                putString(CategoryWidgetProvider.KEY_CAT3_NAME, cat3Name)
-                putInt(CategoryWidgetProvider.KEY_CAT3_PCT, cat3Pct.toInt())
-                putString(CategoryWidgetProvider.KEY_CAT3_COLOR, cat3Color)
-
-                putString(CategoryWidgetProvider.KEY_CAT4_NAME, cat4Name)
-                putInt(CategoryWidgetProvider.KEY_CAT4_PCT, cat4Pct.toInt())
-                putString(CategoryWidgetProvider.KEY_CAT4_COLOR, cat4Color)
-
-                apply()
-            }
-            updateAllWidgets(context)
-            Log.d(TAG, "Successfully synced CategoryWidget data: $cat1Name $cat1Pct% ($cat1Color), $cat2Name $cat2Pct% ($cat2Color)")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error updating widget data", e)
-        }
     }
 
     @ReactMethod
@@ -889,14 +678,6 @@ class ReminderReceiver : BroadcastReceiver() {
 
         scheduleAlarm(context, hour, minute)
 
-        val prefs = context.getSharedPreferences(ShakeServiceModule.PREFS_NAME, Context.MODE_PRIVATE)
-        val todayCount = prefs.getInt("today_count", 0)
-
-        if (todayCount > 0) {
-            Log.d(TAG, "[REMINDER] User has already logged $todayCount expenses today. Skipping reminder notification.")
-            return
-        }
-
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -960,146 +741,6 @@ class ShakeServicePackage : ReactPackage {
 }
 `;
 
-// ─── Layout & Drawable XMLs ──────────────────────────────────────────────────
-const XML_WIDGET_CATEGORY_CARD = `<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_category_root"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center_horizontal"
-    android:background="@drawable/widget_card_bg_gradient"
-    android:paddingTop="20dp"
-    android:paddingBottom="18dp"
-    android:paddingStart="16dp"
-    android:paddingEnd="16dp">
-
-    <TextView
-        android:id="@+id/widget_category_title"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="CATEGORY"
-        android:textColor="#C4B5FD"
-        android:textSize="20sp"
-        android:textStyle="bold"
-        android:letterSpacing="0.05"
-        android:layout_marginBottom="12dp" />
-
-    <ImageView
-        android:id="@+id/widget_category_rings"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:layout_gravity="center"
-        android:scaleType="fitCenter" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="14dp"
-        android:weightSum="4">
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical"
-            android:gravity="center_horizontal">
-            <TextView
-                android:id="@+id/widget_stat_deep_label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="FOOD"
-                android:textColor="#F59E0B"
-                android:textSize="11sp"
-                android:textStyle="bold" />
-            <TextView
-                android:id="@+id/widget_stat_deep_value"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="52%"
-                android:textColor="#FFFFFF"
-                android:textSize="17sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical"
-            android:gravity="center_horizontal">
-            <TextView
-                android:id="@+id/widget_stat_light_label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="SHOP"
-                android:textColor="#EC4899"
-                android:textSize="11sp"
-                android:textStyle="bold" />
-            <TextView
-                android:id="@+id/widget_stat_light_value"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="32%"
-                android:textColor="#FFFFFF"
-                android:textSize="17sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical"
-            android:gravity="center_horizontal">
-            <TextView
-                android:id="@+id/widget_stat_awake_label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="TRANS"
-                android:textColor="#38BDF8"
-                android:textSize="11sp"
-                android:textStyle="bold" />
-            <TextView
-                android:id="@+id/widget_stat_awake_value"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="15%"
-                android:textColor="#FFFFFF"
-                android:textSize="17sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical"
-            android:gravity="center_horizontal">
-            <TextView
-                android:id="@+id/widget_stat_quality_label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="BILLS"
-                android:textColor="#A78BFA"
-                android:textSize="11sp"
-                android:textStyle="bold" />
-            <TextView
-                android:id="@+id/widget_stat_quality_value"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="77%"
-                android:textColor="#FFFFFF"
-                android:textSize="17sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-    </LinearLayout>
-</LinearLayout>
-`;
-
 // ─── Helper: resolve package directory path ──────────────────────────────────
 function getPackageDirPath(config) {
   const pkg = config.android?.package || "com.harsh.expense";
@@ -1107,7 +748,7 @@ function getPackageDirPath(config) {
   return { pkg, pkgDir };
 }
 
-// ─── 1. Write Kotlin, Layouts, Drawables and XML files during prebuild ───────
+// ─── 1. Write Kotlin source files during prebuild ────────────────────────────
 function withShakeServiceFiles(config) {
   return withDangerousMod(config, [
     "android",
@@ -1130,9 +771,6 @@ function withShakeServiceFiles(config) {
       );
 
       fs.mkdirSync(javaDir, { recursive: true });
-      fs.mkdirSync(path.join(resDir, "layout"), { recursive: true });
-      fs.mkdirSync(path.join(resDir, "xml"), { recursive: true });
-      fs.mkdirSync(path.join(resDir, "drawable"), { recursive: true });
       fs.mkdirSync(path.join(resDir, "values"), { recursive: true });
       fs.mkdirSync(path.join(resDir, "values-night"), { recursive: true });
 
@@ -1142,42 +780,12 @@ function withShakeServiceFiles(config) {
         "BootReceiver.kt": BOOT_RECEIVER_KT,
         "ShakeServiceModule.kt": SHAKE_SERVICE_MODULE_KT,
         "ShakeServicePackage.kt": SHAKE_SERVICE_PACKAGE_KT,
-        "RingRenderer.kt": RING_RENDERER_KT,
-        "CategoryWidgetProvider.kt": CATEGORY_WIDGET_PROVIDER_KT,
         "ReminderReceiver.kt": REMINDER_RECEIVER_KT,
       };
 
       for (const [filename, content] of Object.entries(files)) {
         const filepath = path.join(javaDir, filename);
         fs.writeFileSync(filepath, content.replace(/\{\{PACKAGE\}\}/g, pkg));
-      }
-
-      // Layout XML
-      fs.writeFileSync(path.join(resDir, "layout", "widget_category_card.xml"), XML_WIDGET_CATEGORY_CARD);
-
-      // Widget Provider Info XML
-      const categoryWidgetInfoXml = `<?xml version="1.0" encoding="utf-8"?>
-<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="160dp"
-    android:minHeight="160dp"
-    android:targetCellWidth="2"
-    android:targetCellHeight="2"
-    android:updatePeriodMillis="1800000"
-    android:description="@string/widget_category_description"
-    android:previewImage="@mipmap/ic_launcher"
-    android:initialLayout="@layout/widget_category_card"
-    android:resizeMode="horizontal|vertical"
-    android:widgetCategory="home_screen" />
-`;
-      fs.writeFileSync(path.join(resDir, "xml", "category_widget_info.xml"), categoryWidgetInfoXml);
-
-      // Drawables
-      const drawables = {
-        "widget_card_bg_gradient.xml": `<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="28dp"/><gradient android:type="linear" android:angle="270" android:startColor="#241568" android:endColor="#150B3D"/></shape>`,
-      };
-
-      for (const [filename, content] of Object.entries(drawables)) {
-        fs.writeFileSync(path.join(resDir, "drawable", filename), content);
       }
 
       // Colors
@@ -1196,7 +804,7 @@ function withShakeServiceFiles(config) {
   ]);
 }
 
-// ─── 2. Register ShakeService, CategoryWidgetProvider, and permissions ──────
+// ─── 2. Register ShakeService, BootReceiver, and permissions ─────────────────
 function withShakeServiceManifest(config) {
   return withAndroidManifest(config, (config) => {
     const manifest = config.modResults;
@@ -1230,28 +838,6 @@ function withShakeServiceManifest(config) {
     }
 
     const receivers = [
-      {
-        $: {
-          "android:name": ".CategoryWidgetProvider",
-          "android:label": "@string/widget_category_title",
-          "android:exported": "true",
-        },
-        "intent-filter": [
-          {
-            action: [
-              { $: { "android:name": "android.appwidget.action.APPWIDGET_UPDATE" } },
-            ],
-          },
-        ],
-        "meta-data": [
-          {
-            $: {
-              "android:name": "android.appwidget.provider",
-              "android:resource": "@xml/category_widget_info",
-            },
-          },
-        ],
-      },
       {
         $: {
           "android:name": ".BootReceiver",
@@ -1380,6 +966,8 @@ function withShakeServiceMainActivity(config) {
     val uri = intent.dataString
     val action = intent.getStringExtra("action") ?: intent.action
     if (action == "ADD_EXPENSE" || (uri != null && (uri.contains("add-expense") || uri.contains("shake-open")))) {
+      Log.d("MainActivity", "[SHAKE] Notification tapped")
+      Log.d("MainActivity", "[SHAKE] ADD_EXPENSE action requested")
       ShakeServiceModule.emitShakeToJS()
     }
   }`;
@@ -1396,16 +984,13 @@ function withShakeServiceMainActivity(config) {
   });
 }
 
-// ─── 5. Add string resources for widgets and app ───────────────────────────
+// ─── 5. Add string resources for app ─────────────────────────────────────────
 function withShakeServiceStrings(config) {
   return withStringsXml(config, (config) => {
     const strings = config.modResults.resources.string || [];
 
     const stringMap = {
       app_name: "Expenza",
-      widget_category_title: '"Category"',
-      widget_category_description: '"Monthly spending breakdown by category"',
-      widget_rings_desc: '"Concentric category spending rings"',
     };
 
     for (const [name, value] of Object.entries(stringMap)) {
@@ -1420,7 +1005,9 @@ function withShakeServiceStrings(config) {
       }
     }
 
-    config.modResults.resources.string = strings;
+    config.modResults.resources.string = strings.filter(
+      (s) => !s.$?.name?.startsWith("widget_")
+    );
     return config;
   });
 }

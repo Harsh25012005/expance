@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import { LayoutDashboard, Receipt, PieChart, Sliders } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -19,25 +19,39 @@ const TABS: { id: TabScreen; label: string }[] = [
   { id: 'settings', label: 'Settings' },
 ];
 
-export const CustomTabBar: React.FC<CustomTabBarProps> = ({ activeTab, onTabChange }) => {
-  const { settings } = useExpenses();
-  const insets = useSafeAreaInsets();
+const TabButton: React.FC<{
+  tab: typeof TABS[0];
+  isActive: boolean;
+  onPress: () => void;
+}> = ({ tab, isActive, onPress }) => {
+  // Subtle scale, opacity, and small vertical movement (180-250ms duration)
+  const scaleAnim = useRef(new Animated.Value(isActive ? 1.06 : 1.0)).current;
+  const translateYAnim = useRef(new Animated.Value(isActive ? -1.5 : 0)).current;
+  const opacityAnim = useRef(new Animated.Value(isActive ? 1.0 : 0.7)).current;
 
-  const handlePress = (tabId: TabScreen) => {
-    if (tabId !== activeTab) {
-      if (settings.hapticsEnabled) {
-        try {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
-        } catch { }
-      }
-      onTabChange(tabId);
-    }
-  };
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(scaleAnim, {
+        toValue: isActive ? 1.06 : 1.0,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateYAnim, {
+        toValue: isActive ? -1.5 : 0,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacityAnim, {
+        toValue: isActive ? 1.0 : 0.7,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [isActive]);
 
-  const renderTabIcon = (tabId: TabScreen, isActive: boolean) => {
-    // High contrast white icons against the solid blue background
-    const color = isActive ? '#FFFFFF' : 'rgba(255, 255, 255, 0.65)';
-    const strokeWidth = isActive ? 2 : 1.75;
+  const renderTabIcon = (tabId: TabScreen, active: boolean) => {
+    const color = active ? '#FFFFFF' : 'rgba(255, 255, 255, 0.65)';
+    const strokeWidth = active ? 2.1 : 1.75;
     const size = 18;
 
     switch (tabId) {
@@ -54,36 +68,67 @@ export const CustomTabBar: React.FC<CustomTabBarProps> = ({ activeTab, onTabChan
   };
 
   return (
+    <TouchableOpacity
+      style={[styles.tabButton, isActive && styles.activeTabButton]}
+      onPress={onPress}
+      activeOpacity={0.8}
+      accessibilityRole="button"
+      accessibilityLabel={tab.label}
+      accessibilityState={{ selected: isActive }}
+    >
+      <Animated.View
+        style={[
+          styles.iconWrap,
+          {
+            transform: [
+              { scale: scaleAnim },
+              { translateY: translateYAnim },
+            ],
+            opacity: opacityAnim,
+          },
+        ]}
+      >
+        {renderTabIcon(tab.id, isActive)}
+      </Animated.View>
+      <Text
+        style={[
+          styles.tabLabel,
+          isActive ? styles.activeTabLabel : styles.inactiveTabLabel,
+        ]}
+        numberOfLines={1}
+      >
+        {tab.label}
+      </Text>
+    </TouchableOpacity>
+  );
+};
+
+export const CustomTabBar: React.FC<CustomTabBarProps> = ({ activeTab, onTabChange }) => {
+  const { settings } = useExpenses();
+  const insets = useSafeAreaInsets();
+
+  const handlePress = (tabId: TabScreen) => {
+    if (tabId !== activeTab) {
+      if (settings.hapticsEnabled) {
+        try {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+        } catch {}
+      }
+      onTabChange(tabId);
+    }
+  };
+
+  return (
     <View style={[styles.wrapper, { bottom: Math.max(insets.bottom, 12) + 4 }]}>
       <View style={styles.container}>
-        {TABS.map((tab) => {
-          const isActive = activeTab === tab.id;
-
-          return (
-            <TouchableOpacity
-              key={tab.id}
-              style={[styles.tabButton, isActive && styles.activeTabButton]}
-              onPress={() => handlePress(tab.id)}
-              activeOpacity={0.8}
-              accessibilityRole="button"
-              accessibilityLabel={tab.label}
-              accessibilityState={{ selected: isActive }}
-            >
-              <View style={styles.iconWrap}>
-                {renderTabIcon(tab.id, isActive)}
-              </View>
-              <Text
-                style={[
-                  styles.tabLabel,
-                  isActive ? styles.activeTabLabel : styles.inactiveTabLabel,
-                ]}
-                numberOfLines={1}
-              >
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+        {TABS.map((tab) => (
+          <TabButton
+            key={tab.id}
+            tab={tab}
+            isActive={activeTab === tab.id}
+            onPress={() => handlePress(tab.id)}
+          />
+        ))}
       </View>
     </View>
   );

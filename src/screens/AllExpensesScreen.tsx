@@ -1,289 +1,952 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
+  StyleSheet,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
   ScrollView,
-  SectionList,
+  Modal,
+  Animated,
 } from 'react-native';
-import { Search, X, Receipt, Plus, List, CalendarDays } from 'lucide-react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  Search,
+  X,
+  Filter,
+  Check,
+  Utensils,
+  Car,
+  ShoppingBag,
+  Zap,
+  Film,
+  HeartPulse,
+  Plane,
+  GraduationCap,
+  MoreHorizontal,
+  RotateCcw,
+} from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useExpenses } from '../context/ExpenseContext';
 import { useShake } from '../context/ShakeContext';
 import { CategoryType, Expense } from '../types/expense';
 import { CATEGORIES } from '../constants/categories';
-import { ExpenseListItem } from '../components/ExpenseListItem';
-import { CalendarView } from '../components/CalendarView';
+import {
+  formatCurrency,
+  formatTime,
+  formatAndroidDate,
+} from '../utils/formatters';
+import { getMonthName } from '../utils/analyticsHelpers';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { formatCurrency, groupExpensesByDate } from '../utils/formatters';
+import { CalendarView } from '../components/CalendarView';
 import { theme } from '../constants/theme';
 
+export type SortType = 'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc';
+export type DateFilterType = 'all' | 'today' | 'yesterday' | 'week' | 'month';
+export type TimeFilterType = 'all' | 'morning' | 'afternoon' | 'evening';
+
 export const AllExpensesScreen: React.FC = () => {
-  const { expenses, settings, deleteExpense } = useExpenses();
-  const { openQuickAddModal } = useShake();
+  const { expenses, settings, stats, deleteExpense } = useExpenses();
+  const { openAddExpensePopup } = useShake();
   const insets = useSafeAreaInsets();
 
+  // Tab View Mode: 'list' | 'calendar'
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
+
+  // Search & Filter Active States
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedCategory, setSelectedCategory] = useState<CategoryType | 'All'>('All');
-  const [deletingExpense, setDeletingExpense] = useState<Expense | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<CategoryType | 'ALL'>('ALL');
+  const [sortOption, setSortOption] = useState<SortType>('date_desc');
+  const [dateFilter, setDateFilter] = useState<DateFilterType>('all');
+  const [timeFilter, setTimeFilter] = useState<TimeFilterType>('all');
+
+  // Draft filter states for Bottom Sheet
+  const [draftCategory, setDraftCategory] = useState<CategoryType | 'ALL'>('ALL');
+  const [draftSort, setDraftSort] = useState<SortType>('date_desc');
+  const [draftDate, setDraftDate] = useState<DateFilterType>('all');
+  const [draftTime, setDraftTime] = useState<TimeFilterType>('all');
+
+  // Filter Bottom Sheet Modal State & Animations
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState<boolean>(false);
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const sheetTranslateY = useRef(new Animated.Value(450)).current;
+
+  // Delete prompt state
+  const [expenseToDelete, setExpenseToDelete] = useState<Expense | null>(null);
+
+  const now = new Date();
 
   const triggerHaptic = () => {
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
-    } catch { }
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    } catch {}
   };
 
-  const filteredExpenses = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
+  const isFilterActive = useMemo(() => {
+    return (
+      selectedCategory !== 'ALL' ||
+      sortOption !== 'date_desc' ||
+      dateFilter !== 'all' ||
+      timeFilter !== 'all'
+    );
+  }, [selectedCategory, sortOption, dateFilter, timeFilter]);
 
-    return expenses.filter((exp) => {
-      if (query) {
-        const matchName = exp.name.toLowerCase().includes(query);
-        const matchNotes = exp.notes?.toLowerCase().includes(query) || false;
-        const matchAmount = exp.amount.toString().includes(query);
-        if (!matchName && !matchNotes && !matchAmount) {
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (draftCategory !== 'ALL') count++;
+    if (draftSort !== 'date_desc') count++;
+    if (draftDate !== 'all') count++;
+    if (draftTime !== 'all') count++;
+    return count;
+  }, [draftCategory, draftSort, draftDate, draftTime]);
+
+  // Current Month Total Spending
+  const thisMonthSpent = useMemo(() => {
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth();
+    return expenses
+      .filter((exp) => {
+        const d = new Date(exp.createdAt);
+        return d.getFullYear() === curYear && d.getMonth() === curMonth;
+      })
+      .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+  }, [expenses]);
+
+  // Open Bottom Sheet with smooth fade-in overlay
+  const handleOpenFilterSheet = () => {
+    triggerHaptic();
+    setDraftCategory(selectedCategory);
+    setDraftSort(sortOption);
+    setDraftDate(dateFilter);
+    setDraftTime(timeFilter);
+
+    setIsFilterModalOpen(true);
+    Animated.parallel([
+      Animated.timing(overlayOpacity, {
+        toValue: 0.45,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.timing(sheetTranslateY, {
+        toValue: 0,
+        duration: 240,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  // Close Bottom Sheet with smooth fade-out overlay
+  const handleCloseFilterSheet = () => {
+    triggerHaptic();
+    Animated.parallel([
+      Animated.timing(overlayOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(sheetTranslateY, {
+        toValue: 450,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setIsFilterModalOpen(false);
+    });
+  };
+
+  const handleApplyFilters = () => {
+    triggerHaptic();
+    setSelectedCategory(draftCategory);
+    setSortOption(draftSort);
+    setDateFilter(draftDate);
+    setTimeFilter(draftTime);
+    handleCloseFilterSheet();
+  };
+
+  const handleResetFilters = () => {
+    triggerHaptic();
+    setSelectedCategory('ALL');
+    setSortOption('date_desc');
+    setDateFilter('all');
+    setTimeFilter('all');
+    setSearchQuery('');
+  };
+
+  const handleResetDraftFilters = () => {
+    triggerHaptic();
+    setDraftCategory('ALL');
+    setDraftSort('date_desc');
+    setDraftDate('all');
+    setDraftTime('all');
+  };
+
+  // Filter & Sort Logic
+  const filteredExpenses = useMemo(() => {
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfYesterday = startOfToday - 24 * 60 * 60 * 1000;
+    const endOfYesterday = startOfToday - 1;
+    const sevenDaysAgo = startOfToday - 7 * 24 * 60 * 60 * 1000;
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    const filtered = expenses.filter((exp) => {
+      const expDate = new Date(exp.createdAt);
+      const expTime = expDate.getTime();
+      const expHour = expDate.getHours();
+
+      // Search Query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchName = exp.name.toLowerCase().includes(q);
+        const matchCategory = exp.category.toLowerCase().includes(q);
+        const matchNotes = exp.notes?.toLowerCase().includes(q);
+        if (!matchName && !matchCategory && !matchNotes) return false;
+      }
+
+      // Category
+      if (selectedCategory !== 'ALL' && exp.category !== selectedCategory) {
+        return false;
+      }
+
+      // Date Filter
+      if (dateFilter === 'today') {
+        if (expTime < startOfToday) return false;
+      } else if (dateFilter === 'yesterday') {
+        if (expTime < startOfYesterday || expTime > endOfYesterday) return false;
+      } else if (dateFilter === 'week') {
+        if (expTime < sevenDaysAgo) return false;
+      } else if (dateFilter === 'month') {
+        if (expDate.getFullYear() !== currentYear || expDate.getMonth() !== currentMonth) {
           return false;
         }
       }
 
-      if (selectedCategory !== 'All' && exp.category !== selectedCategory) {
-        return false;
+      // Time Filter
+      if (timeFilter === 'morning') {
+        if (expHour < 6 || expHour >= 12) return false;
+      } else if (timeFilter === 'afternoon') {
+        if (expHour < 12 || expHour >= 18) return false;
+      } else if (timeFilter === 'evening') {
+        if (expHour < 18) return false;
       }
 
       return true;
     });
-  }, [expenses, searchQuery, selectedCategory]);
 
-  const filteredTotal = useMemo(() => {
-    return filteredExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+    // Numeric & Date Sorting
+    return filtered.sort((a, b) => {
+      const amountA = Number(a.amount) || 0;
+      const amountB = Number(b.amount) || 0;
+      const dateA = new Date(a.createdAt).getTime();
+      const dateB = new Date(b.createdAt).getTime();
+
+      switch (sortOption) {
+        case 'amount_desc':
+          return amountB - amountA;
+        case 'amount_asc':
+          return amountA - amountB;
+        case 'date_asc':
+          return dateA - dateB;
+        case 'date_desc':
+        default:
+          return dateB - dateA;
+      }
+    });
+  }, [
+    expenses,
+    searchQuery,
+    selectedCategory,
+    dateFilter,
+    timeFilter,
+    sortOption,
+  ]);
+
+  // Draft filter match count for live preview in Bottom Sheet button
+  const draftMatchCount = useMemo(() => {
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfYesterday = startOfToday - 24 * 60 * 60 * 1000;
+    const endOfYesterday = startOfToday - 1;
+    const sevenDaysAgo = startOfToday - 7 * 24 * 60 * 60 * 1000;
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    return expenses.filter((exp) => {
+      const expDate = new Date(exp.createdAt);
+      const expTime = expDate.getTime();
+      const expHour = expDate.getHours();
+
+      if (draftCategory !== 'ALL' && exp.category !== draftCategory) {
+        return false;
+      }
+
+      if (draftDate === 'today') {
+        if (expTime < startOfToday) return false;
+      } else if (draftDate === 'yesterday') {
+        if (expTime < startOfYesterday || expTime > endOfYesterday) return false;
+      } else if (draftDate === 'week') {
+        if (expTime < sevenDaysAgo) return false;
+      } else if (draftDate === 'month') {
+        if (expDate.getFullYear() !== currentYear || expDate.getMonth() !== currentMonth) {
+          return false;
+        }
+      }
+
+      if (draftTime === 'morning') {
+        if (expHour < 6 || expHour >= 12) return false;
+      } else if (draftTime === 'afternoon') {
+        if (expHour < 12 || expHour >= 18) return false;
+      } else if (draftTime === 'evening') {
+        if (expHour < 18) return false;
+      }
+
+      return true;
+    }).length;
+  }, [
+    expenses,
+    draftCategory,
+    draftDate,
+    draftTime,
+  ]);
+
+  // Group Chronological Story by Date with Android Custom Date Format
+  const storyGroups = useMemo(() => {
+    const groups: { heading: string; data: Expense[] }[] = [];
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfYesterday = startOfToday - 24 * 60 * 60 * 1000;
+
+    const getHeading = (dateStr: string) => {
+      const d = new Date(dateStr);
+      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+      if (dayStart === startOfToday) return 'TODAY';
+      if (dayStart === startOfYesterday) return 'YESTERDAY';
+      return formatAndroidDate(d, true).toUpperCase();
+    };
+
+    const map = new Map<string, Expense[]>();
+
+    for (const exp of filteredExpenses) {
+      const heading = getHeading(exp.createdAt);
+      if (!map.has(heading)) {
+        map.set(heading, []);
+      }
+      map.get(heading)!.push(exp);
+    }
+
+    map.forEach((data, heading) => {
+      groups.push({ heading, data });
+    });
+
+    return groups;
   }, [filteredExpenses]);
 
-  const groupedSections = useMemo(() => {
-    return groupExpensesByDate(filteredExpenses);
-  }, [filteredExpenses]);
-
-  const handleDeleteConfirm = async () => {
-    if (deletingExpense) {
-      await deleteExpense(deletingExpense.id);
-      setDeletingExpense(null);
+  const renderCategoryIcon = (category: CategoryType, size: number = 14, color?: string) => {
+    const iconColor = color || theme.colors.textPrimary;
+    switch (category) {
+      case 'Food':
+        return <Utensils size={size} color={iconColor} strokeWidth={1.5} />;
+      case 'Transport':
+        return <Car size={size} color={iconColor} strokeWidth={1.5} />;
+      case 'Shopping':
+        return <ShoppingBag size={size} color={iconColor} strokeWidth={1.5} />;
+      case 'Bills':
+        return <Zap size={size} color={iconColor} strokeWidth={1.5} />;
+      case 'Entertainment':
+        return <Film size={size} color={iconColor} strokeWidth={1.5} />;
+      case 'Health':
+        return <HeartPulse size={size} color={iconColor} strokeWidth={1.5} />;
+      case 'Travel':
+        return <Plane size={size} color={iconColor} strokeWidth={1.5} />;
+      case 'Education':
+        return <GraduationCap size={size} color={iconColor} strokeWidth={1.5} />;
+      case 'Other':
+      default:
+        return <MoreHorizontal size={size} color={iconColor} strokeWidth={1.5} />;
     }
   };
 
-  const hasFilterActive = searchQuery.length > 0 || selectedCategory !== 'All';
-
   return (
     <View style={styles.container}>
-      {/* 1. View Switcher: List | Calendar */}
-      <View style={styles.switcherContainer}>
-        <View style={styles.switcher}>
-          <TouchableOpacity
-            style={[styles.switchBtn, viewMode === 'list' && styles.switchBtnActive]}
-            onPress={() => {
-              triggerHaptic();
-              setViewMode('list');
-            }}
-            activeOpacity={0.7}
-          >
-            <List
-              size={14}
-              color={viewMode === 'list' ? theme.colors.primary : theme.colors.textSecondary}
-              strokeWidth={1.75}
-            />
-            <Text style={[styles.switchText, viewMode === 'list' && styles.switchTextActive]}>
-              List
-            </Text>
-          </TouchableOpacity>
+      {/* ─── Screen Scroll Container (Single global Header comes from App.tsx) ─── */}
+      <ScrollView
+        style={styles.mainScroll}
+        contentContainerStyle={[
+          styles.mainScrollContent,
+          { paddingBottom: 110 + Math.max(insets.bottom, 16) },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ─── 1. Monthly Summary Card (Hero Balance Style) ─── */}
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryTopRow}>
+            <Text style={styles.summaryLabel}>THIS MONTH'S SPENDING</Text>
+            <Text style={styles.summaryMonth}>{getMonthName(now.getMonth())} {now.getFullYear()}</Text>
+          </View>
 
+          <View style={styles.amountContainer}>
+            <Text style={styles.amountText}>
+              {formatCurrency(thisMonthSpent, settings.currency)}
+            </Text>
+          </View>
+
+          <View style={styles.summaryDivider} />
+
+          <View style={styles.summaryBottomRow}>
+            <View style={styles.summaryStatCol}>
+              <Text style={styles.summaryStatLabel}>Transactions</Text>
+              <Text style={styles.summaryStatValue}>{filteredExpenses.length}</Text>
+            </View>
+            <View style={styles.summaryVerticalDivider} />
+            <View style={styles.summaryStatCol}>
+              <Text style={styles.summaryStatLabel}>Avg. Expense</Text>
+              <Text style={styles.summaryStatValue}>
+                {formatCurrency(stats.averageExpense, settings.currency)}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* ─── 2. Controls: Segmented Switcher + Filter Trigger ─── */}
+        <View style={styles.controlsRow}>
+          <View style={styles.segmentedControl}>
+            <TouchableOpacity
+              style={[
+                styles.segmentedButton,
+                viewMode === 'list' && styles.segmentedButtonActive,
+              ]}
+              onPress={() => {
+                triggerHaptic();
+                setViewMode('list');
+              }}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.segmentedButtonText,
+                  viewMode === 'list' && styles.segmentedButtonTextActive,
+                ]}
+              >
+                List
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.segmentedButton,
+                viewMode === 'calendar' && styles.segmentedButtonActive,
+              ]}
+              onPress={() => {
+                triggerHaptic();
+                setViewMode('calendar');
+              }}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.segmentedButtonText,
+                  viewMode === 'calendar' && styles.segmentedButtonTextActive,
+                ]}
+              >
+                Calendar
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Compact Single Filter Control */}
           <TouchableOpacity
-            style={[styles.switchBtn, viewMode === 'calendar' && styles.switchBtnActive]}
-            onPress={() => {
-              triggerHaptic();
-              setViewMode('calendar');
-            }}
+            style={[styles.filterBtn, isFilterActive && styles.filterBtnActive]}
+            onPress={handleOpenFilterSheet}
             activeOpacity={0.7}
           >
-            <CalendarDays
+            <Filter
               size={14}
-              color={viewMode === 'calendar' ? theme.colors.primary : theme.colors.textSecondary}
+              color={isFilterActive ? '#FFFFFF' : theme.colors.textPrimary}
               strokeWidth={1.75}
             />
-            <Text style={[styles.switchText, viewMode === 'calendar' && styles.switchTextActive]}>
-              Calendar
+            <Text
+              style={[
+                styles.filterBtnText,
+                isFilterActive && styles.filterBtnTextActive,
+              ]}
+            >
+              Filter
             </Text>
+            {isFilterActive && <View style={styles.filterDot} />}
           </TouchableOpacity>
         </View>
-      </View>
 
-      {/* 2. Calendar View */}
-      {viewMode === 'calendar' ? (
-        <CalendarView />
-      ) : (
-        /* 3. List View */
-        <>
-          {/* Minimalist Search Input */}
-          <View style={styles.searchSection}>
-            <View style={styles.searchBar}>
-              <Search size={15} color={theme.colors.textTertiary} strokeWidth={1.5} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search by name or amount..."
-                placeholderTextColor={theme.colors.textTertiary}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                returnKeyType="search"
-              />
-              {searchQuery.length > 0 && (
+        {/* Search Input Bar */}
+        <View style={styles.searchWrap}>
+          <Search size={14} color={theme.colors.textTertiary} strokeWidth={1.5} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search expenses..."
+            placeholderTextColor={theme.colors.textTertiary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity
+              onPress={() => setSearchQuery('')}
+              style={styles.clearSearchBtn}
+              activeOpacity={0.7}
+            >
+              <X size={13} color={theme.colors.textSecondary} strokeWidth={2} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Active Filter Chips Ribbon (Quick Visibility & Clear) */}
+        {isFilterActive && (
+          <View style={styles.activeFilterRibbon}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activeFilterScroll}>
+              {selectedCategory !== 'ALL' && (
                 <TouchableOpacity
-                  onPress={() => {
-                    triggerHaptic();
-                    setSearchQuery('');
-                  }}
-                  style={styles.searchClearBtn}
+                  style={styles.activeChip}
+                  onPress={() => setSelectedCategory('ALL')}
+                  activeOpacity={0.7}
                 >
-                  <X size={13} color={theme.colors.textTertiary} strokeWidth={1.5} />
+                  <Text style={styles.activeChipText}>{selectedCategory}</Text>
+                  <X size={11} color={theme.colors.primary} strokeWidth={2.5} />
+                </TouchableOpacity>
+              )}
+              {dateFilter !== 'all' && (
+                <TouchableOpacity
+                  style={styles.activeChip}
+                  onPress={() => setDateFilter('all')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.activeChipText}>
+                    {dateFilter === 'today'
+                      ? 'Today'
+                      : dateFilter === 'yesterday'
+                      ? 'Yesterday'
+                      : dateFilter === 'week'
+                      ? 'This Week'
+                      : 'This Month'}
+                  </Text>
+                  <X size={11} color={theme.colors.primary} strokeWidth={2.5} />
+                </TouchableOpacity>
+              )}
+              {timeFilter !== 'all' && (
+                <TouchableOpacity
+                  style={styles.activeChip}
+                  onPress={() => setTimeFilter('all')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.activeChipText}>
+                    {timeFilter === 'morning'
+                      ? 'Morning'
+                      : timeFilter === 'afternoon'
+                      ? 'Afternoon'
+                      : 'Evening'}
+                  </Text>
+                  <X size={11} color={theme.colors.primary} strokeWidth={2.5} />
+                </TouchableOpacity>
+              )}
+              {sortOption !== 'date_desc' && (
+                <TouchableOpacity
+                  style={styles.activeChip}
+                  onPress={() => setSortOption('date_desc')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.activeChipText}>
+                    {sortOption === 'date_asc'
+                      ? 'Oldest'
+                      : sortOption === 'amount_desc'
+                      ? 'Highest'
+                      : 'Lowest'}
+                  </Text>
+                  <X size={11} color={theme.colors.primary} strokeWidth={2.5} />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={styles.clearAllFiltersBtn}
+                onPress={handleResetFilters}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.clearAllFiltersText}>Clear all</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        )}
+
+        {/* ─── 3. Main Body: List View OR Calendar View ─── */}
+        {viewMode === 'list' ? (
+          filteredExpenses.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>No expenses recorded</Text>
+              <Text style={styles.emptyDesc}>
+                {isFilterActive || searchQuery.trim()
+                  ? 'Try changing your filters or search query.'
+                  : 'Shake your phone anytime to record an expense.'}
+              </Text>
+              {(isFilterActive || searchQuery.trim().length > 0) && (
+                <TouchableOpacity
+                  style={styles.resetBtn}
+                  onPress={handleResetFilters}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.resetBtnText}>Clear Filters</Text>
                 </TouchableOpacity>
               )}
             </View>
-          </View>
+          ) : (
+            <View style={styles.storyContainer}>
+              {storyGroups.map((group) => (
+                <View key={group.heading} style={styles.storyGroup}>
+                  <Text style={styles.dateGroupHeading}>{group.heading}</Text>
 
-          {/* Horizontal Category Filter Pills */}
-          <View style={styles.filtersSection}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.filtersContent}
-            >
-              <TouchableOpacity
-                style={[
-                  styles.filterPill,
-                  selectedCategory === 'All' && styles.filterPillActive,
-                ]}
-                onPress={() => {
-                  triggerHaptic();
-                  setSelectedCategory('All');
-                }}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.filterPillText,
-                    selectedCategory === 'All' && styles.filterPillTextActive,
-                  ]}
-                >
-                  All
-                </Text>
-              </TouchableOpacity>
+                  <View style={styles.storyCard}>
+                    {group.data.map((exp, idx) => (
+                      <TouchableOpacity
+                        key={exp.id}
+                        style={[
+                          styles.expenseItemRow,
+                          idx > 0 && styles.expenseItemRowDivider,
+                        ]}
+                        onPress={() => {
+                          triggerHaptic();
+                          openAddExpensePopup({ initialExpense: exp });
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.itemLeft}>
+                          <View style={styles.iconCircle}>
+                            {renderCategoryIcon(exp.category, 14)}
+                          </View>
+                          <View style={styles.itemTextCol}>
+                            <Text style={styles.itemName}>{exp.name}</Text>
+                            <View style={styles.itemMetaRow}>
+                              <Text style={styles.itemCategory}>{exp.category}</Text>
+                              <Text style={styles.itemDot}>·</Text>
+                              <Text style={styles.itemTime}>{formatTime(exp.createdAt)}</Text>
+                              {exp.notes ? (
+                                <>
+                                  <Text style={styles.itemDot}>·</Text>
+                                  <Text style={styles.itemNotes} numberOfLines={1}>
+                                    {exp.notes}
+                                  </Text>
+                                </>
+                              ) : null}
+                            </View>
+                          </View>
+                        </View>
 
-              {CATEGORIES.map((cat) => {
-                const isSelected = selectedCategory === cat.id;
-                return (
+                        <View style={styles.itemRight}>
+                          <Text style={styles.itemAmount}>
+                            {formatCurrency(exp.amount, settings.currency)}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </View>
+          )
+        ) : (
+          <CalendarView
+            onEditExpense={(exp) => openAddExpensePopup({ initialExpense: exp })}
+            onDeleteExpense={(exp) => setExpenseToDelete(exp)}
+          />
+        )}
+      </ScrollView>
+
+      {/* ─── 4. Clean Modern Filter Bottom Sheet ─── */}
+      <Modal
+        visible={isFilterModalOpen}
+        transparent
+        animationType="none"
+        onRequestClose={handleCloseFilterSheet}
+        statusBarTranslucent
+      >
+        <View style={styles.modalRoot}>
+          {/* Fading Backdrop */}
+          <Animated.View style={[styles.backdrop, { opacity: overlayOpacity }]}>
+            <TouchableOpacity
+              style={StyleSheet.absoluteFill}
+              activeOpacity={1}
+              onPress={handleCloseFilterSheet}
+            />
+          </Animated.View>
+
+          {/* Sliding Bottom Sheet */}
+          <Animated.View
+            style={[
+              styles.bottomSheet,
+              {
+                paddingBottom: Math.max(insets.bottom, 16) + 12,
+                transform: [{ translateY: sheetTranslateY }],
+              },
+            ]}
+          >
+            {/* Sheet Handle */}
+            <View style={styles.sheetHandle} />
+
+            {/* Header: Title + Active count + Reset + Close */}
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHeaderLeft}>
+                <Text style={styles.modalTitle}>Filter Expenses</Text>
+                {activeFilterCount > 0 && (
+                  <View style={styles.activeCountBadge}>
+                    <Text style={styles.activeCountText}>{activeFilterCount} active</Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.modalHeaderRight}>
+                {activeFilterCount > 0 && (
                   <TouchableOpacity
-                    key={cat.id}
-                    style={[styles.filterPill, isSelected && styles.filterPillActive]}
+                    onPress={handleResetDraftFilters}
+                    style={styles.resetDraftBtn}
+                    activeOpacity={0.7}
+                  >
+                    <RotateCcw size={12} color={theme.colors.textSecondary} strokeWidth={2} />
+                    <Text style={styles.resetDraftText}>Reset</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.modalCloseBtn}
+                  onPress={handleCloseFilterSheet}
+                  activeOpacity={0.7}
+                >
+                  <X size={16} color={theme.colors.textPrimary} strokeWidth={2} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.filterScroll}>
+              {/* ─── Section 1: Category ─── */}
+              <View style={styles.sectionBlock}>
+                <Text style={styles.sectionHeading}>CATEGORY</Text>
+                <View style={styles.chipGrid}>
+                  <TouchableOpacity
+                    style={[
+                      styles.chipPill,
+                      draftCategory === 'ALL' && styles.chipPillActive,
+                    ]}
                     onPress={() => {
                       triggerHaptic();
-                      setSelectedCategory(cat.id);
+                      setDraftCategory('ALL');
                     }}
                     activeOpacity={0.7}
                   >
                     <Text
                       style={[
-                        styles.filterPillText,
-                        isSelected && styles.filterPillTextActive,
+                        styles.chipPillText,
+                        draftCategory === 'ALL' && styles.chipPillTextActive,
                       ]}
                     >
-                      {cat.label}
+                      All
                     </Text>
                   </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
 
-          {/* Grouped SectionList */}
-          {filteredExpenses.length > 0 ? (
-            <SectionList
-              sections={groupedSections}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={[
-                styles.listContent,
-                { paddingBottom: 85 + Math.max(insets.bottom, 16) },
-              ]}
-              showsVerticalScrollIndicator={false}
-              renderSectionHeader={({ section: { title } }) => (
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionHeaderText}>{title}</Text>
+                  {CATEGORIES.map((cat) => {
+                    const isSelected = draftCategory === cat.id;
+                    return (
+                      <TouchableOpacity
+                        key={cat.id}
+                        style={[
+                          styles.chipPill,
+                          isSelected && styles.chipPillActive,
+                        ]}
+                        onPress={() => {
+                          triggerHaptic();
+                          setDraftCategory(cat.id);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <View style={[styles.catIconWrap, { backgroundColor: cat.bgColor }]}>
+                          {renderCategoryIcon(cat.id, 12, cat.color)}
+                        </View>
+                        <Text
+                          style={[
+                            styles.chipPillText,
+                            isSelected && styles.chipPillTextActive,
+                          ]}
+                        >
+                          {cat.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
-              )}
-              renderItem={({ item }) => (
-                <ExpenseListItem
-                  expense={item}
-                  onEdit={(exp) => openQuickAddModal({ initialExpense: exp })}
-                  onDelete={(exp) => setDeletingExpense(exp)}
-                  showDate={false}
-                />
-              )}
-              ItemSeparatorComponent={() => <View style={styles.itemSeparator} />}
-              SectionSeparatorComponent={() => <View style={styles.sectionSeparator} />}
-            />
-          ) : (
-            /* Empty Filter / Empty Data State */
-            <View style={styles.emptyContainer}>
-              <View style={styles.emptyIconCircle}>
-                <Receipt size={24} color={theme.colors.textTertiary} strokeWidth={1.5} />
               </View>
-              <Text style={styles.emptyTitle}>
-                {hasFilterActive ? 'No matching expenses' : 'No expenses recorded'}
-              </Text>
-              <Text style={styles.emptySubtitle}>
-                {hasFilterActive
-                  ? 'Try changing your search terms or clearing your category filter.'
-                  : 'Shake your phone or tap the button below to add your first expense.'}
-              </Text>
 
-              {hasFilterActive ? (
-                <TouchableOpacity
-                  style={styles.clearFiltersBtn}
-                  onPress={() => {
-                    triggerHaptic();
-                    setSearchQuery('');
-                    setSelectedCategory('All');
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.clearFiltersText}>Clear filters</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={styles.addBtn}
-                  onPress={() => {
-                    triggerHaptic();
-                    openQuickAddModal({ triggeredByShake: false });
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Plus size={14} color={theme.colors.surface} strokeWidth={2} />
-                  <Text style={styles.addBtnText}>Add Expense</Text>
-                </TouchableOpacity>
-              )}
+              {/* ─── Section 2: Date Range ─── */}
+              <View style={styles.sectionBlock}>
+                <Text style={styles.sectionHeading}>DATE RANGE</Text>
+                <View style={styles.chipGrid}>
+                  {(
+                    [
+                      { id: 'all', label: 'All Dates' },
+                      { id: 'today', label: 'Today' },
+                      { id: 'yesterday', label: 'Yesterday' },
+                      { id: 'week', label: 'This Week' },
+                      { id: 'month', label: 'This Month' },
+                    ] as const
+                  ).map((item) => {
+                    const isSelected = draftDate === item.id;
+                    return (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={[
+                          styles.chipPill,
+                          isSelected && styles.chipPillActive,
+                        ]}
+                        onPress={() => {
+                          triggerHaptic();
+                          setDraftDate(item.id);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.chipPillText,
+                            isSelected && styles.chipPillTextActive,
+                          ]}
+                        >
+                          {item.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* ─── Section 3: Time Range ─── */}
+              <View style={styles.sectionBlock}>
+                <Text style={styles.sectionHeading}>TIME RANGE</Text>
+                <View style={styles.chipGrid}>
+                  {(
+                    [
+                      { id: 'all', label: 'All Times' },
+                      { id: 'morning', label: 'Morning (6 AM - 12 PM)' },
+                      { id: 'afternoon', label: 'Afternoon (12 PM - 6 PM)' },
+                      { id: 'evening', label: 'Evening (6 PM - 12 AM)' },
+                    ] as const
+                  ).map((item) => {
+                    const isSelected = draftTime === item.id;
+                    return (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={[
+                          styles.chipPill,
+                          isSelected && styles.chipPillActive,
+                        ]}
+                        onPress={() => {
+                          triggerHaptic();
+                          setDraftTime(item.id);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.chipPillText,
+                            isSelected && styles.chipPillTextActive,
+                          ]}
+                        >
+                          {item.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* ─── Section 4: Sort By ─── */}
+              <View style={styles.sectionBlock}>
+                <Text style={styles.sectionHeading}>SORT BY</Text>
+                <View style={styles.sortGrid}>
+                  {(
+                    [
+                      { id: 'date_desc', label: 'Newest First' },
+                      { id: 'date_asc', label: 'Oldest First' },
+                      { id: 'amount_desc', label: 'Highest First' },
+                      { id: 'amount_asc', label: 'Lowest First' },
+                    ] as const
+                  ).map((item) => {
+                    const isSelected = draftSort === item.id;
+                    return (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={[
+                          styles.sortItemPill,
+                          isSelected && styles.sortItemPillActive,
+                        ]}
+                        onPress={() => {
+                          triggerHaptic();
+                          setDraftSort(item.id);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.sortItemText,
+                            isSelected && styles.sortItemTextActive,
+                          ]}
+                        >
+                          {item.label}
+                        </Text>
+                        {isSelected && (
+                          <Check size={14} color={theme.colors.primary} strokeWidth={2.5} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            </ScrollView>
+
+            {/* ─── Bottom Actions: Apply Filters & Reset ─── */}
+            <View style={styles.sheetActionRow}>
+              <TouchableOpacity
+                style={styles.sheetResetBtn}
+                onPress={handleResetDraftFilters}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.sheetResetBtnText}>Reset</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.sheetApplyBtn}
+                onPress={handleApplyFilters}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.sheetApplyBtnText}>
+                  {draftMatchCount > 0
+                    ? `Show ${draftMatchCount} Expense${draftMatchCount === 1 ? '' : 's'}`
+                    : 'Apply Filters'}
+                </Text>
+              </TouchableOpacity>
             </View>
-          )}
-        </>
-      )}
+          </Animated.View>
+        </View>
+      </Modal>
 
       {/* Delete Confirmation Modal */}
       <ConfirmModal
-        visible={!!deletingExpense}
+        visible={!!expenseToDelete}
         title="Delete Expense"
-        message={`Are you sure you want to delete "${deletingExpense?.name}"?`}
+        message={
+          expenseToDelete
+            ? `Delete "${expenseToDelete.name}" (${formatCurrency(
+                expenseToDelete.amount,
+                settings.currency
+              )})?`
+            : ''
+        }
         confirmText="Delete"
+        cancelText="Cancel"
         isDestructive
-        onConfirm={handleDeleteConfirm}
-        onCancel={() => setDeletingExpense(null)}
+        onConfirm={async () => {
+          if (expenseToDelete) {
+            await deleteExpense(expenseToDelete.id);
+            setExpenseToDelete(null);
+          }
+        }}
+        onCancel={() => setExpenseToDelete(null)}
       />
     </View>
   );
@@ -294,154 +957,300 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
-  switcherContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 6,
+  mainScroll: {
+    flex: 1,
   },
-  switcher: {
-    flexDirection: 'row',
+  mainScrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+  },
+  /* Monthly Summary Card (Hero Balance Style) */
+  summaryCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: theme.borderRadius.container,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginBottom: 14,
+  },
+  summaryTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  summaryLabel: {
+    ...theme.typography.label,
+    color: theme.colors.textSecondary,
+  },
+  summaryMonth: {
+    ...theme.typography.caption,
+    color: theme.colors.textTertiary,
+    fontWeight: '500',
+  },
+  amountContainer: {
+    marginVertical: 4,
+  },
+  amountText: {
+    ...theme.typography.amount,
+    color: theme.colors.textPrimary,
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: theme.colors.borderSubtle,
+    marginVertical: 14,
+  },
+  summaryBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  summaryStatCol: {
+    flex: 1,
+  },
+  summaryStatLabel: {
+    ...theme.typography.caption,
+    color: theme.colors.textSecondary,
+    marginBottom: 2,
+  },
+  summaryStatValue: {
+    ...theme.typography.body,
+    fontWeight: '600',
+    color: theme.colors.textPrimary,
+  },
+  summaryVerticalDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: theme.colors.borderSubtle,
+    marginHorizontal: 16,
+  },
+  /* Controls Row */
+  controlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    gap: 12,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: theme.colors.backgroundSecondary,
+    borderRadius: 9999,
     padding: 3,
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
-  switchBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 7,
-    borderRadius: 6,
+  segmentedButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 9999,
   },
-  switchBtnActive: {
-    backgroundColor: theme.colors.accentLight,
+  segmentedButtonActive: {
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
-  switchText: {
+  segmentedButtonText: {
     ...theme.typography.caption,
     fontSize: 12,
-    fontWeight: '600',
-    color: theme.colors.textSecondary,
-  },
-  switchTextActive: {
-    color: theme.colors.primary,
-    fontWeight: '700',
-  },
-  headerInfoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 6,
-    paddingBottom: 8,
-  },
-  headerCount: {
-    ...theme.typography.caption,
     fontWeight: '500',
     color: theme.colors.textSecondary,
   },
-  headerTotal: {
+  segmentedButtonTextActive: {
+    color: theme.colors.textPrimary,
+    fontWeight: '700',
+  },
+  filterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 9999,
+    backgroundColor: theme.colors.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  filterBtnActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  filterBtnText: {
     ...theme.typography.caption,
+    fontSize: 12,
     fontWeight: '600',
     color: theme.colors.textPrimary,
   },
-  searchSection: {
-    paddingHorizontal: 20,
-    marginBottom: 8,
+  filterBtnTextActive: {
+    color: '#FFFFFF',
   },
-  searchBar: {
+  filterDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#FFFFFF',
+  },
+  searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.sm,
-    paddingHorizontal: 12,
-    height: 38,
+    marginBottom: 10,
+    borderRadius: 9999,
+    paddingHorizontal: 14,
+    height: 40,
     borderWidth: 1,
     borderColor: theme.colors.border,
     gap: 8,
   },
   searchInput: {
     flex: 1,
-    ...theme.typography.body,
     fontSize: 13,
     color: theme.colors.textPrimary,
-    padding: 0,
+    paddingVertical: 0,
   },
-  searchClearBtn: {
+  clearSearchBtn: {
     padding: 4,
   },
-  filtersSection: {
-    marginBottom: 10,
+  /* Active Filter Ribbon */
+  activeFilterRibbon: {
+    marginBottom: 12,
   },
-  filtersContent: {
-    paddingHorizontal: 20,
+  activeFilterScroll: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
   },
-  filterPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: theme.borderRadius.full,
-    backgroundColor: theme.colors.surface,
+  activeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 9999,
+    backgroundColor: theme.colors.accentLight,
     borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  filterPillActive: {
-    backgroundColor: theme.colors.primary,
     borderColor: theme.colors.primary,
   },
-  filterPillText: {
+  activeChipText: {
     ...theme.typography.caption,
-    fontSize: 12,
-    fontWeight: '500',
-    color: theme.colors.textSecondary,
-  },
-  filterPillTextActive: {
-    color: theme.colors.surface,
+    fontSize: 11,
     fontWeight: '600',
+    color: theme.colors.primary,
   },
-  listContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 110,
+  clearAllFiltersBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
-  sectionHeader: {
-    paddingVertical: 6,
-    backgroundColor: theme.colors.background,
-    marginTop: 4,
+  clearAllFiltersText: {
+    ...theme.typography.caption,
+    fontSize: 11,
+    fontWeight: '600',
+    color: theme.colors.textSecondary,
+    textDecorationLine: 'underline',
   },
-  sectionHeaderText: {
+  /* Story List */
+  storyContainer: {
+    gap: 16,
+  },
+  storyGroup: {
+    gap: 6,
+  },
+  dateGroupHeading: {
     ...theme.typography.label,
-    fontSize: 10,
+    fontSize: 11,
+    fontWeight: '700',
     color: theme.colors.textTertiary,
     letterSpacing: 0.5,
+    paddingHorizontal: 4,
   },
-  itemSeparator: {
-    height: 6,
-  },
-  sectionSeparator: {
-    height: 10,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 24,
-    marginHorizontal: 20,
+  storyCard: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.container,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    marginTop: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
   },
-  emptyIconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+  expenseItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+  },
+  expenseItemRowDivider: {
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.borderSubtle,
+  },
+  itemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    marginRight: 12,
+  },
+  iconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: theme.colors.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+  },
+  itemTextCol: {
+    flex: 1,
+  },
+  itemName: {
+    ...theme.typography.body,
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.textPrimary,
+  },
+  itemMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  itemCategory: {
+    ...theme.typography.caption,
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+  },
+  itemDot: {
+    ...theme.typography.caption,
+    fontSize: 12,
+    color: theme.colors.textTertiary,
+  },
+  itemTime: {
+    ...theme.typography.caption,
+    fontSize: 12,
+    color: theme.colors.textTertiary,
+  },
+  itemNotes: {
+    ...theme.typography.caption,
+    fontSize: 12,
+    color: theme.colors.textTertiary,
+    flex: 1,
+  },
+  itemRight: {
+    alignItems: 'flex-end',
+  },
+  itemAmount: {
+    ...theme.typography.body,
+    fontSize: 15,
+    fontWeight: '700',
+    color: theme.colors.textPrimary,
+  },
+  /* Empty Card */
+  emptyCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.container,
+    paddingVertical: 48,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   emptyTitle: {
     ...theme.typography.sectionHeading,
@@ -449,41 +1258,234 @@ const styles = StyleSheet.create({
     color: theme.colors.textPrimary,
     marginBottom: 4,
   },
-  emptySubtitle: {
-    ...theme.typography.secondary,
+  emptyDesc: {
+    ...theme.typography.caption,
+    fontSize: 13,
     color: theme.colors.textSecondary,
     textAlign: 'center',
+    maxWidth: 240,
     lineHeight: 18,
-    marginBottom: 16,
-    maxWidth: 260,
+    marginBottom: 14,
   },
-  clearFiltersBtn: {
-    paddingHorizontal: 14,
+  resetBtn: {
+    paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 9999,
     backgroundColor: theme.colors.backgroundSecondary,
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
-  clearFiltersText: {
-    ...theme.typography.caption,
+  resetBtnText: {
     fontSize: 12,
     fontWeight: '600',
     color: theme.colors.textPrimary,
   },
-  addBtn: {
+  /* Bottom Sheet Filter Modal */
+  modalRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  backdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#000000',
+  },
+  bottomSheet: {
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingHorizontal: 20,
+    maxHeight: '85%',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: theme.colors.border,
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  modalHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  modalTitle: {
+    ...theme.typography.sectionHeading,
+    fontSize: 18,
+    color: theme.colors.textPrimary,
+    fontWeight: '700',
+  },
+  activeCountBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 9999,
+    backgroundColor: theme.colors.accentLight,
+  },
+  activeCountText: {
+    ...theme.typography.caption,
+    fontSize: 11,
+    fontWeight: '700',
+    color: theme.colors.primary,
+  },
+  modalHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  resetDraftBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  resetDraftText: {
+    ...theme.typography.caption,
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.colors.textSecondary,
+  },
+  modalCloseBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: theme.colors.backgroundSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterScroll: {
+    marginBottom: 14,
+  },
+  sectionBlock: {
+    marginBottom: 18,
+  },
+  sectionHeading: {
+    ...theme.typography.label,
+    fontSize: 11,
+    fontWeight: '700',
+    color: theme.colors.textSecondary,
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  chipGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  chipPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: theme.borderRadius.sm,
-    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 9999,
+    backgroundColor: theme.colors.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
-  addBtnText: {
+  chipPillActive: {
+    backgroundColor: theme.colors.accentLight,
+    borderColor: theme.colors.primary,
+  },
+  chipPillText: {
     ...theme.typography.caption,
+    fontSize: 12,
+    fontWeight: '500',
+    color: theme.colors.textPrimary,
+  },
+  chipPillTextActive: {
+    color: theme.colors.primary,
+    fontWeight: '700',
+  },
+  catIconWrap: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  /* Sort Grid */
+  sortGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  sortItemPill: {
+    width: '48.5%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: theme.colors.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  sortItemPillActive: {
+    backgroundColor: theme.colors.accentLight,
+    borderColor: theme.colors.primary,
+  },
+  sortItemText: {
+    ...theme.typography.caption,
+    fontSize: 12,
+    fontWeight: '500',
+    color: theme.colors.textPrimary,
+  },
+  sortItemTextActive: {
+    color: theme.colors.primary,
+    fontWeight: '700',
+  },
+  /* Sheet Bottom Actions */
+  sheetActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.borderSubtle,
+  },
+  sheetResetBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 9999,
+    backgroundColor: theme.colors.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    height: 48,
+  },
+  sheetResetBtnText: {
     fontSize: 13,
     fontWeight: '600',
-    color: theme.colors.surface,
+    color: theme.colors.textSecondary,
+  },
+  sheetApplyBtn: {
+    flex: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 9999,
+    backgroundColor: theme.colors.textPrimary,
+    height: 48,
+  },
+  sheetApplyBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

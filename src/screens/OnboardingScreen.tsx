@@ -21,6 +21,9 @@ import {
   Activity,
   Zap,
   Info,
+  AlertCircle,
+  Smartphone,
+  Sparkles,
 } from 'lucide-react-native';
 import * as Notifications from 'expo-notifications';
 import { Accelerometer } from 'expo-sensors';
@@ -40,8 +43,9 @@ export const OnboardingScreen: React.FC = () => {
 
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [userName, setUserName] = useState<string>('');
+  const [nameError, setNameError] = useState<string | null>(null);
   const [selectedCurrencyCode, setSelectedCurrencyCode] = useState<string>('INR');
-  const [selectedSensitivity, setSelectedSensitivity] = useState<ShakeSensitivity>('low');
+  const [selectedSensitivity, setSelectedSensitivity] = useState<ShakeSensitivity>('medium');
 
   // Permissions state
   const [notifStatus, setNotifStatus] = useState<PermissionStatusType>('checking');
@@ -52,20 +56,52 @@ export const OnboardingScreen: React.FC = () => {
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
 
+  // Phone shake subtle animation for sensitivity screen
+  const phoneShakeAnim = useRef(new Animated.Value(0)).current;
+  // Sensitivity preview progress track animation (Low = 50%, Medium = 100%)
+  const previewProgressAnim = useRef(new Animated.Value(100)).current;
+
   const triggerHaptic = () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     } catch {}
   };
 
+  // Continuous subtle loop animation while on Step 4 with dynamic amplitude based on sensitivity
+  useEffect(() => {
+    if (currentStep === 4) {
+      const amp = selectedSensitivity === 'low' ? 3 : selectedSensitivity === 'medium' ? 5 : 8;
+      const dur = selectedSensitivity === 'low' ? 190 : selectedSensitivity === 'medium' ? 160 : 130;
+      phoneShakeAnim.setValue(0);
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(phoneShakeAnim, { toValue: -amp, duration: dur, useNativeDriver: true }),
+          Animated.timing(phoneShakeAnim, { toValue: amp, duration: dur + 30, useNativeDriver: true }),
+          Animated.timing(phoneShakeAnim, { toValue: -Math.round(amp * 0.6), duration: dur, useNativeDriver: true }),
+          Animated.timing(phoneShakeAnim, { toValue: Math.round(amp * 0.6), duration: dur + 20, useNativeDriver: true }),
+          Animated.timing(phoneShakeAnim, { toValue: 0, duration: dur - 20, useNativeDriver: true }),
+          Animated.delay(450),
+        ])
+      );
+      loop.start();
+      return () => {
+        loop.stop();
+      };
+    }
+  }, [currentStep, selectedSensitivity, phoneShakeAnim]);
+
+  const handleSensitivitySelect = (sens: ShakeSensitivity) => {
+    triggerHaptic();
+    setSelectedSensitivity(sens);
+  };
+
   // Check actual native permission statuses
   const checkAllPermissions = useCallback(async () => {
     try {
-      // 1. Notification Permission Check
       const notifPerm = await Notifications.getPermissionsAsync();
       if (notifPerm.granted || notifPerm.status === 'granted') {
         setNotifStatus('granted');
-      } else if (notifPerm.status === 'denied' && !notifPerm.canAskAgain) {
+      } else if (notifPerm.status === 'denied') {
         setNotifStatus('denied');
       } else {
         setNotifStatus('undetermined');
@@ -75,7 +111,6 @@ export const OnboardingScreen: React.FC = () => {
     }
 
     try {
-      // 2. Motion / Sensor Check
       const isAvailable = await Accelerometer.isAvailableAsync();
       if (isAvailable) {
         setMotionStatus('granted');
@@ -86,7 +121,6 @@ export const OnboardingScreen: React.FC = () => {
       setMotionStatus('granted');
     }
 
-    // 3. Background Activity Check
     if (Platform.OS === 'android') {
       setBgStatus('enabled');
     } else {
@@ -111,12 +145,9 @@ export const OnboardingScreen: React.FC = () => {
   const handleRequestNotification = async () => {
     triggerHaptic();
     try {
-      const { granted, status, canAskAgain } = await Notifications.requestPermissionsAsync();
+      const { granted, status } = await Notifications.requestPermissionsAsync();
       if (granted || status === 'granted') {
         setNotifStatus('granted');
-      } else if (status === 'denied' && !canAskAgain) {
-        setNotifStatus('denied');
-        Linking.openSettings().catch(() => {});
       } else {
         setNotifStatus('denied');
       }
@@ -141,6 +172,18 @@ export const OnboardingScreen: React.FC = () => {
   };
 
   const transitionToStep = (nextStep: number) => {
+    // Validate Step 1 (Name field is strictly mandatory)
+    if (currentStep === 1 && nextStep === 2) {
+      const trimmed = userName.trim();
+      if (!trimmed) {
+        setNameError('Please enter your name.');
+        try {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        } catch {}
+        return;
+      }
+    }
+
     triggerHaptic();
     if (nextStep === 3) {
       checkAllPermissions();
@@ -182,13 +225,18 @@ export const OnboardingScreen: React.FC = () => {
       SUPPORTED_CURRENCIES[0];
 
     await completeOnboarding({
-      userName: userName.trim() || 'Harsh',
+      userName: userName.trim(),
       currency: curr.symbol,
       currencyCode: curr.code,
       shakeSensitivity: selectedSensitivity,
       trackingStyle: 'Personal',
     });
   };
+
+  const progressWidth = previewProgressAnim.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%'],
+  });
 
   return (
     <KeyboardAvoidingView
@@ -242,23 +290,22 @@ export const OnboardingScreen: React.FC = () => {
                 </View>
               </View>
 
-              {/* Minimal geometric financial visual */}
               <View style={styles.visualContainer}>
                 <View style={styles.geometricFrame}>
                   <View style={styles.mockCardBack} />
                   <View style={styles.mockCardFront}>
                     <View style={styles.mockCardTop}>
                       <View style={styles.mockTag}>
-                        <Receipt size={13} color={theme.colors.primary} strokeWidth={1.5} />
-                        <Text style={styles.mockTagText}>Coffee & Pastry</Text>
+                        <Receipt size={16} color={theme.colors.primary} strokeWidth={1.75} />
+                        <Text style={styles.mockTagText}>Coffee & Bakery</Text>
                       </View>
-                      <Text style={styles.mockAmount}>₹180</Text>
+                      <Text style={styles.mockAmount}>$4.50</Text>
                     </View>
                     <View style={styles.mockDivider} />
                     <View style={styles.mockBottom}>
-                      <Text style={styles.mockMeta}>Food · 9:41 AM</Text>
+                      <Text style={styles.mockMeta}>Today, 10:45 AM</Text>
                       <View style={styles.mockCheck}>
-                        <Check size={11} color="#FFFFFF" strokeWidth={2} />
+                        <Check size={12} color="#FFFFFF" strokeWidth={2.5} />
                       </View>
                     </View>
                   </View>
@@ -283,26 +330,38 @@ export const OnboardingScreen: React.FC = () => {
             <View style={styles.stepContainer}>
               <View style={styles.upperContent}>
                 <View style={styles.editorialHeader}>
-                  <Text style={styles.pageHeading}>
-                    First, what should we call you?
-                  </Text>
+                  <Text style={styles.pageHeading}>What should we call you?</Text>
                   <Text style={styles.pageSubtitle}>
-                    We'll use your name to personalize your dashboard.
+                    We'll personalize your daily greetings and monthly reviews.
                   </Text>
                 </View>
 
                 <View style={styles.inputArea}>
-                  <Text style={styles.inputLabel}>YOUR NAME</Text>
+                  <Text style={styles.inputLabel}>YOUR NAME *</Text>
                   <TextInput
-                    style={styles.minimalTextInput}
-                    placeholder="Your name"
+                    style={[
+                      styles.minimalTextInput,
+                      !!nameError && styles.inputErrorBorder,
+                    ]}
+                    placeholder="Enter your name"
                     placeholderTextColor={theme.colors.textTertiary}
                     value={userName}
-                    onChangeText={setUserName}
+                    onChangeText={(val) => {
+                      setUserName(val);
+                      if (nameError && val.trim().length > 0) {
+                        setNameError(null);
+                      }
+                    }}
                     autoFocus
                     returnKeyType="next"
                     onSubmitEditing={() => transitionToStep(2)}
                   />
+                  {nameError && (
+                    <View style={styles.errorRow}>
+                      <AlertCircle size={13} color={theme.colors.negative} strokeWidth={1.75} />
+                      <Text style={styles.errorText}>{nameError}</Text>
+                    </View>
+                  )}
                 </View>
               </View>
 
@@ -349,16 +408,24 @@ export const OnboardingScreen: React.FC = () => {
                       activeOpacity={0.7}
                     >
                       <View style={styles.currLeft}>
-                        <Text style={styles.currSymbolText}>{curr.symbol}</Text>
-                        <Text style={styles.currCodeText}>{curr.code}</Text>
-                        <Text style={styles.currNameText}>{curr.name}</Text>
+                        <View style={[styles.currSymbolBadge, isSelected && styles.currSymbolBadgeSelected]}>
+                          <Text style={[styles.currSymbolText, isSelected && styles.currSymbolTextSelected]}>
+                            {curr.symbol}
+                          </Text>
+                        </View>
+                        <View style={styles.currTextCol}>
+                          <Text style={[styles.currNameText, isSelected && styles.currNameTextSelected]}>
+                            {curr.name}
+                          </Text>
+                          <Text style={styles.currCodeText}>{curr.code}</Text>
+                        </View>
                       </View>
 
-                      {isSelected && (
-                        <View style={styles.currCheckCircle}>
+                      <View style={[styles.currCheckCircle, isSelected && styles.currCheckCircleSelected]}>
+                        {isSelected && (
                           <Check size={12} color={theme.colors.primary} strokeWidth={2.5} />
-                        </View>
-                      )}
+                        )}
+                      </View>
                     </TouchableOpacity>
                   );
                 })}
@@ -377,7 +444,7 @@ export const OnboardingScreen: React.FC = () => {
             </View>
           )}
 
-          {/* ──────────────── SCREEN 4: PERMISSIONS (Step 3 - NEW) ──────────────── */}
+          {/* ──────────────── SCREEN 4: PERMISSIONS (Step 3) ──────────────── */}
           {currentStep === 3 && (
             <View style={styles.stepContainer}>
               <View style={styles.upperContent}>
@@ -386,12 +453,12 @@ export const OnboardingScreen: React.FC = () => {
                     Make Expenza work instantly
                   </Text>
                   <Text style={styles.pageSubtitle}>
-                    Allow the permissions Expenza needs to quickly capture expenses when you shake your phone.
+                    Grant permissions to enable instant shake detection and quick expense tracking.
                   </Text>
                 </View>
 
-                {/* Clean Permission Rows Card */}
-                <View style={styles.permissionsCard}>
+                {/* Clean Permission List Card */}
+                <View style={styles.permissionCard}>
                   {/* Row 1: Notifications */}
                   <View style={styles.permissionRow}>
                     <View style={styles.permissionIconCircle}>
@@ -400,7 +467,7 @@ export const OnboardingScreen: React.FC = () => {
                     <View style={styles.permissionTextCol}>
                       <Text style={styles.permissionTitle}>Notifications</Text>
                       <Text style={styles.permissionDesc}>
-                        Stay informed when an action needs your attention
+                        Prompt you when a physical shake is detected
                       </Text>
                     </View>
                     <View style={styles.permissionActionCol}>
@@ -439,7 +506,7 @@ export const OnboardingScreen: React.FC = () => {
                     <View style={styles.permissionTextCol}>
                       <Text style={styles.permissionTitle}>Motion & Sensors</Text>
                       <Text style={styles.permissionDesc}>
-                        Detect when you shake your phone
+                        Detect physical shake gestures accurately
                       </Text>
                     </View>
                     <View style={styles.permissionActionCol}>
@@ -476,11 +543,9 @@ export const OnboardingScreen: React.FC = () => {
                       <Zap size={18} color={theme.colors.textPrimary} strokeWidth={1.5} />
                     </View>
                     <View style={styles.permissionTextCol}>
-                      <Text style={styles.permissionTitle}>Background Activity</Text>
+                      <Text style={styles.permissionTitle}>Background Service</Text>
                       <Text style={styles.permissionDesc}>
-                        {Platform.OS === 'android'
-                          ? 'Keep shake detection available when supported by your device'
-                          : 'iOS restricts background sensors; instant shake works whenever app is active'}
+                        Allow shake trigger when screen is off or app is closed
                       </Text>
                     </View>
                     <View style={styles.permissionActionCol}>
@@ -497,16 +562,6 @@ export const OnboardingScreen: React.FC = () => {
                     </View>
                   </View>
                 </View>
-
-                {/* Informative Note */}
-                <View style={styles.permissionNoteBox}>
-                  <Info size={14} color={theme.colors.textSecondary} strokeWidth={1.5} />
-                  <Text style={styles.permissionNoteText}>
-                    {motionStatus !== 'granted'
-                      ? 'Shake detection needs motion access to work.'
-                      : 'You can customize shake sensitivity and preferences anytime in Settings.'}
-                  </Text>
-                </View>
               </View>
 
               <View style={styles.bottomCtaContainer}>
@@ -522,71 +577,177 @@ export const OnboardingScreen: React.FC = () => {
             </View>
           )}
 
-          {/* ──────────────── SCREEN 5: SENSITIVITY (Step 4) ──────────────── */}
+          {/* ──────────────── SCREEN 5: SENSITIVITY REDESIGN (Step 4) ──────────────── */}
           {currentStep === 4 && (
             <View style={styles.stepContainer}>
-              <View style={styles.upperContent}>
-                <View style={styles.editorialHeader}>
-                  <Text style={styles.pageHeading}>
-                    How sensitive should shake detection be?
-                  </Text>
+              <ScrollView
+                style={styles.sensitivityScroll}
+                contentContainerStyle={styles.sensitivityScrollContent}
+                showsVerticalScrollIndicator={false}
+              >
+                {/* Header Section */}
+                <View style={styles.sensitivityTopHeader}>
+                  <View style={styles.sensitivityTitleRow}>
+                    <Text style={styles.pageHeading}>Shake Sensitivity</Text>
+                  </View>
                   <Text style={styles.pageSubtitle}>
-                    Start with Low to prevent accidental triggers.
+                    Choose how easily Expenza should detect a shake.
                   </Text>
                 </View>
 
-                {/* Equal width 3 options with 1px border and no shadow */}
-                <View style={styles.sensitivityArea}>
-                  <View style={styles.equalSegmentsRow}>
-                    {(
-                      [
-                        { id: 'low', label: 'Low' },
-                        { id: 'medium', label: 'Medium' },
-                        { id: 'high', label: 'High' },
-                      ] as const
-                    ).map((item) => {
-                      const isSelected = selectedSensitivity === item.id;
-                      return (
-                        <TouchableOpacity
-                          key={item.id}
-                          style={[
-                            styles.equalSegmentBtn,
-                            isSelected && styles.equalSegmentBtnActive,
-                          ]}
-                          onPress={() => {
-                            triggerHaptic();
-                            setSelectedSensitivity(item.id);
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <Text
-                            style={[
-                              styles.equalSegmentText,
-                              isSelected && styles.equalSegmentTextActive,
-                            ]}
-                          >
-                            {item.label}
-                          </Text>
-                          {isSelected && (
-                            <Check size={12} color={theme.colors.primary} strokeWidth={2.5} style={styles.checkIconSmall} />
-                          )}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-
-                  {/* Recommendation Card directly below */}
-                  <View style={styles.recommendationCard}>
-                    <View style={styles.recommendationBadge}>
-                      <Check size={11} color={theme.colors.primary} strokeWidth={2} />
-                      <Text style={styles.recommendationBadgeText}>Recommended</Text>
+                {/* 3 Clean Selectable Cards (Low, Medium, High) */}
+                <View style={styles.sensitivityCardsList}>
+                  {/* 1. Low */}
+                  <TouchableOpacity
+                    style={[
+                      styles.sensitivityOptionCard,
+                      selectedSensitivity === 'low' && styles.sensitivityOptionCardActive,
+                    ]}
+                    onPress={() => handleSensitivitySelect('low')}
+                    activeOpacity={0.75}
+                  >
+                    <View style={styles.optionCardHeader}>
+                      <View style={styles.optionTitleCol}>
+                        <Text style={styles.optionMainTitle}>Low</Text>
+                        <Text style={styles.optionSubtitle}>Gentle shakes</Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.selectionIndicator,
+                          selectedSensitivity === 'low' && styles.selectionIndicatorActive,
+                        ]}
+                      >
+                        {selectedSensitivity === 'low' && (
+                          <Check size={12} color={theme.colors.primary} strokeWidth={2.5} />
+                        )}
+                      </View>
                     </View>
-                    <Text style={styles.recommendationBody}>
-                      Low sensitivity helps prevent accidental expense popups during normal phone movement.
+                    <Text style={styles.optionDescription}>
+                      Less sensitive to accidental movement.
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* 2. Medium (Recommended) */}
+                  <TouchableOpacity
+                    style={[
+                      styles.sensitivityOptionCard,
+                      selectedSensitivity === 'medium' && styles.sensitivityOptionCardActive,
+                    ]}
+                    onPress={() => handleSensitivitySelect('medium')}
+                    activeOpacity={0.75}
+                  >
+                    <View style={styles.optionCardHeader}>
+                      <View style={styles.optionTitleCol}>
+                        <View style={styles.titleWithBadgeRow}>
+                          <Text style={styles.optionMainTitle}>Medium</Text>
+                          <View style={styles.recommendedBadge}>
+                            <Sparkles size={11} color={theme.colors.primary} strokeWidth={2} />
+                            <Text style={styles.recommendedBadgeText}>Recommended</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.optionSubtitle}>Balanced</Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.selectionIndicator,
+                          selectedSensitivity === 'medium' && styles.selectionIndicatorActive,
+                        ]}
+                      >
+                        {selectedSensitivity === 'medium' && (
+                          <Check size={12} color={theme.colors.primary} strokeWidth={2.5} />
+                        )}
+                      </View>
+                    </View>
+                    <Text style={styles.optionDescription}>
+                      Recommended for most users.
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* 3. High */}
+                  <TouchableOpacity
+                    style={[
+                      styles.sensitivityOptionCard,
+                      selectedSensitivity === 'high' && styles.sensitivityOptionCardActive,
+                    ]}
+                    onPress={() => handleSensitivitySelect('high')}
+                    activeOpacity={0.75}
+                  >
+                    <View style={styles.optionCardHeader}>
+                      <View style={styles.optionTitleCol}>
+                        <Text style={styles.optionMainTitle}>High</Text>
+                        <Text style={styles.optionSubtitle}>Quick response</Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.selectionIndicator,
+                          selectedSensitivity === 'high' && styles.selectionIndicatorActive,
+                        ]}
+                      >
+                        {selectedSensitivity === 'high' && (
+                          <Check size={12} color={theme.colors.primary} strokeWidth={2.5} />
+                        )}
+                      </View>
+                    </View>
+                    <Text style={styles.optionDescription}>
+                      Detects lighter shakes and responds faster.
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Minimal Sensitivity Line Track (No large card) */}
+                <View style={styles.minimalLineSection}>
+                  <View style={styles.minimalLineLabelsRow}>
+                    <Text
+                      style={[
+                        styles.minimalLineLabel,
+                        selectedSensitivity === 'low' && styles.minimalLineLabelActive,
+                      ]}
+                    >
+                      Low
+                    </Text>
+                    <Text
+                      style={[
+                        styles.minimalLineLabel,
+                        selectedSensitivity === 'medium' && styles.minimalLineLabelActive,
+                      ]}
+                    >
+                      Medium
+                    </Text>
+                    <Text
+                      style={[
+                        styles.minimalLineLabel,
+                        selectedSensitivity === 'high' && styles.minimalLineLabelActive,
+                      ]}
+                    >
+                      High
                     </Text>
                   </View>
+
+                  <View style={styles.minimalLineTrackWrap}>
+                    <View style={styles.minimalLineTrack} />
+                    <View style={styles.minimalDotsRow}>
+                      <View
+                        style={[
+                          styles.minimalDot,
+                          selectedSensitivity === 'low' && styles.minimalDotActive,
+                        ]}
+                      />
+                      <View
+                        style={[
+                          styles.minimalDot,
+                          selectedSensitivity === 'medium' && styles.minimalDotActive,
+                        ]}
+                      />
+                      <View
+                        style={[
+                          styles.minimalDot,
+                          selectedSensitivity === 'high' && styles.minimalDotActive,
+                        ]}
+                      />
+                    </View>
+                  </View>
                 </View>
-              </View>
+              </ScrollView>
 
               <View style={styles.bottomCtaContainer}>
                 <TouchableOpacity
@@ -620,7 +781,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    marginBottom: 24,
+    marginBottom: 20,
     minHeight: 20,
   },
   progressDots: {
@@ -646,7 +807,7 @@ const styles = StyleSheet.create({
   stepContainer: {
     flex: 1,
     justifyContent: 'space-between',
-    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 16,
   },
   welcomeTopSection: {
     alignItems: 'flex-start',
@@ -656,10 +817,10 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   upperContent: {
-    paddingTop: 8,
+    paddingTop: 4,
   },
   editorialHeader: {
-    marginBottom: 20,
+    marginBottom: 18,
   },
   displayHeadline: {
     ...theme.typography.display,
@@ -674,7 +835,7 @@ const styles = StyleSheet.create({
   pageHeading: {
     ...theme.typography.pageHeading,
     color: theme.colors.textPrimary,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   pageSubtitle: {
     ...theme.typography.body,
@@ -685,7 +846,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 20,
+    paddingVertical: 16,
   },
   geometricFrame: {
     width: '100%',
@@ -774,6 +935,22 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: theme.colors.textPrimary,
   },
+  inputErrorBorder: {
+    borderColor: theme.colors.negative,
+  },
+  errorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  errorText: {
+    ...theme.typography.caption,
+    fontSize: 12,
+    color: theme.colors.negative,
+    fontWeight: '500',
+  },
+  /* Currency Selection Styles */
   currencyListScroll: {
     flex: 1,
     marginVertical: 12,
@@ -784,7 +961,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     backgroundColor: theme.colors.surface,
     borderRadius: 14,
-    paddingVertical: 14,
+    paddingVertical: 12,
     paddingHorizontal: 16,
     marginBottom: 8,
     borderWidth: 1,
@@ -797,52 +974,76 @@ const styles = StyleSheet.create({
   currLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
+  },
+  currSymbolBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.backgroundSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  currSymbolBadgeSelected: {
+    backgroundColor: '#FFFFFF',
   },
   currSymbolText: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     color: theme.colors.textPrimary,
-    width: 28,
   },
-  currCodeText: {
+  currSymbolTextSelected: {
+    color: theme.colors.primary,
+  },
+  currTextCol: {
+    gap: 2,
+  },
+  currNameText: {
     fontSize: 14,
     fontWeight: '600',
     color: theme.colors.textPrimary,
   },
-  currNameText: {
-    fontSize: 13,
+  currNameTextSelected: {
+    color: theme.colors.textPrimary,
+  },
+  currCodeText: {
+    fontSize: 12,
+    fontWeight: '500',
     color: theme.colors.textSecondary,
   },
   currCheckCircle: {
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: theme.colors.primary,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  currCheckCircleSelected: {
+    borderColor: theme.colors.primary,
+    backgroundColor: '#FFFFFF',
+  },
   /* Permissions Screen Styles */
-  permissionsCard: {
+  permissionCard: {
     backgroundColor: theme.colors.surface,
     borderRadius: 16,
-    paddingVertical: 4,
-    paddingHorizontal: 16,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    padding: 16,
+    marginTop: 16,
   },
   permissionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
     gap: 12,
+    paddingVertical: 4,
   },
   permissionIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: theme.colors.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -854,26 +1055,28 @@ const styles = StyleSheet.create({
     ...theme.typography.body,
     fontWeight: '600',
     color: theme.colors.textPrimary,
+    fontSize: 14,
     marginBottom: 2,
   },
   permissionDesc: {
     ...theme.typography.caption,
+    fontSize: 12,
     color: theme.colors.textSecondary,
-    lineHeight: 15,
+    lineHeight: 16,
   },
   permissionActionCol: {
     alignItems: 'flex-end',
-    justifyContent: 'center',
   },
   permissionDivider: {
     height: 1,
     backgroundColor: theme.colors.borderSubtle,
+    marginVertical: 12,
   },
   allowButton: {
     backgroundColor: theme.colors.textPrimary,
     paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 8,
+    paddingVertical: 6,
+    borderRadius: 9999,
   },
   allowButtonText: {
     fontSize: 12,
@@ -882,11 +1085,11 @@ const styles = StyleSheet.create({
   },
   settingsButton: {
     backgroundColor: theme.colors.backgroundSecondary,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   settingsButtonText: {
     fontSize: 12,
@@ -898,9 +1101,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     backgroundColor: theme.colors.positiveLight,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 9999,
   },
   allowedBadgeText: {
     fontSize: 12,
@@ -909,9 +1112,9 @@ const styles = StyleSheet.create({
   },
   infoBadge: {
     backgroundColor: theme.colors.backgroundSecondary,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 9999,
     borderWidth: 1,
     borderColor: theme.colors.borderSubtle,
   },
@@ -938,73 +1141,162 @@ const styles = StyleSheet.create({
     flex: 1,
     lineHeight: 16,
   },
-  /* Sensitivity Screen Styles */
-  sensitivityArea: {
-    marginTop: 6,
-  },
-  equalSegmentsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 16,
-  },
-  equalSegmentBtn: {
+  /* Sensitivity Redesign Styles */
+  sensitivityScroll: {
     flex: 1,
+  },
+  sensitivityScrollContent: {
+    paddingBottom: 16,
+  },
+  sensitivityTopHeader: {
+    marginBottom: 14,
+  },
+  sensitivityTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  shakeIconBubble: {
+    width: 36,
+    height: 36,
+    borderRadius: 9999,
+    backgroundColor: theme.colors.accentLight,
+    alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+  },
+  sensitivityCardsList: {
+    gap: 10,
+    marginBottom: 20,
+  },
+  sensitivityOptionCard: {
     backgroundColor: theme.colors.surface,
-    paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 16,
+    padding: 14,
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
-  equalSegmentBtnActive: {
+  sensitivityOptionCardActive: {
     backgroundColor: theme.colors.accentLight,
     borderColor: theme.colors.primary,
   },
-  equalSegmentText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: theme.colors.textSecondary,
+  optionCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 4,
   },
-  equalSegmentTextActive: {
-    fontWeight: '600',
+  optionTitleCol: {
+    flex: 1,
+    marginRight: 10,
+  },
+  titleWithBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 1,
+  },
+  optionMainTitle: {
+    ...theme.typography.sectionHeading,
+    fontSize: 16,
     color: theme.colors.textPrimary,
   },
-  checkIconSmall: {
-    marginLeft: 2,
+  optionSubtitle: {
+    ...theme.typography.caption,
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.colors.primary,
+    marginTop: 1,
   },
-  recommendationCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  recommendationBadge: {
-    alignSelf: 'flex-start',
+  recommendedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: theme.colors.accentLight,
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    marginBottom: 8,
+    paddingVertical: 2,
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderColor: 'rgba(79, 70, 229, 0.2)',
   },
-  recommendationBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
+  recommendedBadgeText: {
+    ...theme.typography.caption,
+    fontSize: 10,
+    fontWeight: '700',
     color: theme.colors.primary,
   },
-  recommendationBody: {
-    fontSize: 13,
+  selectionIndicator: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectionIndicatorActive: {
+    borderColor: theme.colors.primary,
+    backgroundColor: '#FFFFFF',
+  },
+  optionDescription: {
+    ...theme.typography.caption,
+    fontSize: 12,
     color: theme.colors.textSecondary,
-    lineHeight: 18,
+    lineHeight: 16,
+  },
+  /* Minimal Sensitivity Line Track */
+  minimalLineSection: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginTop: 4,
+  },
+  minimalLineLabelsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  minimalLineLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: theme.colors.textTertiary,
+  },
+  minimalLineLabelActive: {
+    color: theme.colors.primary,
+    fontWeight: '700',
+  },
+  minimalLineTrackWrap: {
+    position: 'relative',
+    height: 14,
+    justifyContent: 'center',
+  },
+  minimalLineTrack: {
+    position: 'absolute',
+    left: 4,
+    right: 4,
+    height: 2,
+    backgroundColor: theme.colors.border,
+    borderRadius: 1,
+  },
+  minimalDotsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  minimalDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 2,
+    borderColor: theme.colors.border,
+  },
+  minimalDotActive: {
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.primary,
   },
   bottomCtaContainer: {
-    paddingTop: 12,
+    paddingTop: 8,
   },
   primaryButton: {
     flexDirection: 'row',
@@ -1013,7 +1305,7 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: theme.colors.textPrimary,
     height: 52,
-    borderRadius: 14,
+    borderRadius: 9999, // Fully rounded button
   },
   primaryButtonText: {
     fontSize: 15,

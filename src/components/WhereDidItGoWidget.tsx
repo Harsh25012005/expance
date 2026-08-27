@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { PieChart, ChevronRight, Utensils, Car, ShoppingBag, Zap, Film, HeartPulse, Plane, GraduationCap, MoreHorizontal } from 'lucide-react-native';
+import { ChevronRight } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useExpenses } from '../context/ExpenseContext';
 import { CATEGORIES } from '../constants/categories';
@@ -58,30 +58,6 @@ export const WhereDidItGoWidget: React.FC<WhereDidItGoWidgetProps> = ({ onOpenBr
     } catch {}
   };
 
-  const renderCategoryIcon = (catId: CategoryType, color: string) => {
-    switch (catId) {
-      case 'Food':
-        return <Utensils size={13} color={color} strokeWidth={1.75} />;
-      case 'Transport':
-        return <Car size={13} color={color} strokeWidth={1.75} />;
-      case 'Shopping':
-        return <ShoppingBag size={13} color={color} strokeWidth={1.75} />;
-      case 'Bills':
-        return <Zap size={13} color={color} strokeWidth={1.75} />;
-      case 'Entertainment':
-        return <Film size={13} color={color} strokeWidth={1.75} />;
-      case 'Health':
-        return <HeartPulse size={13} color={color} strokeWidth={1.75} />;
-      case 'Travel':
-        return <Plane size={13} color={color} strokeWidth={1.75} />;
-      case 'Education':
-        return <GraduationCap size={13} color={color} strokeWidth={1.75} />;
-      case 'Other':
-      default:
-        return <MoreHorizontal size={13} color={color} strokeWidth={1.75} />;
-    }
-  };
-
   return (
     <View style={styles.widgetContainer}>
       {/* Header */}
@@ -101,7 +77,7 @@ export const WhereDidItGoWidget: React.FC<WhereDidItGoWidgetProps> = ({ onOpenBr
           }}
           activeOpacity={0.7}
         >
-          <Text style={styles.viewBtnText}>View breakdown</Text>
+          <Text style={styles.viewBtnText}>Breakdown</Text>
           <ChevronRight size={13} color={theme.colors.primary} strokeWidth={2} />
         </TouchableOpacity>
       </View>
@@ -178,9 +154,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 3,
     backgroundColor: theme.colors.accentLight,
-    paddingHorizontal: 9,
+    paddingHorizontal: 12,
     paddingVertical: 5,
-    borderRadius: 6,
+    borderRadius: 9999, // Fully rounded
   },
   viewBtnText: {
     ...theme.typography.caption,
@@ -190,7 +166,7 @@ const styles = StyleSheet.create({
   },
   multiBarTrack: {
     height: 6,
-    borderRadius: 3,
+    borderRadius: 9999, // Fully rounded track
     backgroundColor: theme.colors.backgroundSecondary,
     flexDirection: 'row',
     overflow: 'hidden',
@@ -199,7 +175,7 @@ const styles = StyleSheet.create({
   },
   multiBarSegment: {
     height: '100%',
-    borderRadius: 2,
+    borderRadius: 9999,
   },
   categoryRows: {
     gap: 8,
@@ -217,7 +193,7 @@ const styles = StyleSheet.create({
   dot: {
     width: 7,
     height: 7,
-    borderRadius: 3.5,
+    borderRadius: 9999,
   },
   catName: {
     ...theme.typography.body,
