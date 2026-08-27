@@ -177,13 +177,8 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // 3. Notification Tap & Deep Link Listener (Dispatches to Add Expense, Set Budget, or Today's Expenses)
   useEffect(() => {
-    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
-      console.log('[SHAKE] Notification tapped');
-      console.log('[SHAKE] ADD_EXPENSE action requested');
-      const data = response.notification.request.content.data;
+    const handleNotificationPayload = (data: any, url?: string) => {
       const action = data?.action;
-      const url = data?.url as string | undefined;
-
       if (url?.includes('set-budget') || action === 'OPEN_SET_BUDGET') {
         openSetBudgetModal();
       } else if (url?.includes('breakdown') || action === 'VIEW_ANALYTICS') {
@@ -191,23 +186,46 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } else if (url?.includes('today') || url?.includes('expenses') || action === 'VIEW_TODAY_EXPENSES') {
         setNavigationTarget('expenses');
       } else {
-        openAddExpensePopup({ triggeredByShake: false });
+        // Default: Open Add Expense popup modal
+        console.log('[SHAKE] ADD_EXPENSE popup opening from notification tap');
+        setTimeout(() => {
+          openAddExpensePopup({ triggeredByShake: false });
+        }, 150);
       }
+    };
+
+    // Cold Start: Check if app was opened by tapping a notification while closed
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) {
+        console.log('[SHAKE] Cold-start notification response detected');
+        const data = response.notification.request.content.data;
+        const url = data?.url as string | undefined;
+        handleNotificationPayload(data, url);
+      }
+    }).catch(() => {});
+
+    // Warm App: Notification tapped while app is in background/foreground
+    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      console.log('[SHAKE] Notification tapped (warm state)');
+      const data = response.notification.request.content.data;
+      const url = data?.url as string | undefined;
+      handleNotificationPayload(data, url);
     });
 
     const processDeepLink = (url: string | null) => {
       if (!url) return;
       console.log(`[DEEP LINK] Received: ${url}`);
-      if (url.includes('add-expense') || url.includes('shake-open')) {
-        console.log('[SHAKE] Notification tapped');
-        console.log('[SHAKE] ADD_EXPENSE action requested');
-        openAddExpensePopup({ triggeredByShake: false });
-      } else if (url.includes('set-budget')) {
+      if (url.includes('set-budget')) {
         openSetBudgetModal();
       } else if (url.includes('breakdown')) {
         setNavigationTarget('analytics');
       } else if (url.includes('today') || url.includes('expenses')) {
         setNavigationTarget('expenses');
+      } else if (url.includes('add-expense') || url.includes('shake-open')) {
+        console.log('[SHAKE] Deep link add-expense requested');
+        setTimeout(() => {
+          openAddExpensePopup({ triggeredByShake: false });
+        }, 150);
       }
     };
 

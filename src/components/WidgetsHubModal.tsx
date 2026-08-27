@@ -27,7 +27,7 @@ import { formatCurrency } from '../utils/formatters';
 interface WidgetsHubModalProps {
   visible: boolean;
   onClose: () => void;
-  onOpenQuickAdd: () => void;
+  onOpenQuickAdd?: () => void;
 }
 
 export const WidgetsHubModal: React.FC<WidgetsHubModalProps> = ({
@@ -35,7 +35,8 @@ export const WidgetsHubModal: React.FC<WidgetsHubModalProps> = ({
   onClose,
   onOpenQuickAdd,
 }) => {
-  const { stats, settings, theme } = useExpenses();
+  const { theme, stats, settings } = useExpenses();
+  const { openAddExpensePopup } = useShake();
   const [activeTab, setActiveTab] = useState<'balance' | 'breakdown' | 'shortcuts'>('balance');
 
   const triggerHaptic = () => {
@@ -197,7 +198,11 @@ export const WidgetsHubModal: React.FC<WidgetsHubModalProps> = ({
                     onPress={() => {
                       triggerHaptic();
                       onClose();
-                      onOpenQuickAdd();
+                      if (onOpenQuickAdd) {
+                        onOpenQuickAdd();
+                      } else {
+                        openAddExpensePopup({ triggeredByShake: false });
+                      }
                     }}
                     activeOpacity={0.7}
                   >

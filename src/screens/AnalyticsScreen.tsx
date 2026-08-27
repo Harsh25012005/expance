@@ -34,7 +34,6 @@ import { formatCurrency } from '../utils/formatters';
 import { getMonthName, calculateStreaks } from '../utils/analyticsHelpers';
 import { MoneyReplayModal } from '../components/MoneyReplayModal';
 import { WhereDidItGoModal } from '../components/WhereDidItGoModal';
-import { HealthGauge503020 } from '../components/HealthGauge503020';
 import { SpendingHeatmap } from '../components/SpendingHeatmap';
 
 export const AnalyticsScreen: React.FC = memo(() => {
@@ -216,10 +215,7 @@ export const AnalyticsScreen: React.FC = memo(() => {
         ) : null}
       </View>
 
-      {/* ──────────────── 2. 50 / 30 / 20 FINANCIAL HEALTH GAUGE ──────────────── */}
-      <HealthGauge503020 />
-
-      {/* ──────────────── 3. 365-DAY GITHUB-STYLE SPENDING HEATMAP ──────────────── */}
+      {/* ──────────────── 2. 365-DAY GITHUB-STYLE SPENDING HEATMAP ──────────────── */}
       <SpendingHeatmap />
 
       {/* ──────────────── 4. EMPTY STATE VS REAL CONTENT ──────────────── */}

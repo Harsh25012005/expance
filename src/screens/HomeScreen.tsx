@@ -10,6 +10,8 @@ import {
 import {
   Smartphone,
   Plus,
+  LayoutGrid,
+  ChevronRight,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,6 +25,7 @@ import { MoneyMoodCard } from '../components/MoneyMoodCard';
 import { StreaksCard } from '../components/StreaksCard';
 import { SavingsJarsSection } from '../components/SavingsJarsSection';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { WidgetsHubModal } from '../components/WidgetsHubModal';
 import { Expense } from '../types/expense';
 
 interface HomeScreenProps {
@@ -36,6 +39,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = memo(({ onNavigateToExpense
 
   const [deletingExpense, setDeletingExpense] = useState<Expense | null>(null);
   const [showWhereDidItGoModal, setShowWhereDidItGoModal] = useState<boolean>(false);
+  const [showWidgetsModal, setShowWidgetsModal] = useState<boolean>(false);
 
   // Subtle animated phone shake icon
   const shakeIconAnim = useRef(new Animated.Value(0)).current;
@@ -97,7 +101,35 @@ export const HomeScreen: React.FC<HomeScreenProps> = memo(({ onNavigateToExpense
         {/* 6. Streaks Statistics Widget */}
         <StreaksCard />
 
-        {/* 7. Quick Action Widget (Shake to Add + Clear Manual Add) */}
+        {/* 7. Home & Lock Screen Widgets Hub */}
+        <TouchableOpacity
+          style={[styles.widgetsCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+          onPress={() => {
+            triggerHaptic();
+            setShowWidgetsModal(true);
+          }}
+          activeOpacity={0.8}
+        >
+          <View style={styles.widgetsLeft}>
+            <View style={[styles.widgetsIconCircle, { backgroundColor: '#4F46E515' }]}>
+              <LayoutGrid size={18} color="#4F46E5" strokeWidth={2} />
+            </View>
+            <View style={styles.widgetsTextCol}>
+              <View style={styles.widgetsTitleRow}>
+                <Text style={[styles.widgetsTitle, { color: theme.colors.textPrimary }]}>Home Screen Widgets</Text>
+                <View style={[styles.widgetBadge, { backgroundColor: '#4F46E520' }]}>
+                  <Text style={styles.widgetBadgeText}>NEW</Text>
+                </View>
+              </View>
+              <Text style={[styles.widgetsSubtitle, { color: theme.colors.textSecondary }]}>
+                Add balance & quick-entry widgets to your phone home screen
+              </Text>
+            </View>
+          </View>
+          <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={2} />
+        </TouchableOpacity>
+
+        {/* 8. Quick Action Widget (Shake to Add + Clear Manual Add) */}
         <View style={[styles.actionWidget, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
           <View style={styles.actionLeft}>
             <Animated.View
@@ -135,7 +167,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = memo(({ onNavigateToExpense
             activeOpacity={0.7}
           >
             <Plus size={13} color={theme.colors.textPrimary} strokeWidth={2} />
-            <Text style={[styles.manualAddBtnText, { color: theme.colors.textPrimary }]}>Add Expense</Text>
+            <Text style={[styles.manualAddBtnText, { color: theme.colors.textPrimary }]}>Add</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -144,6 +176,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = memo(({ onNavigateToExpense
       <WhereDidItGoModal
         visible={showWhereDidItGoModal}
         onClose={() => setShowWhereDidItGoModal(false)}
+      />
+
+      {/* Widgets & App Shortcuts Hub Modal */}
+      <WidgetsHubModal
+        visible={showWidgetsModal}
+        onClose={() => setShowWidgetsModal(false)}
+        onOpenQuickAdd={() => openQuickAddModal({ triggeredByShake: false })}
       />
 
       {/* Delete Confirmation Modal */}
@@ -169,52 +208,104 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
   },
-  actionWidget: {
-    borderRadius: 20,
-    padding: 14,
-    borderWidth: 1,
-    marginBottom: 16,
+  widgetsCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 12,
+  },
+  widgetsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
+    flex: 1,
+    paddingRight: 8,
+  },
+  widgetsIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  widgetsTextCol: {
+    flex: 1,
+  },
+  widgetsTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 2,
+  },
+  widgetsTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  widgetBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  widgetBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#4F46E5',
+    letterSpacing: 0.5,
+  },
+  widgetsSubtitle: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  actionWidget: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 12,
   },
   actionLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     flex: 1,
   },
   shakeIconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 9999,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   actionTextCol: {
     flex: 1,
+    paddingRight: 8,
   },
   actionTitle: {
     fontSize: 13,
     fontWeight: '700',
+    letterSpacing: -0.2,
   },
   actionSubtitle: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 1,
-    lineHeight: 14,
+    lineHeight: 16,
   },
   manualAddBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingVertical: 8,
     paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 9999,
     borderWidth: 1,
   },
   manualAddBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
