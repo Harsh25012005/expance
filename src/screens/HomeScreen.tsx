@@ -10,7 +10,6 @@ import {
 import {
   Smartphone,
   Plus,
-  ScanLine,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

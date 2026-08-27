@@ -27,9 +27,6 @@ import {
   MoreHorizontal,
   Calendar,
   Sparkles,
-  Check,
-  Receipt,
-  ScanLine,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -37,7 +34,6 @@ import { useShake } from '../context/ShakeContext';
 import { useExpenses } from '../context/ExpenseContext';
 import { CategoryType } from '../types/expense';
 import { CATEGORIES, CATEGORY_MAP } from '../constants/categories';
-import { ReceiptScannerModal } from './ReceiptScannerModal';
 
 const PREDICTIVE_MERCHANTS: Array<{ name: string; category: CategoryType; defaultAmount?: number }> = [
   { name: 'Starbucks Coffee', category: 'Food', defaultAmount: 5.50 },
@@ -61,9 +57,7 @@ export const QuickExpenseModal: React.FC = () => {
   const [amount, setAmount] = useState<string>('');
   const [category, setCategory] = useState<CategoryType>('Food');
   const [dateOption, setDateOption] = useState<'today' | 'yesterday'>('today');
-  const [receiptUri, setReceiptUri] = useState<string | undefined>(undefined);
   const [showCategoryPicker, setShowCategoryPicker] = useState<boolean>(false);
-  const [showScannerModal, setShowScannerModal] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -102,13 +96,11 @@ export const QuickExpenseModal: React.FC = () => {
         setName(editingExpense.name);
         setAmount(editingExpense.amount.toString());
         setCategory(editingExpense.category);
-        setReceiptUri(editingExpense.receiptUri);
         setDateOption('today');
       } else {
         setName('');
         setAmount('');
         setCategory('Food');
-        setReceiptUri(undefined);
         setDateOption('today');
       }
       setShowCategoryPicker(false);
@@ -133,21 +125,6 @@ export const QuickExpenseModal: React.FC = () => {
     setCategory(item.category);
     if (item.defaultAmount && !amount) {
       setAmount(item.defaultAmount.toFixed(2));
-    }
-  };
-
-  const handleReceiptScanned = (scanned: {
-    merchant: string;
-    amount: number;
-    category: CategoryType;
-    rawImageUri?: string;
-  }) => {
-    triggerHaptic();
-    setName(scanned.merchant);
-    setAmount(scanned.amount.toFixed(2));
-    setCategory(scanned.category);
-    if (scanned.rawImageUri) {
-      setReceiptUri(scanned.rawImageUri);
     }
   };
 
@@ -212,7 +189,6 @@ export const QuickExpenseModal: React.FC = () => {
           name: trimmedName,
           amount: numAmount,
           category,
-          receiptUri,
         });
       } else {
         await addExpense({
@@ -220,7 +196,6 @@ export const QuickExpenseModal: React.FC = () => {
           amount: numAmount,
           category,
           date: expenseDate,
-          receiptUri,
         });
       }
 
@@ -237,286 +212,248 @@ export const QuickExpenseModal: React.FC = () => {
   const currentCatInfo = CATEGORY_MAP[category] || CATEGORY_MAP.Other;
 
   return (
-    <>
-      <Modal
-        visible={isQuickAddModalOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={closeQuickAddModal}
-        statusBarTranslucent
-      >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View
-            style={[
-              styles.overlay,
-              {
-                backgroundColor: theme.colors.overlay,
-                paddingTop: insets.top + 16,
-                paddingBottom: Math.max(insets.bottom, 16),
-              },
-            ]}
+    <Modal
+      visible={isQuickAddModalOpen}
+      transparent
+      animationType="fade"
+      onRequestClose={closeQuickAddModal}
+      statusBarTranslucent
+    >
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View
+          style={[
+            styles.overlay,
+            {
+              backgroundColor: theme.colors.overlay,
+              paddingTop: insets.top + 16,
+              paddingBottom: Math.max(insets.bottom, 16),
+            },
+          ]}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.keyboardWrap}
           >
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              style={styles.keyboardWrap}
-            >
-              <View style={[styles.popupCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-                {/* Header */}
-                <View style={[styles.header, { borderBottomColor: theme.colors.borderSubtle }]}>
-                  <Text style={[styles.title, { color: theme.colors.textPrimary }]}>
-                    {editingExpense ? 'Edit expense' : 'Add expense'}
-                  </Text>
+            <View style={[styles.popupCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+              {/* Header */}
+              <View style={[styles.header, { borderBottomColor: theme.colors.borderSubtle }]}>
+                <Text style={[styles.title, { color: theme.colors.textPrimary }]}>
+                  {editingExpense ? 'Edit expense' : 'Add expense'}
+                </Text>
 
-                  <TouchableOpacity
-                    style={[styles.closeBtn, { backgroundColor: theme.colors.backgroundSecondary }]}
-                    onPress={closeQuickAddModal}
-                    activeOpacity={0.7}
-                  >
-                    <X size={15} color={theme.colors.textSecondary} strokeWidth={1.75} />
-                  </TouchableOpacity>
-                </View>
-
-                <ScrollView
-                  style={styles.formScroll}
-                  contentContainerStyle={styles.formContent}
-                  showsVerticalScrollIndicator={false}
-                  keyboardShouldPersistTaps="handled"
+                <TouchableOpacity
+                  style={[styles.closeBtn, { backgroundColor: theme.colors.backgroundSecondary }]}
+                  onPress={closeQuickAddModal}
+                  activeOpacity={0.7}
                 >
-                  {/* 1. Expense Name */}
-                  <View style={styles.fieldGroup}>
-                    <Text style={[styles.fieldLabel, { color: theme.colors.textSecondary }]}>EXPENSE NAME</Text>
-                    <TextInput
-                      ref={inputRef}
-                      style={[styles.textInput, { backgroundColor: theme.colors.background, color: theme.colors.textPrimary, borderColor: theme.colors.border }]}
-                      value={name}
-                      onChangeText={(val) => {
-                        setName(val);
-                        if (errorMsg) setErrorMsg(null);
-                      }}
-                      placeholder="What did you spend on?"
-                      placeholderTextColor={theme.colors.textTertiary}
-                      returnKeyType="next"
-                    />
+                  <X size={15} color={theme.colors.textSecondary} strokeWidth={1.75} />
+                </TouchableOpacity>
+              </View>
 
-                    {/* Predictive Auto-Complete Matches */}
-                    {predictiveMatches.length > 0 && (
-                      <View style={styles.predictiveRow}>
-                        {predictiveMatches.map((item, pIdx) => (
-                          <TouchableOpacity
-                            key={pIdx}
-                            style={[styles.predictiveChip, { backgroundColor: theme.colors.primaryLight }]}
-                            onPress={() => handleApplyPredictive(item)}
-                            activeOpacity={0.7}
-                          >
-                            <Sparkles size={10} color={theme.colors.primary} />
-                            <Text style={[styles.predictiveChipText, { color: theme.colors.primary }]}>{item.name}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    )}
-                  </View>
+              <ScrollView
+                style={styles.formScroll}
+                contentContainerStyle={styles.formContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                {/* 1. Expense Name */}
+                <View style={styles.fieldGroup}>
+                  <Text style={[styles.fieldLabel, { color: theme.colors.textSecondary }]}>EXPENSE NAME</Text>
+                  <TextInput
+                    ref={inputRef}
+                    style={[styles.textInput, { backgroundColor: theme.colors.background, color: theme.colors.textPrimary, borderColor: theme.colors.border }]}
+                    value={name}
+                    onChangeText={(val) => {
+                      setName(val);
+                      if (errorMsg) setErrorMsg(null);
+                    }}
+                    placeholder="What did you spend on?"
+                    placeholderTextColor={theme.colors.textTertiary}
+                    returnKeyType="next"
+                  />
 
-                  {/* 2. Date Selection (Today vs Yesterday) */}
-                  <View style={styles.fieldGroup}>
-                    <Text style={[styles.fieldLabel, { color: theme.colors.textSecondary }]}>DATE</Text>
-                    <View style={styles.datePillsRow}>
-                      <TouchableOpacity
-                        style={[
-                          styles.datePill,
-                          { backgroundColor: theme.colors.background, borderColor: dateOption === 'today' ? theme.colors.primary : theme.colors.border },
-                          dateOption === 'today' && { backgroundColor: theme.colors.primaryLight },
-                        ]}
-                        onPress={() => {
-                          triggerHaptic();
-                          setDateOption('today');
-                        }}
-                      >
-                        <Calendar size={12} color={dateOption === 'today' ? theme.colors.primary : theme.colors.textSecondary} />
-                        <Text style={[styles.datePillText, { color: dateOption === 'today' ? theme.colors.primary : theme.colors.textSecondary, fontWeight: dateOption === 'today' ? '700' : '500' }]}>
-                          Today
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          styles.datePill,
-                          { backgroundColor: theme.colors.background, borderColor: dateOption === 'yesterday' ? theme.colors.primary : theme.colors.border },
-                          dateOption === 'yesterday' && { backgroundColor: theme.colors.primaryLight },
-                        ]}
-                        onPress={() => {
-                          triggerHaptic();
-                          setDateOption('yesterday');
-                        }}
-                      >
-                        <Calendar size={12} color={dateOption === 'yesterday' ? theme.colors.primary : theme.colors.textSecondary} />
-                        <Text style={[styles.datePillText, { color: dateOption === 'yesterday' ? theme.colors.primary : theme.colors.textSecondary, fontWeight: dateOption === 'yesterday' ? '700' : '500' }]}>
-                          Yesterday
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-
-                  {/* 3. Category Selector */}
-                  <View style={styles.fieldGroup}>
-                    <Text style={[styles.fieldLabel, { color: theme.colors.textSecondary }]}>CATEGORY</Text>
-                    <TouchableOpacity
-                      style={[styles.categorySelector, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}
-                      onPress={() => {
-                        triggerHaptic();
-                        setShowCategoryPicker(!showCategoryPicker);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.categoryLeft}>
-                        <View style={[styles.categoryIconCircle, { backgroundColor: currentCatInfo.color + '15' }]}>
-                          {renderCategoryIcon(category, 16, currentCatInfo.color)}
-                        </View>
-                        <Text style={[styles.categoryText, { color: theme.colors.textPrimary }]}>{currentCatInfo.label}</Text>
-                      </View>
-                      <ChevronRight size={15} color={theme.colors.textTertiary} />
-                    </TouchableOpacity>
-
-                    {/* Category Expanded Grid */}
-                    {showCategoryPicker && (
-                      <View style={[styles.categoryGrid, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}>
-                        {CATEGORIES.map((cat) => {
-                          const isSelected = category === cat.id;
-                          return (
-                            <TouchableOpacity
-                              key={cat.id}
-                              style={[
-                                styles.catGridItem,
-                                isSelected && { backgroundColor: theme.colors.primaryLight, borderColor: theme.colors.primary },
-                              ]}
-                              onPress={() => {
-                                triggerHaptic();
-                                setCategory(cat.id);
-                                setShowCategoryPicker(false);
-                              }}
-                              activeOpacity={0.7}
-                            >
-                              <View style={[styles.catIconWrap, { backgroundColor: cat.color + '15' }]}>
-                                {renderCategoryIcon(cat.id, 14, cat.color)}
-                              </View>
-                              <Text
-                                style={[
-                                  styles.catGridText,
-                                  { color: theme.colors.textSecondary },
-                                  isSelected && { color: theme.colors.primary, fontWeight: '700' },
-                                ]}
-                                numberOfLines={1}
-                              >
-                                {cat.id}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                    )}
-                  </View>
-
-                  {/* 4. Amount */}
-                  <View style={styles.fieldGroup}>
-                    <Text style={[styles.fieldLabel, { color: theme.colors.textSecondary }]}>AMOUNT</Text>
-                    <View style={[styles.amountContainer, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}>
-                      <Text style={[styles.currencySymbol, { color: theme.colors.textPrimary }]}>{settings.currency}</Text>
-                      <TextInput
-                        style={[styles.amountInput, { color: theme.colors.textPrimary }]}
-                        value={amount}
-                        onChangeText={(val) => {
-                          const cleaned = val.replace(/[^0-9.]/g, '');
-                          setAmount(cleaned);
-                          if (errorMsg) setErrorMsg(null);
-                        }}
-                        placeholder="0.00"
-                        placeholderTextColor={theme.colors.textTertiary}
-                        keyboardType="decimal-pad"
-                        returnKeyType="done"
-                      />
-                    </View>
-
-                    {/* Increment Pills */}
-                    <View style={styles.quickPillsRow}>
-                      {[10, 50, 100, 200, 500].map((inc) => (
+                  {/* Predictive Auto-Complete Matches */}
+                  {predictiveMatches.length > 0 && (
+                    <View style={styles.predictiveRow}>
+                      {predictiveMatches.map((item, pIdx) => (
                         <TouchableOpacity
-                          key={inc}
-                          style={[styles.quickPill, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}
-                          onPress={() => handleQuickAddAmount(inc)}
+                          key={pIdx}
+                          style={[styles.predictiveChip, { backgroundColor: theme.colors.primaryLight }]}
+                          onPress={() => handleApplyPredictive(item)}
                           activeOpacity={0.7}
                         >
-                          <Text style={[styles.quickPillText, { color: theme.colors.textPrimary }]}>+{inc}</Text>
+                          <Sparkles size={10} color={theme.colors.primary} />
+                          <Text style={[styles.predictiveChipText, { color: theme.colors.primary }]}>{item.name}</Text>
                         </TouchableOpacity>
                       ))}
                     </View>
+                  )}
+                </View>
+
+                {/* 2. Date Selection (Today vs Yesterday) */}
+                <View style={styles.fieldGroup}>
+                  <Text style={[styles.fieldLabel, { color: theme.colors.textSecondary }]}>DATE</Text>
+                  <View style={styles.datePillsRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.datePill,
+                        { backgroundColor: theme.colors.background, borderColor: dateOption === 'today' ? theme.colors.primary : theme.colors.border },
+                        dateOption === 'today' && { backgroundColor: theme.colors.primaryLight },
+                      ]}
+                      onPress={() => {
+                        triggerHaptic();
+                        setDateOption('today');
+                      }}
+                    >
+                      <Calendar size={12} color={dateOption === 'today' ? theme.colors.primary : theme.colors.textSecondary} />
+                      <Text style={[styles.datePillText, { color: dateOption === 'today' ? theme.colors.primary : theme.colors.textSecondary, fontWeight: dateOption === 'today' ? '700' : '500' }]}>
+                        Today
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.datePill,
+                        { backgroundColor: theme.colors.background, borderColor: dateOption === 'yesterday' ? theme.colors.primary : theme.colors.border },
+                        dateOption === 'yesterday' && { backgroundColor: theme.colors.primaryLight },
+                      ]}
+                      onPress={() => {
+                        triggerHaptic();
+                        setDateOption('yesterday');
+                      }}
+                    >
+                      <Calendar size={12} color={dateOption === 'yesterday' ? theme.colors.primary : theme.colors.textSecondary} />
+                      <Text style={[styles.datePillText, { color: dateOption === 'yesterday' ? theme.colors.primary : theme.colors.textSecondary, fontWeight: dateOption === 'yesterday' ? '700' : '500' }]}>
+                        Yesterday
+                      </Text>
+                    </TouchableOpacity>
                   </View>
+                </View>
 
-                  {/* Receipt Attached Preview Thumbnail */}
-                  {receiptUri && (
-                    <View style={[styles.receiptAttachedBox, { backgroundColor: theme.colors.surfaceSubtle, borderColor: theme.colors.border }]}>
-                      <Receipt size={14} color={theme.colors.primary} />
-                      <Text style={[styles.receiptAttachedText, { color: theme.colors.textPrimary }]}>Receipt Photo Attached</Text>
-                      <TouchableOpacity onPress={() => setReceiptUri(undefined)} style={styles.removeReceiptBtn}>
-                        <X size={12} color={theme.colors.textSecondary} />
-                      </TouchableOpacity>
-                    </View>
-                  )}
-
-                  {/* Error Banner */}
-                  {errorMsg && (
-                    <View style={[styles.errorContainer, { backgroundColor: theme.colors.negativeLight, borderColor: theme.colors.negative }]}>
-                      <Text style={[styles.errorText, { color: theme.colors.negative }]}>{errorMsg}</Text>
-                    </View>
-                  )}
-                </ScrollView>
-
-                {/* Bottom Inline Actions: Side-by-Side Scan Bill & Save Expense */}
-                <View style={[styles.footer, { borderTopColor: theme.colors.borderSubtle, backgroundColor: theme.colors.surface }]}>
+                {/* 3. Category Selector */}
+                <View style={styles.fieldGroup}>
+                  <Text style={[styles.fieldLabel, { color: theme.colors.textSecondary }]}>CATEGORY</Text>
                   <TouchableOpacity
-                    style={[
-                      styles.scanBillInlineBtn,
-                      {
-                        backgroundColor: theme.colors.accentLight || '#EEF2FF',
-                        borderColor: theme.colors.primary,
-                      },
-                    ]}
+                    style={[styles.categorySelector, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}
                     onPress={() => {
                       triggerHaptic();
-                      setShowScannerModal(true);
+                      setShowCategoryPicker(!showCategoryPicker);
                     }}
-                    activeOpacity={0.8}
+                    activeOpacity={0.7}
                   >
-                    <ScanLine size={16} color={theme.colors.primary} strokeWidth={2.2} />
-                    <Text style={[styles.scanBillInlineBtnText, { color: theme.colors.primary }]}>Scan Bill</Text>
+                    <View style={styles.categoryLeft}>
+                      <View style={[styles.categoryIconCircle, { backgroundColor: currentCatInfo.color + '15' }]}>
+                        {renderCategoryIcon(category, 16, currentCatInfo.color)}
+                      </View>
+                      <Text style={[styles.categoryText, { color: theme.colors.textPrimary }]}>{currentCatInfo.label}</Text>
+                    </View>
+                    <ChevronRight size={15} color={theme.colors.textTertiary} />
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={[
-                      styles.saveButton,
-                      { backgroundColor: theme.colors.primary },
-                      (!isValid || isSubmitting) && styles.saveButtonDisabled,
-                    ]}
-                    onPress={handleSave}
-                    disabled={!isValid || isSubmitting}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={styles.saveButtonText}>
-                      {isSubmitting ? 'Saving...' : editingExpense ? 'Save Changes' : 'Save Expense'}
-                    </Text>
-                  </TouchableOpacity>
+                  {/* Category Expanded Grid */}
+                  {showCategoryPicker && (
+                    <View style={[styles.categoryGrid, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}>
+                      {CATEGORIES.map((cat) => {
+                        const isSelected = category === cat.id;
+                        return (
+                          <TouchableOpacity
+                            key={cat.id}
+                            style={[
+                              styles.catGridItem,
+                              isSelected && { backgroundColor: theme.colors.primaryLight, borderColor: theme.colors.primary },
+                            ]}
+                            onPress={() => {
+                              triggerHaptic();
+                              setCategory(cat.id);
+                              setShowCategoryPicker(false);
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <View style={[styles.catIconWrap, { backgroundColor: cat.color + '15' }]}>
+                              {renderCategoryIcon(cat.id, 14, cat.color)}
+                            </View>
+                            <Text
+                              style={[
+                                styles.catGridText,
+                                { color: theme.colors.textSecondary },
+                                isSelected && { color: theme.colors.primary, fontWeight: '700' },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {cat.id}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
                 </View>
-              </View>
-            </KeyboardAvoidingView>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
 
-      {/* AI Receipt Scanner Modal */}
-      <ReceiptScannerModal
-        visible={showScannerModal}
-        onClose={() => setShowScannerModal(false)}
-        onReceiptScanned={handleReceiptScanned}
-      />
-    </>
+                {/* 4. Amount */}
+                <View style={styles.fieldGroup}>
+                  <Text style={[styles.fieldLabel, { color: theme.colors.textSecondary }]}>AMOUNT</Text>
+                  <View style={[styles.amountContainer, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}>
+                    <Text style={[styles.currencySymbol, { color: theme.colors.textPrimary }]}>{settings.currency}</Text>
+                    <TextInput
+                      style={[styles.amountInput, { color: theme.colors.textPrimary }]}
+                      value={amount}
+                      onChangeText={(val) => {
+                        const cleaned = val.replace(/[^0-9.]/g, '');
+                        setAmount(cleaned);
+                        if (errorMsg) setErrorMsg(null);
+                      }}
+                      placeholder="0.00"
+                      placeholderTextColor={theme.colors.textTertiary}
+                      keyboardType="decimal-pad"
+                      returnKeyType="done"
+                    />
+                  </View>
+
+                  {/* Increment Pills */}
+                  <View style={styles.quickPillsRow}>
+                    {[10, 50, 100, 200, 500].map((inc) => (
+                      <TouchableOpacity
+                        key={inc}
+                        style={[styles.quickPill, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}
+                        onPress={() => handleQuickAddAmount(inc)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.quickPillText, { color: theme.colors.textPrimary }]}>+{inc}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Error Banner */}
+                {errorMsg && (
+                  <View style={[styles.errorContainer, { backgroundColor: theme.colors.negativeLight, borderColor: theme.colors.negative }]}>
+                    <Text style={[styles.errorText, { color: theme.colors.negative }]}>{errorMsg}</Text>
+                  </View>
+                )}
+              </ScrollView>
+
+              {/* Bottom Full-Width Save Expense Button */}
+              <View style={[styles.footer, { borderTopColor: theme.colors.borderSubtle, backgroundColor: theme.colors.surface }]}>
+                <TouchableOpacity
+                  style={[
+                    styles.saveButton,
+                    { backgroundColor: theme.colors.primary },
+                    (!isValid || isSubmitting) && styles.saveButtonDisabled,
+                  ]}
+                  onPress={handleSave}
+                  disabled={!isValid || isSubmitting}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.saveButtonText}>
+                    {isSubmitting ? 'Saving...' : editingExpense ? 'Save Changes' : 'Save Expense'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
   );
 };
 
@@ -708,23 +645,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
-  receiptAttachedBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    padding: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  receiptAttachedText: {
-    flex: 1,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  removeReceiptBtn: {
-    padding: 2,
-  },
   errorContainer: {
     padding: 8,
     borderRadius: 10,
@@ -736,29 +656,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
     paddingHorizontal: 18,
     paddingVertical: 12,
     borderTopWidth: 1,
   },
-  scanBillInlineBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    height: 44,
-    paddingHorizontal: 16,
-    borderRadius: 9999,
-    borderWidth: 1,
-  },
-  scanBillInlineBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
   saveButton: {
-    flex: 1,
     height: 44,
     borderRadius: 9999,
     alignItems: 'center',

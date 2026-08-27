@@ -12,7 +12,6 @@ import {
   LayoutGrid,
   X,
   Plus,
-  ScanLine,
   PieChart,
   ShieldCheck,
   TrendingUp,
@@ -214,15 +213,14 @@ export const WidgetsHubModal: React.FC<WidgetsHubModalProps> = ({
                     onPress={() => {
                       triggerHaptic();
                       onClose();
-                      onOpenQuickAdd();
                     }}
                     activeOpacity={0.7}
                   >
                     <View style={[styles.shortcutIconCircle, { backgroundColor: '#059669' + '20' }]}>
-                      <ScanLine size={18} color="#059669" strokeWidth={2} />
+                      <PieChart size={18} color="#059669" strokeWidth={2} />
                     </View>
-                    <Text style={[styles.shortcutTitle, { color: theme.colors.textPrimary }]}>Scan Receipt</Text>
-                    <Text style={[styles.shortcutSub, { color: theme.colors.textSecondary }]}>Camera OCR</Text>
+                    <Text style={[styles.shortcutTitle, { color: theme.colors.textPrimary }]}>Insights</Text>
+                    <Text style={[styles.shortcutSub, { color: theme.colors.textSecondary }]}>View Breakdown</Text>
                   </TouchableOpacity>
                 </View>
 
