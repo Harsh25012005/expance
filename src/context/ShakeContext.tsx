@@ -235,11 +235,10 @@ export const ShakeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return;
       }
 
-      Accelerometer.setUpdateInterval(50);
+      Accelerometer.setUpdateInterval(120);
 
       sensorSubscription = Accelerometer.addListener((data) => {
         if (!settingsRef.current.shakeEnabled) {
-          console.log('[SHAKE] DISABLED — ignoring event');
           return;
         }
 

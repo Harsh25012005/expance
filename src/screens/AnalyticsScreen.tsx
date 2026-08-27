@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, memo } from 'react';
 import {
   View,
   Text,
@@ -34,10 +34,11 @@ import { formatCurrency } from '../utils/formatters';
 import { getMonthName, calculateStreaks } from '../utils/analyticsHelpers';
 import { MoneyReplayModal } from '../components/MoneyReplayModal';
 import { WhereDidItGoModal } from '../components/WhereDidItGoModal';
-import { theme } from '../constants/theme';
+import { HealthGauge503020 } from '../components/HealthGauge503020';
+import { SpendingHeatmap } from '../components/SpendingHeatmap';
 
-export const AnalyticsScreen: React.FC = () => {
-  const { expenses, settings, stats } = useExpenses();
+export const AnalyticsScreen: React.FC = memo(() => {
+  const { expenses, settings, stats, theme } = useExpenses();
   const { openAddExpensePopup } = useShake();
   const insets = useSafeAreaInsets();
 
@@ -59,7 +60,7 @@ export const AnalyticsScreen: React.FC = () => {
     return calculateStreaks(expenses, settings.monthlyBudget || 0);
   }, [expenses, settings.monthlyBudget]);
 
-  // Active category distribution sorted by amount descending (Real data only)
+  // Active category distribution sorted by amount descending
   const categoryBreakdown = useMemo(() => {
     const list: { category: CategoryType; amount: number; percentage: number; label: string }[] = [];
     const total = stats.thisMonthSpending;
@@ -155,7 +156,7 @@ export const AnalyticsScreen: React.FC = () => {
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
       contentContainerStyle={[
         styles.contentContainer,
         { paddingBottom: 95 + Math.max(insets.bottom, 16) },
@@ -163,30 +164,30 @@ export const AnalyticsScreen: React.FC = () => {
       showsVerticalScrollIndicator={false}
     >
       {/* ──────────────── 1. EDITORIAL STORY HERO: WHERE DID IT GO? ──────────────── */}
-      <View style={styles.storyHeroCard}>
+      <View style={[styles.storyHeroCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
         <View style={styles.storyHeroTop}>
           <View>
-            <Text style={styles.storyHeroPre}>{currentMonthName.toUpperCase()} {currentYear}</Text>
-            <Text style={styles.storyHeroTitle}>Where Did It Go?</Text>
+            <Text style={[styles.storyHeroPre, { color: theme.colors.textSecondary }]}>{currentMonthName.toUpperCase()} {currentYear}</Text>
+            <Text style={[styles.storyHeroTitle, { color: theme.colors.textPrimary }]}>Where Did It Go?</Text>
           </View>
           <TouchableOpacity
-            style={styles.storyDrillDownBtn}
+            style={[styles.storyDrillDownBtn, { backgroundColor: theme.colors.accentLight }]}
             onPress={() => {
               triggerHaptic();
               setShowWhereDidItGoModal(true);
             }}
             activeOpacity={0.7}
           >
-            <Text style={styles.storyDrillDownText}>Story</Text>
+            <Text style={[styles.storyDrillDownText, { color: theme.colors.primary }]}>Story</Text>
             <ArrowUpRight size={13} color={theme.colors.primary} strokeWidth={2} />
           </TouchableOpacity>
         </View>
 
         <View style={styles.amountDisplayRow}>
-          <Text style={styles.heroTotalAmount}>
+          <Text style={[styles.heroTotalAmount, { color: theme.colors.textPrimary }]}>
             {formatCurrency(stats.thisMonthSpending, settings.currency)}
           </Text>
-          <Text style={styles.heroTotalLabel}>Total spent this month</Text>
+          <Text style={[styles.heroTotalLabel, { color: theme.colors.textSecondary }]}>Total spent this month</Text>
         </View>
 
         {/* Dynamic Month-over-Month Comparison */}
@@ -207,7 +208,7 @@ export const AnalyticsScreen: React.FC = () => {
                 </Text>
               </View>
             ) : (
-              <Text style={styles.heroTrendNeutralText}>
+              <Text style={[styles.heroTrendNeutralText, { color: theme.colors.textSecondary }]}>
                 0% compared with last month
               </Text>
             )}
@@ -215,18 +216,24 @@ export const AnalyticsScreen: React.FC = () => {
         ) : null}
       </View>
 
-      {/* ──────────────── 2. EMPTY STATE VS REAL CONTENT ──────────────── */}
+      {/* ──────────────── 2. 50 / 30 / 20 FINANCIAL HEALTH GAUGE ──────────────── */}
+      <HealthGauge503020 />
+
+      {/* ──────────────── 3. 365-DAY GITHUB-STYLE SPENDING HEATMAP ──────────────── */}
+      <SpendingHeatmap />
+
+      {/* ──────────────── 4. EMPTY STATE VS REAL CONTENT ──────────────── */}
       {expenses.length === 0 ? (
-        <View style={styles.emptyCard}>
-          <View style={styles.emptyIconCircle}>
+        <View style={[styles.emptyCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          <View style={[styles.emptyIconCircle, { backgroundColor: theme.colors.backgroundSecondary }]}>
             <PieChart size={28} color={theme.colors.textTertiary} strokeWidth={1.5} />
           </View>
-          <Text style={styles.emptyHeading}>No expenses yet</Text>
-          <Text style={styles.emptyDesc}>
+          <Text style={[styles.emptyHeading, { color: theme.colors.textPrimary }]}>No expenses yet</Text>
+          <Text style={[styles.emptyDesc, { color: theme.colors.textSecondary }]}>
             Shake your phone or tap Add to record your first expense.
           </Text>
           <TouchableOpacity
-            style={styles.emptyAddBtn}
+            style={[styles.emptyAddBtn, { backgroundColor: theme.colors.primary }]}
             onPress={() => openAddExpensePopup()}
             activeOpacity={0.85}
           >
@@ -235,23 +242,23 @@ export const AnalyticsScreen: React.FC = () => {
         </View>
       ) : (
         <>
-          {/* ──────────────── 3. TOP SPENDING CATEGORY SECTION ──────────────── */}
+          {/* ──────────────── 5. TOP SPENDING CATEGORY SECTION ──────────────── */}
           {topCategory && (
-            <View style={styles.topExpenseCard}>
+            <View style={[styles.topExpenseCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
               <View style={styles.topExpenseHeader}>
-                <Text style={styles.topExpenseTag}>YOUR BIGGEST EXPENSE</Text>
-                <View style={styles.topExpenseIconWrap}>
+                <Text style={[styles.topExpenseTag, { color: theme.colors.textSecondary }]}>YOUR BIGGEST EXPENSE</Text>
+                <View style={[styles.topExpenseIconWrap, { backgroundColor: theme.colors.accentLight }]}>
                   {renderCategoryIcon(topCategory.category, 14)}
                 </View>
               </View>
 
               <View style={styles.topExpenseBody}>
-                <Text style={styles.topExpenseCatName}>{topCategory.label}</Text>
+                <Text style={[styles.topExpenseCatName, { color: theme.colors.textPrimary }]}>{topCategory.label}</Text>
                 <View style={styles.topExpenseAmountRow}>
-                  <Text style={styles.topExpenseAmount}>
+                  <Text style={[styles.topExpenseAmount, { color: theme.colors.primary }]}>
                     {formatCurrency(topCategory.amount, settings.currency)}
                   </Text>
-                  <Text style={styles.topExpenseShare}>
+                  <Text style={[styles.topExpenseShare, { color: theme.colors.textSecondary }]}>
                     {Math.round(topCategory.percentage)}% of your total spending
                   </Text>
                 </View>
@@ -259,38 +266,38 @@ export const AnalyticsScreen: React.FC = () => {
             </View>
           )}
 
-          {/* ──────────────── 4. SMART INSIGHT CARD ──────────────── */}
+          {/* ──────────────── 6. SMART INSIGHT CARD ──────────────── */}
           {smartInsight && (
-            <View style={styles.smartInsightBox}>
+            <View style={[styles.smartInsightBox, { backgroundColor: theme.colors.accentLight, borderColor: theme.colors.borderSubtle }]}>
               <View style={styles.smartInsightIconCircle}>
                 <Sparkles size={14} color={theme.colors.primary} strokeWidth={2} />
               </View>
-              <Text style={styles.smartInsightText}>{smartInsight}</Text>
+              <Text style={[styles.smartInsightText, { color: theme.colors.textPrimary }]}>{smartInsight}</Text>
             </View>
           )}
 
-          {/* ──────────────── 5. EDITORIAL INSIGHT CARDS ──────────────── */}
+          {/* ──────────────── 7. EDITORIAL INSIGHT CARDS ──────────────── */}
           <View style={styles.insightsSection}>
-            <Text style={styles.sectionHeader}>KEY INSIGHTS</Text>
+            <Text style={[styles.sectionHeader, { color: theme.colors.textSecondary }]}>KEY INSIGHTS</Text>
             <View style={styles.insightsRow}>
               {/* Insight 1: Month Comparison */}
-              <View style={styles.insightBox}>
-                <View style={styles.insightIconCircle}>
+              <View style={[styles.insightBox, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                <View style={[styles.insightIconCircle, { backgroundColor: theme.colors.backgroundSecondary }]}>
                   {stats.percentageChange !== null && stats.percentageChange > 0 ? (
                     <TrendingUp size={16} color={theme.colors.negative} strokeWidth={2} />
                   ) : (
                     <TrendingDown size={16} color={theme.colors.positive} strokeWidth={2} />
                   )}
                 </View>
-                <Text style={styles.insightLabel}>VS LAST MONTH</Text>
-                <Text style={styles.insightValue}>
+                <Text style={[styles.insightLabel, { color: theme.colors.textSecondary }]}>VS LAST MONTH</Text>
+                <Text style={[styles.insightValue, { color: theme.colors.textPrimary }]}>
                   {stats.percentageChange !== null
                     ? `${Math.abs(Math.round(stats.percentageChange))}% ${
                         stats.percentageChange > 0 ? 'more' : 'less'
                       }`
                     : 'First month'}
                 </Text>
-                <Text style={styles.insightNote}>
+                <Text style={[styles.insightNote, { color: theme.colors.textSecondary }]}>
                   {stats.lastMonthSpending > 0
                     ? `${formatCurrency(stats.lastMonthSpending, settings.currency)} in ${getMonthName(
                         (now.getMonth() - 1 + 12) % 12
@@ -300,65 +307,65 @@ export const AnalyticsScreen: React.FC = () => {
               </View>
 
               {/* Insight 2: No-Spend Days */}
-              <View style={styles.insightBox}>
-                <View style={[styles.insightIconCircle, { backgroundColor: '#ECFDF5' }]}>
-                  <ShieldCheck size={16} color="#059669" strokeWidth={2} />
+              <View style={[styles.insightBox, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                <View style={[styles.insightIconCircle, { backgroundColor: theme.colors.positiveLight }]}>
+                  <ShieldCheck size={16} color={theme.colors.positive} strokeWidth={2} />
                 </View>
-                <Text style={styles.insightLabel}>NO-SPEND DAYS</Text>
-                <Text style={styles.insightValue}>
+                <Text style={[styles.insightLabel, { color: theme.colors.textSecondary }]}>NO-SPEND DAYS</Text>
+                <Text style={[styles.insightValue, { color: theme.colors.textPrimary }]}>
                   {streakStats.totalNoSpendDaysThisMonth} {streakStats.totalNoSpendDaysThisMonth === 1 ? 'day' : 'days'}
                 </Text>
-                <Text style={styles.insightNote}>
+                <Text style={[styles.insightNote, { color: theme.colors.textSecondary }]}>
                   Wallet untouched this month
                 </Text>
               </View>
             </View>
           </View>
 
-          {/* ──────────────── 6. CATEGORY BREAKDOWN LIST (Highest -> Lowest) ──────────────── */}
+          {/* ──────────────── 8. CATEGORY BREAKDOWN LIST ──────────────── */}
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionHeader}>CATEGORY BREAKDOWN</Text>
-              <Text style={styles.sectionHeaderAction}>
+              <Text style={[styles.sectionHeader, { color: theme.colors.textSecondary }]}>CATEGORY BREAKDOWN</Text>
+              <Text style={[styles.sectionHeaderAction, { color: theme.colors.textSecondary }]}>
                 {categoryBreakdown.length} {categoryBreakdown.length === 1 ? 'category' : 'categories'}
               </Text>
             </View>
 
-            <View style={styles.card}>
+            <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
               {categoryBreakdown.length === 0 ? (
-                <Text style={styles.noDataCardText}>No expenses recorded this month.</Text>
+                <Text style={[styles.noDataCardText, { color: theme.colors.textSecondary }]}>No expenses recorded this month.</Text>
               ) : (
                 categoryBreakdown.map((item, idx) => {
                   const isLast = idx === categoryBreakdown.length - 1;
                   return (
                     <React.Fragment key={item.category}>
                       <View style={styles.breakdownRow}>
-                        <View style={styles.breakdownIconWrap}>
+                        <View style={[styles.breakdownIconWrap, { backgroundColor: theme.colors.accentLight }]}>
                           {renderCategoryIcon(item.category, 15)}
                         </View>
 
                         <View style={styles.breakdownMiddle}>
                           <View style={styles.breakdownTopRow}>
-                            <Text style={styles.breakdownCatName}>{item.label}</Text>
-                            <Text style={styles.breakdownCatAmount}>
+                            <Text style={[styles.breakdownCatName, { color: theme.colors.textPrimary }]}>{item.label}</Text>
+                            <Text style={[styles.breakdownCatAmount, { color: theme.colors.textPrimary }]}>
                               {formatCurrency(item.amount, settings.currency)}
                             </Text>
                           </View>
 
                           {/* Progress Track */}
-                          <View style={styles.progressTrack}>
+                          <View style={[styles.progressTrack, { backgroundColor: theme.colors.backgroundSecondary }]}>
                             <View
                               style={[
                                 styles.progressFill,
-                                { width: `${Math.min(item.percentage, 100)}%` },
+                                { width: `${Math.min(item.percentage, 100)}%`, backgroundColor: theme.colors.primary },
                               ]}
                             />
                           </View>
                         </View>
 
-                        <Text style={styles.breakdownPctText}>{item.percentage}%</Text>
+                        <Text style={[styles.breakdownPctText, { color: theme.colors.textSecondary }]}>{item.percentage}%</Text>
                       </View>
-                      {!isLast && <View style={styles.rowDivider} />}
+                      {!isLast && <View style={[styles.rowDivider, { backgroundColor: theme.colors.borderSubtle }]} />}
                     </React.Fragment>
                   );
                 })
@@ -366,10 +373,10 @@ export const AnalyticsScreen: React.FC = () => {
             </View>
           </View>
 
-          {/* ──────────────── 7. 4-MONTH SPENDING TREND ──────────────── */}
+          {/* ──────────────── 9. 4-MONTH SPENDING TREND ──────────────── */}
           <View style={styles.section}>
-            <Text style={styles.sectionHeader}>SPENDING TREND (4 MONTHS)</Text>
-            <View style={styles.card}>
+            <Text style={[styles.sectionHeader, { color: theme.colors.textSecondary }]}>SPENDING TREND (4 MONTHS)</Text>
+            <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
               <View style={styles.trendBarsRow}>
                 {monthlyTrends.map((m, idx) => {
                   const barHeight = Math.max(
@@ -379,7 +386,7 @@ export const AnalyticsScreen: React.FC = () => {
                   const isCurrent = idx === monthlyTrends.length - 1;
                   return (
                     <View key={m.label} style={styles.trendCol}>
-                      <Text style={styles.trendAmountLabel}>
+                      <Text style={[styles.trendAmountLabel, { color: theme.colors.textSecondary }]}>
                         {m.amount > 0 ? formatCurrency(m.amount, settings.currency) : '—'}
                       </Text>
                       <View style={styles.trendBarContainer}>
@@ -399,6 +406,7 @@ export const AnalyticsScreen: React.FC = () => {
                       <Text
                         style={[
                           styles.trendMonthLabel,
+                          { color: isCurrent ? theme.colors.primary : theme.colors.textSecondary },
                           isCurrent && styles.trendMonthLabelActive,
                         ]}
                       >
@@ -411,9 +419,9 @@ export const AnalyticsScreen: React.FC = () => {
             </View>
           </View>
 
-          {/* ──────────────── 8. MONEY REPLAY BANNER ──────────────── */}
+          {/* ──────────────── 10. MONEY REPLAY BANNER ──────────────── */}
           <TouchableOpacity
-            style={styles.replayBanner}
+            style={[styles.replayBanner, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
             onPress={() => {
               triggerHaptic();
               setShowReplayModal(true);
@@ -421,12 +429,12 @@ export const AnalyticsScreen: React.FC = () => {
             activeOpacity={0.8}
           >
             <View style={styles.replayBannerLeft}>
-              <View style={styles.replayIconCircle}>
+              <View style={[styles.replayIconCircle, { backgroundColor: theme.colors.accentLight }]}>
                 <Sparkles size={18} color={theme.colors.primary} strokeWidth={1.75} />
               </View>
               <View>
-                <Text style={styles.replayBannerTitle}>Monthly Money Replay</Text>
-                <Text style={styles.replayBannerSubtitle}>
+                <Text style={[styles.replayBannerTitle, { color: theme.colors.textPrimary }]}>Monthly Money Replay</Text>
+                <Text style={[styles.replayBannerSubtitle, { color: theme.colors.textSecondary }]}>
                   Step-by-step recap of your {currentMonthName} spending habits
                 </Text>
               </View>
@@ -449,12 +457,11 @@ export const AnalyticsScreen: React.FC = () => {
       />
     </ScrollView>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
   },
   contentContainer: {
     paddingHorizontal: 20,
@@ -462,11 +469,9 @@ const styles = StyleSheet.create({
     paddingBottom: 95,
   },
   storyHeroCard: {
-    backgroundColor: theme.colors.surface,
     borderRadius: 18,
     padding: 20,
     borderWidth: 1,
-    borderColor: theme.colors.border,
     marginBottom: 16,
   },
   storyHeroTop: {
@@ -476,23 +481,19 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   storyHeroPre: {
-    ...theme.typography.label,
     fontSize: 10,
-    color: theme.colors.textSecondary,
+    fontWeight: '700',
     letterSpacing: 0.6,
   },
   storyHeroTitle: {
-    ...theme.typography.display,
     fontSize: 22,
     fontWeight: '700',
-    color: theme.colors.textPrimary,
     marginTop: 2,
   },
   storyDrillDownBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: theme.colors.accentLight,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 9999,
@@ -500,22 +501,17 @@ const styles = StyleSheet.create({
   storyDrillDownText: {
     fontSize: 12,
     fontWeight: '600',
-    color: theme.colors.primary,
   },
   amountDisplayRow: {
     marginBottom: 8,
   },
   heroTotalAmount: {
-    ...theme.typography.amount,
     fontSize: 32,
     fontWeight: '800',
-    color: theme.colors.textPrimary,
     letterSpacing: -0.8,
   },
   heroTotalLabel: {
-    ...theme.typography.caption,
     fontSize: 12,
-    color: theme.colors.textSecondary,
     marginTop: 2,
   },
   heroComparisonRow: {
@@ -529,53 +525,45 @@ const styles = StyleSheet.create({
   heroTrendNegativeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: theme.colors.negative,
+    color: '#DC2626',
   },
   heroTrendPositiveText: {
     fontSize: 12,
     fontWeight: '600',
-    color: theme.colors.positive,
+    color: '#16A34A',
   },
   heroTrendNeutralText: {
     fontSize: 12,
-    color: theme.colors.textSecondary,
   },
   emptyCard: {
-    backgroundColor: theme.colors.surface,
     borderRadius: 18,
     padding: 32,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: theme.colors.border,
     marginVertical: 12,
   },
   emptyIconCircle: {
     width: 56,
     height: 56,
     borderRadius: 9999,
-    backgroundColor: theme.colors.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 14,
   },
   emptyHeading: {
-    ...theme.typography.sectionHeading,
     fontSize: 16,
-    color: theme.colors.textPrimary,
+    fontWeight: '700',
     marginBottom: 6,
   },
   emptyDesc: {
-    ...theme.typography.body,
     fontSize: 13,
-    color: theme.colors.textSecondary,
     textAlign: 'center',
     lineHeight: 18,
     maxWidth: 260,
     marginBottom: 20,
   },
   emptyAddBtn: {
-    backgroundColor: theme.colors.textPrimary,
     paddingHorizontal: 22,
     paddingVertical: 11,
     borderRadius: 9999,
@@ -586,11 +574,9 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   topExpenseCard: {
-    backgroundColor: theme.colors.surface,
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: theme.colors.border,
     marginBottom: 12,
   },
   topExpenseHeader: {
@@ -600,16 +586,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   topExpenseTag: {
-    ...theme.typography.label,
     fontSize: 10,
-    color: theme.colors.textSecondary,
+    fontWeight: '700',
     letterSpacing: 0.6,
   },
   topExpenseIconWrap: {
     width: 26,
     height: 26,
     borderRadius: 9999,
-    backgroundColor: theme.colors.accentLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -617,9 +601,8 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   topExpenseCatName: {
-    ...theme.typography.sectionHeading,
     fontSize: 16,
-    color: theme.colors.textPrimary,
+    fontWeight: '700',
   },
   topExpenseAmountRow: {
     flexDirection: 'row',
@@ -628,64 +611,56 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   topExpenseAmount: {
-    ...theme.typography.display,
     fontSize: 17,
     fontWeight: '700',
-    color: theme.colors.primary,
   },
   topExpenseShare: {
-    ...theme.typography.caption,
     fontSize: 12,
-    color: theme.colors.textSecondary,
     fontWeight: '500',
   },
   smartInsightBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: theme.colors.accentLight,
     borderRadius: 14,
     padding: 14,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(79, 70, 229, 0.15)',
   },
   smartInsightIconCircle: {
     width: 28,
     height: 28,
     borderRadius: 9999,
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },
   smartInsightText: {
-    ...theme.typography.caption,
-    fontSize: 12,
-    color: theme.colors.textPrimary,
     flex: 1,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '500',
   },
   insightsSection: {
-    marginBottom: 18,
+    marginBottom: 16,
   },
-  sectionHeader: {
-    ...theme.typography.label,
-    color: theme.colors.textSecondary,
-    marginBottom: 8,
-    marginLeft: 4,
+  section: {
+    marginBottom: 16,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 8,
-    paddingHorizontal: 4,
+  },
+  sectionHeader: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    marginBottom: 8,
   },
   sectionHeaderAction: {
-    ...theme.typography.caption,
-    color: theme.colors.textSecondary,
     fontSize: 11,
+    fontWeight: '500',
   },
   insightsRow: {
     flexDirection: 'row',
@@ -693,67 +668,53 @@ const styles = StyleSheet.create({
   },
   insightBox: {
     flex: 1,
-    backgroundColor: theme.colors.surface,
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: theme.colors.border,
   },
   insightIconCircle: {
     width: 32,
     height: 32,
-    borderRadius: 9999,
-    backgroundColor: theme.colors.backgroundSecondary,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   insightLabel: {
-    ...theme.typography.label,
-    fontSize: 9,
-    color: theme.colors.textSecondary,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.6,
     marginBottom: 2,
   },
   insightValue: {
-    ...theme.typography.sectionHeading,
     fontSize: 15,
     fontWeight: '700',
-    color: theme.colors.textPrimary,
     marginBottom: 2,
   },
   insightNote: {
-    ...theme.typography.caption,
     fontSize: 11,
-    color: theme.colors.textSecondary,
-  },
-  section: {
-    marginBottom: 18,
+    lineHeight: 14,
   },
   card: {
-    backgroundColor: theme.colors.surface,
     borderRadius: 16,
-    paddingVertical: 6,
-    paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    padding: 16,
   },
   noDataCardText: {
-    ...theme.typography.body,
-    color: theme.colors.textSecondary,
-    paddingVertical: 12,
+    fontSize: 13,
     textAlign: 'center',
+    paddingVertical: 12,
   },
   breakdownRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    gap: 12,
+    gap: 10,
+    paddingVertical: 4,
   },
   breakdownIconWrap: {
     width: 32,
     height: 32,
-    borderRadius: 9999,
-    backgroundColor: theme.colors.accentLight,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -764,64 +725,55 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   breakdownCatName: {
-    ...theme.typography.body,
+    fontSize: 13,
     fontWeight: '600',
-    color: theme.colors.textPrimary,
   },
   breakdownCatAmount: {
-    ...theme.typography.caption,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
   },
   progressTrack: {
     height: 5,
-    backgroundColor: theme.colors.backgroundSecondary,
-    borderRadius: 9999,
+    borderRadius: 3,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: theme.colors.primary,
-    borderRadius: 9999,
+    borderRadius: 3,
   },
   breakdownPctText: {
-    ...theme.typography.caption,
     fontSize: 12,
-    fontWeight: '700',
-    color: theme.colors.textSecondary,
-    minWidth: 32,
+    fontWeight: '600',
+    width: 32,
     textAlign: 'right',
   },
   rowDivider: {
     height: 1,
-    backgroundColor: theme.colors.borderSubtle,
+    marginVertical: 8,
   },
   trendBarsRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    height: 140,
-    paddingTop: 16,
-    paddingBottom: 4,
+    height: 130,
+    paddingTop: 10,
   },
   trendCol: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'flex-end',
     height: '100%',
+    justifyContent: 'flex-end',
   },
   trendAmountLabel: {
-    ...theme.typography.caption,
-    fontSize: 9,
-    color: theme.colors.textSecondary,
+    fontSize: 10,
+    fontWeight: '600',
     marginBottom: 6,
-    textAlign: 'center',
   },
   trendBarContainer: {
-    width: 24,
+    width: 36,
     height: 90,
     justifyContent: 'flex-end',
     alignItems: 'center',
@@ -832,49 +784,41 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   trendMonthLabel: {
-    ...theme.typography.caption,
     fontSize: 11,
-    fontWeight: '500',
-    color: theme.colors.textSecondary,
-    marginTop: 8,
+    fontWeight: '600',
+    marginTop: 6,
   },
   trendMonthLabelActive: {
-    fontWeight: '700',
-    color: theme.colors.primary,
+    fontWeight: '800',
   },
   replayBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: theme.colors.surface,
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    marginBottom: 16,
   },
   replayBannerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     flex: 1,
-    marginRight: 10,
   },
   replayIconCircle: {
-    width: 38,
-    height: 38,
+    width: 36,
+    height: 36,
     borderRadius: 9999,
-    backgroundColor: theme.colors.accentLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
   replayBannerTitle: {
-    ...theme.typography.body,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
   },
   replayBannerSubtitle: {
-    ...theme.typography.caption,
-    color: theme.colors.textSecondary,
+    fontSize: 11,
     marginTop: 2,
   },
 });

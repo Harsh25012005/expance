@@ -1,8 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AppSettings, Expense } from '../types/expense';
+import { AppSettings, Expense, SavingsJar } from '../types/expense';
 
 const EXPENSES_STORAGE_KEY = '@expense_app_expenses_v2';
 const SETTINGS_STORAGE_KEY = '@expense_app_settings_v2';
+const SAVINGS_JARS_STORAGE_KEY = '@expense_app_savings_jars_v1';
 
 export const DEFAULT_SETTINGS: AppSettings = {
   userName: '',
@@ -13,6 +14,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   currency: '₹',
   currencyCode: 'INR',
   hapticsEnabled: true,
+  darkMode: false,
   monthlyBudget: 0,
   dailyReminderEnabled: false,
   reminderTime: '20:00',
@@ -62,6 +64,30 @@ export async function saveStoredSettings(settings: AppSettings): Promise<void> {
     await AsyncStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
   } catch (error) {
     console.error('Error saving settings:', error);
+    throw error;
+  }
+}
+
+export async function loadStoredSavingsJars(): Promise<SavingsJar[]> {
+  try {
+    const raw = await AsyncStorage.getItem(SAVINGS_JARS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed;
+    }
+    return [];
+  } catch (error) {
+    console.error('Error reading stored savings jars:', error);
+    return [];
+  }
+}
+
+export async function saveStoredSavingsJars(jars: SavingsJar[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(SAVINGS_JARS_STORAGE_KEY, JSON.stringify(jars));
+  } catch (error) {
+    console.error('Error saving savings jars:', error);
     throw error;
   }
 }

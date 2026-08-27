@@ -1,101 +1,99 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { TrendingDown, TrendingUp, Calendar, Receipt } from 'lucide-react-native';
+import { TrendingDown, TrendingUp } from 'lucide-react-native';
 import { useExpenses } from '../context/ExpenseContext';
 import { formatCurrency } from '../utils/formatters';
-import { theme } from '../constants/theme';
 
-export const HeroBalanceCard: React.FC = () => {
-  const { stats, settings } = useExpenses();
+export const HeroBalanceCard: React.FC = memo(() => {
+  const { stats, settings, theme } = useExpenses();
   const currentMonthName = new Date().toLocaleDateString('en-US', { month: 'long' });
 
-  const hasExpenses = stats.totalCount > 0;
   const isIncrease = stats.percentageChange !== null && stats.percentageChange > 0;
   const isDecrease = stats.percentageChange !== null && stats.percentageChange < 0;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
       {/* Top Meta Label */}
       <View style={styles.topRow}>
-        <Text style={styles.cardLabel}>TOTAL SPENT</Text>
-        <Text style={styles.monthLabel}>{currentMonthName}</Text>
+        <Text style={[styles.cardLabel, { color: theme.colors.textSecondary }]}>TOTAL SPENT</Text>
+        <Text style={[styles.monthLabel, { color: theme.colors.textTertiary }]}>{currentMonthName}</Text>
       </View>
 
       {/* Main Big Amount Typography */}
       <View style={styles.amountContainer}>
-        <Text style={styles.amountText}>
+        <Text style={[styles.amountText, { color: theme.colors.textPrimary }]}>
           {formatCurrency(stats.totalSpending, settings.currency)}
         </Text>
       </View>
 
       {/* Sub-label & Month-over-Month Comparison */}
       <View style={styles.periodRow}>
-        <Text style={styles.periodText}>This month: {formatCurrency(stats.thisMonthSpending, settings.currency)}</Text>
+        <Text style={[styles.periodText, { color: theme.colors.textSecondary }]}>
+          This month: {formatCurrency(stats.thisMonthSpending, settings.currency)}
+        </Text>
 
         {stats.percentageChange !== null && (
           <View style={styles.trendRow}>
             {isIncrease ? (
               <View style={styles.trendBadge}>
                 <TrendingUp size={12} color={theme.colors.negative} strokeWidth={2} />
-                <Text style={styles.trendNegativeText}>
+                <Text style={[styles.trendNegativeText, { color: theme.colors.negative }]}>
                   +{Math.abs(Math.round(stats.percentageChange))}% vs last mo
                 </Text>
               </View>
             ) : isDecrease ? (
               <View style={styles.trendBadge}>
                 <TrendingDown size={12} color={theme.colors.positive} strokeWidth={2} />
-                <Text style={styles.trendPositiveText}>
+                <Text style={[styles.trendPositiveText, { color: theme.colors.positive }]}>
                   -{Math.abs(Math.round(stats.percentageChange))}% vs last mo
                 </Text>
               </View>
             ) : (
-              <Text style={styles.trendNeutralText}>0% vs last mo</Text>
+              <Text style={[styles.trendNeutralText, { color: theme.colors.textSecondary }]}>0% vs last mo</Text>
             )}
           </View>
         )}
       </View>
 
       {/* Divider */}
-      <View style={styles.divider} />
+      <View style={[styles.divider, { backgroundColor: theme.colors.borderSubtle }]} />
 
       {/* Bottom Sub-stats Row */}
       <View style={styles.bottomRow}>
         <View style={styles.statCol}>
-          <Text style={styles.statLabel}>Transactions</Text>
-          <Text style={styles.statValue}>{stats.totalCount}</Text>
+          <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Transactions</Text>
+          <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{stats.totalCount}</Text>
         </View>
 
-        <View style={styles.verticalDivider} />
+        <View style={[styles.verticalDivider, { backgroundColor: theme.colors.borderSubtle }]} />
 
         <View style={styles.statCol}>
-          <Text style={styles.statLabel}>Avg / Expense</Text>
-          <Text style={styles.statValue}>
+          <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Avg / Expense</Text>
+          <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>
             {formatCurrency(stats.averageExpense, settings.currency)}
           </Text>
         </View>
 
-        <View style={styles.verticalDivider} />
+        <View style={[styles.verticalDivider, { backgroundColor: theme.colors.borderSubtle }]} />
 
         <View style={styles.statCol}>
-          <Text style={styles.statLabel}>Top Category</Text>
-          <Text style={styles.statValue} numberOfLines={1}>
+          <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Top Category</Text>
+          <Text style={[styles.statValue, { color: theme.colors.textPrimary }]} numberOfLines={1}>
             {stats.topCategory?.category || 'None'}
           </Text>
         </View>
       </View>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.container,
+    borderRadius: 20,
     padding: 20,
     marginTop: 4,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: theme.colors.border,
   },
   topRow: {
     flexDirection: 'row',
@@ -104,20 +102,21 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   cardLabel: {
-    ...theme.typography.label,
-    color: theme.colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.6,
   },
   monthLabel: {
-    ...theme.typography.caption,
-    color: theme.colors.textTertiary,
+    fontSize: 12,
     fontWeight: '500',
   },
   amountContainer: {
     marginVertical: 4,
   },
   amountText: {
-    ...theme.typography.amount,
-    color: theme.colors.textPrimary,
+    fontSize: 32,
+    fontWeight: '800',
+    letterSpacing: -0.8,
   },
   periodRow: {
     flexDirection: 'row',
@@ -126,8 +125,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   periodText: {
-    ...theme.typography.secondary,
-    color: theme.colors.textSecondary,
+    fontSize: 13,
   },
   trendRow: {
     flexDirection: 'row',
@@ -141,20 +139,16 @@ const styles = StyleSheet.create({
   trendNegativeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: theme.colors.negative,
   },
   trendPositiveText: {
     fontSize: 12,
     fontWeight: '600',
-    color: theme.colors.positive,
   },
   trendNeutralText: {
     fontSize: 12,
-    color: theme.colors.textSecondary,
   },
   divider: {
     height: 1,
-    backgroundColor: theme.colors.borderSubtle,
     marginVertical: 16,
   },
   bottomRow: {
@@ -166,19 +160,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   statLabel: {
-    ...theme.typography.caption,
-    color: theme.colors.textSecondary,
+    fontSize: 11,
     marginBottom: 4,
   },
   statValue: {
-    ...theme.typography.bodyLarge,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
   },
   verticalDivider: {
     width: 1,
     height: 24,
-    backgroundColor: theme.colors.borderSubtle,
     marginHorizontal: 12,
   },
 });

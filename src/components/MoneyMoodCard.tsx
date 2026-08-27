@@ -1,16 +1,15 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Activity, AlertCircle, TrendingUp, ShieldCheck } from 'lucide-react-native';
+import { AlertCircle, TrendingUp, ShieldCheck } from 'lucide-react-native';
 import { useExpenses } from '../context/ExpenseContext';
 import { calculateMoneyMood } from '../utils/analyticsHelpers';
-import { theme } from '../constants/theme';
 
 interface MoneyMoodCardProps {
   compact?: boolean;
 }
 
-export const MoneyMoodCard: React.FC<MoneyMoodCardProps> = ({ compact = false }) => {
-  const { expenses, settings } = useExpenses();
+export const MoneyMoodCard: React.FC<MoneyMoodCardProps> = memo(() => {
+  const { expenses, settings, theme } = useExpenses();
   const moodInfo = calculateMoneyMood(expenses, settings.monthlyBudget || 0, new Date());
 
   const renderIcon = () => {
@@ -26,11 +25,11 @@ export const MoneyMoodCard: React.FC<MoneyMoodCardProps> = ({ compact = false })
   };
 
   return (
-    <View style={styles.widgetContainer}>
+    <View style={[styles.widgetContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
       <View style={styles.headerRow}>
         <View style={styles.leftCol}>
-          <Text style={styles.widgetLabel}>Money Mood</Text>
-          <Text style={styles.moodValue}>{moodInfo.mood}</Text>
+          <Text style={[styles.widgetLabel, { color: theme.colors.textSecondary }]}>Money Mood</Text>
+          <Text style={[styles.moodValue, { color: theme.colors.textPrimary }]}>{moodInfo.mood}</Text>
         </View>
 
         <View style={[styles.badge, { backgroundColor: moodInfo.bgColor }]}>
@@ -41,20 +40,18 @@ export const MoneyMoodCard: React.FC<MoneyMoodCardProps> = ({ compact = false })
         </View>
       </View>
 
-      <Text style={styles.descriptionText}>
+      <Text style={[styles.descriptionText, { color: theme.colors.textSecondary }]}>
         {moodInfo.description}
       </Text>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   widgetContainer: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.container,
+    borderRadius: 20,
     padding: 16,
     borderWidth: 1,
-    borderColor: theme.colors.border,
     marginBottom: 12,
   },
   headerRow: {
@@ -67,14 +64,13 @@ const styles = StyleSheet.create({
     gap: 1,
   },
   widgetLabel: {
-    ...theme.typography.label,
     fontSize: 11,
-    color: theme.colors.textSecondary,
+    fontWeight: '700',
+    letterSpacing: 0.6,
   },
   moodValue: {
-    ...theme.typography.sectionHeading,
     fontSize: 16,
-    color: theme.colors.textPrimary,
+    fontWeight: '700',
   },
   badge: {
     flexDirection: 'row',
@@ -85,14 +81,11 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   badgeText: {
-    ...theme.typography.caption,
     fontSize: 11,
     fontWeight: '700',
   },
   descriptionText: {
-    ...theme.typography.caption,
     fontSize: 12,
-    color: theme.colors.textSecondary,
     lineHeight: 17,
   },
 });

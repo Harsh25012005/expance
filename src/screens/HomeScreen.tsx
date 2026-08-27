@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
 import {
   Smartphone,
   Plus,
+  ScanLine,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,16 +22,16 @@ import { WhereDidItGoWidget } from '../components/WhereDidItGoWidget';
 import { WhereDidItGoModal } from '../components/WhereDidItGoModal';
 import { MoneyMoodCard } from '../components/MoneyMoodCard';
 import { StreaksCard } from '../components/StreaksCard';
+import { SavingsJarsSection } from '../components/SavingsJarsSection';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { Expense } from '../types/expense';
-import { theme } from '../constants/theme';
 
 interface HomeScreenProps {
   onNavigateToExpenses: () => void;
 }
 
-export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToExpenses }) => {
-  const { expenses, deleteExpense } = useExpenses();
+export const HomeScreen: React.FC<HomeScreenProps> = memo(({ onNavigateToExpenses }) => {
+  const { expenses, deleteExpense, theme } = useExpenses();
   const { openQuickAddModal } = useShake();
   const insets = useSafeAreaInsets();
 
@@ -72,7 +73,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToExpenses }) 
   return (
     <>
       <ScrollView
-        style={styles.container}
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
         contentContainerStyle={[
           styles.contentContainer,
           { paddingBottom: 85 + Math.max(insets.bottom, 16) },
@@ -85,21 +86,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToExpenses }) 
         {/* 2. Monthly Budget Primary Widget */}
         <BudgetCard />
 
-        {/* 3. Where Did It Go? Visual Category Breakdown Widget */}
+        {/* 3. Visual Savings Goal Jars (Sinking Funds) */}
+        <SavingsJarsSection />
+
+        {/* 4. Where Did It Go? Visual Category Breakdown Widget */}
         <WhereDidItGoWidget onOpenBreakdown={() => setShowWhereDidItGoModal(true)} />
 
-        {/* 4. Money Mood Widget */}
+        {/* 5. Money Mood Widget */}
         <MoneyMoodCard />
 
-        {/* 5. Streaks Statistics Widget */}
+        {/* 6. Streaks Statistics Widget */}
         <StreaksCard />
 
-        {/* 6. Quick Action Widget (Shake to Add + Clear Manual Add) */}
-        <View style={styles.actionWidget}>
+        {/* 7. Quick Action Widget (Shake to Add + Clear Manual Add) */}
+        <View style={[styles.actionWidget, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
           <View style={styles.actionLeft}>
             <Animated.View
               style={[
                 styles.shakeIconCircle,
+                { backgroundColor: theme.colors.accentLight },
                 {
                   transform: [
                     {
@@ -115,15 +120,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToExpenses }) 
               <Smartphone size={16} color={theme.colors.primary} strokeWidth={2} />
             </Animated.View>
             <View style={styles.actionTextCol}>
-              <Text style={styles.actionTitle}>Shake to add</Text>
-              <Text style={styles.actionSubtitle}>
+              <Text style={[styles.actionTitle, { color: theme.colors.textPrimary }]}>Shake to add</Text>
+              <Text style={[styles.actionSubtitle, { color: theme.colors.textSecondary }]}>
                 Shake your phone anytime to quickly record spending.
               </Text>
             </View>
           </View>
 
           <TouchableOpacity
-            style={styles.manualAddBtn}
+            style={[styles.manualAddBtn, { backgroundColor: theme.colors.backgroundSecondary, borderColor: theme.colors.borderSubtle }]}
             onPress={() => {
               triggerHaptic();
               openQuickAddModal({ triggeredByShake: false });
@@ -131,7 +136,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToExpenses }) 
             activeOpacity={0.7}
           >
             <Plus size={13} color={theme.colors.textPrimary} strokeWidth={2} />
-            <Text style={styles.manualAddBtnText}>Add Expense</Text>
+            <Text style={[styles.manualAddBtnText, { color: theme.colors.textPrimary }]}>Add Expense</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -155,7 +160,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToExpenses }) 
       />
     </>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -166,11 +171,9 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   actionWidget: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.container,
+    borderRadius: 20,
     padding: 14,
     borderWidth: 1,
-    borderColor: theme.colors.border,
     marginBottom: 16,
     flexDirection: 'row',
     alignItems: 'center',
@@ -186,8 +189,7 @@ const styles = StyleSheet.create({
   shakeIconCircle: {
     width: 34,
     height: 34,
-    borderRadius: 9999, // Fully rounded
-    backgroundColor: theme.colors.accentLight,
+    borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -195,15 +197,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   actionTitle: {
-    ...theme.typography.body,
     fontSize: 13,
     fontWeight: '700',
-    color: theme.colors.textPrimary,
   },
   actionSubtitle: {
-    ...theme.typography.caption,
     fontSize: 11,
-    color: theme.colors.textSecondary,
     marginTop: 1,
     lineHeight: 14,
   },
@@ -213,15 +211,11 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: 9999, // Fully rounded
-    backgroundColor: theme.colors.backgroundSecondary,
+    borderRadius: 9999,
     borderWidth: 1,
-    borderColor: theme.colors.borderSubtle,
   },
   manualAddBtnText: {
-    ...theme.typography.caption,
     fontSize: 11,
     fontWeight: '700',
-    color: theme.colors.textPrimary,
   },
 });

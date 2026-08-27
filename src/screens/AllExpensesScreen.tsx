@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, memo } from 'react';
 import {
   View,
   Text,
@@ -45,7 +45,7 @@ export type SortType = 'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc';
 export type DateFilterType = 'all' | 'today' | 'yesterday' | 'week' | 'month';
 export type TimeFilterType = 'all' | 'morning' | 'afternoon' | 'evening';
 
-export const AllExpensesScreen: React.FC = () => {
+export const AllExpensesScreen: React.FC = memo(() => {
   const { expenses, settings, stats, deleteExpense } = useExpenses();
   const { openAddExpensePopup } = useShake();
   const insets = useSafeAreaInsets();
@@ -950,7 +950,7 @@ export const AllExpensesScreen: React.FC = () => {
       />
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

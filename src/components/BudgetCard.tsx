@@ -1,15 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, memo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { WalletCards, Plus, Edit3 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useExpenses } from '../context/ExpenseContext';
 import { getMonthlyBudgetStats, getMonthName } from '../utils/analyticsHelpers';
 import { formatCurrency } from '../utils/formatters';
-import { theme } from '../constants/theme';
 import { SetBudgetModal } from './SetBudgetModal';
 
-export const BudgetCard: React.FC = () => {
-  const { expenses, settings } = useExpenses();
+export const BudgetCard: React.FC = memo(() => {
+  const { expenses, settings, theme } = useExpenses();
   const [showModal, setShowModal] = useState<boolean>(false);
 
   const now = new Date();
@@ -44,21 +43,21 @@ export const BudgetCard: React.FC = () => {
   if (!budgetStats.hasBudget) {
     return (
       <>
-        <View style={styles.widgetContainer}>
+        <View style={[styles.widgetContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
           <View style={styles.emptyHeader}>
-            <View style={styles.iconCircle}>
+            <View style={[styles.iconCircle, { backgroundColor: theme.colors.accentLight }]}>
               <WalletCards size={18} color={theme.colors.primary} strokeWidth={1.75} />
             </View>
             <View style={styles.emptyTextCol}>
-              <Text style={styles.widgetTitle}>Set your monthly budget</Text>
-              <Text style={styles.emptySubtitle}>
+              <Text style={[styles.widgetTitle, { color: theme.colors.textPrimary }]}>Set your monthly budget</Text>
+              <Text style={[styles.emptySubtitle, { color: theme.colors.textSecondary }]}>
                 Set a budget to understand your spending.
               </Text>
             </View>
           </View>
 
           <TouchableOpacity
-            style={styles.setBudgetBtn}
+            style={[styles.setBudgetBtn, { backgroundColor: theme.colors.primary }]}
             onPress={handleOpenModal}
             activeOpacity={0.8}
           >
@@ -94,21 +93,21 @@ export const BudgetCard: React.FC = () => {
 
   return (
     <>
-      <View style={styles.widgetContainer}>
+      <View style={[styles.widgetContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
         {/* Header with Title & Month + Edit Button */}
         <View style={styles.widgetHeader}>
           <View>
-            <Text style={styles.widgetTitle}>Monthly Budget</Text>
-            <Text style={styles.widgetSubtitle}>{currentMonthName}</Text>
+            <Text style={[styles.widgetTitle, { color: theme.colors.textPrimary }]}>Monthly Budget</Text>
+            <Text style={[styles.widgetSubtitle, { color: theme.colors.textSecondary }]}>{currentMonthName}</Text>
           </View>
 
           <TouchableOpacity
-            style={styles.editBtn}
+            style={[styles.editBtn, { backgroundColor: theme.colors.accentLight }]}
             onPress={handleOpenModal}
             activeOpacity={0.7}
           >
             <Edit3 size={12} color={theme.colors.primary} strokeWidth={2} />
-            <Text style={styles.editBtnText}>Edit Budget</Text>
+            <Text style={[styles.editBtnText, { color: theme.colors.primary }]}>Edit Budget</Text>
           </TouchableOpacity>
         </View>
 
@@ -117,13 +116,13 @@ export const BudgetCard: React.FC = () => {
           <Text style={[styles.remainingAmount, { color: remainingColor }]}>
             {remainingText}
           </Text>
-          <View style={styles.percentBadge}>
-            <Text style={styles.percentBadgeText}>{budgetStats.percentageUsed}% used</Text>
+          <View style={[styles.percentBadge, { backgroundColor: theme.colors.backgroundSecondary }]}>
+            <Text style={[styles.percentBadgeText, { color: theme.colors.textSecondary }]}>{budgetStats.percentageUsed}% used</Text>
           </View>
         </View>
 
         {/* 2. Animated Progress Bar */}
-        <View style={styles.progressBarTrack}>
+        <View style={[styles.progressBarTrack, { backgroundColor: theme.colors.backgroundSecondary }]}>
           <Animated.View
             style={[
               styles.progressBarFill,
@@ -138,10 +137,10 @@ export const BudgetCard: React.FC = () => {
         {/* 3. Spent of Total Budget */}
         <View style={styles.spentRow}>
           <Text style={styles.spentMainText}>
-            <Text style={styles.spentAmount}>
+            <Text style={[styles.spentAmount, { color: theme.colors.textPrimary }]}>
               {formatCurrency(budgetStats.spent, settings.currency)}
             </Text>
-            <Text style={styles.spentOfText}>
+            <Text style={[styles.spentOfText, { color: theme.colors.textSecondary }]}>
               {' '}spent of {formatCurrency(budgetStats.monthlyBudget, settings.currency)}
             </Text>
           </Text>
@@ -151,15 +150,13 @@ export const BudgetCard: React.FC = () => {
       <SetBudgetModal visible={showModal} onClose={() => setShowModal(false)} />
     </>
   );
-};
+});
 
 const styles = StyleSheet.create({
   widgetContainer: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.container,
+    borderRadius: 20,
     padding: 16,
     borderWidth: 1,
-    borderColor: theme.colors.border,
     marginBottom: 12,
   },
   widgetHeader: {
@@ -169,14 +166,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   widgetTitle: {
-    ...theme.typography.sectionHeading,
     fontSize: 15,
-    color: theme.colors.textPrimary,
+    fontWeight: '700',
   },
   widgetSubtitle: {
-    ...theme.typography.caption,
     fontSize: 12,
-    color: theme.colors.textSecondary,
     marginTop: 1,
     fontWeight: '500',
   },
@@ -186,14 +180,11 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 12,
     paddingVertical: 5,
-    borderRadius: 9999, // Fully rounded
-    backgroundColor: theme.colors.accentLight,
+    borderRadius: 9999,
   },
   editBtnText: {
-    ...theme.typography.caption,
     fontSize: 11,
     fontWeight: '700',
-    color: theme.colors.primary,
   },
   remainingBox: {
     flexDirection: 'row',
@@ -202,27 +193,22 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   remainingAmount: {
-    ...theme.typography.display,
     fontSize: 20,
     fontWeight: '700',
     letterSpacing: -0.3,
   },
   percentBadge: {
-    backgroundColor: theme.colors.backgroundSecondary,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 9999, // Fully rounded
+    borderRadius: 9999,
   },
   percentBadgeText: {
-    ...theme.typography.caption,
     fontSize: 11,
     fontWeight: '600',
-    color: theme.colors.textSecondary,
   },
   progressBarTrack: {
     height: 7,
-    backgroundColor: theme.colors.backgroundSecondary,
-    borderRadius: 9999, // Fully rounded track
+    borderRadius: 9999,
     overflow: 'hidden',
     marginBottom: 8,
   },
@@ -236,17 +222,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   spentMainText: {
-    ...theme.typography.caption,
+    fontSize: 12,
   },
   spentAmount: {
     fontSize: 13,
     fontWeight: '700',
-    color: theme.colors.textPrimary,
   },
   spentOfText: {
     fontSize: 12,
     fontWeight: '500',
-    color: theme.colors.textSecondary,
   },
   emptyHeader: {
     flexDirection: 'row',
@@ -257,8 +241,7 @@ const styles = StyleSheet.create({
   iconCircle: {
     width: 38,
     height: 38,
-    borderRadius: 9999, // Fully rounded
-    backgroundColor: theme.colors.accentLight,
+    borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -266,9 +249,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   emptySubtitle: {
-    ...theme.typography.caption,
     fontSize: 12,
-    color: theme.colors.textSecondary,
     marginTop: 2,
     lineHeight: 16,
   },
@@ -277,12 +258,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: theme.colors.primary,
     paddingVertical: 10,
-    borderRadius: 9999, // Fully rounded
+    borderRadius: 9999,
   },
   setBudgetBtnText: {
-    ...theme.typography.body,
     fontSize: 13,
     fontWeight: '600',
     color: '#FFFFFF',

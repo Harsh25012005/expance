@@ -17,6 +17,8 @@ export interface Expense {
   createdAt: string; // ISO 8601 string
   updatedAt: string; // ISO 8601 string
   notes?: string;
+  receiptUri?: string; // Optional local URI of receipt photo
+  tags?: string[];
 }
 
 export type ShakeSensitivity = 'low' | 'medium' | 'high';
@@ -36,6 +38,7 @@ export interface AppSettings {
   currency: string;
   currencyCode: string;
   hapticsEnabled: boolean;
+  darkMode?: boolean; // Dark mode theme toggle
   monthlyBudget?: number; // 0 or undefined when not set
   dailyReminderEnabled?: boolean;
   reminderTime?: string; // e.g. '20:00'
@@ -93,4 +96,40 @@ export interface MoneyReplayData {
   budgetPercentage: number | null;
   hasBudget: boolean;
   hasExpenses: boolean;
+}
+
+// 🏺 Savings Goal Jar (Sinking Fund)
+export interface SavingsJar {
+  id: string;
+  title: string;
+  targetAmount: number;
+  currentAmount: number;
+  categoryIcon: string;
+  color: string;
+  deadlineDate?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ⚖️ 50 / 30 / 20 Rule Stats
+export interface Rule503020Stats {
+  needsAmount: number;
+  needsPercentage: number;
+  wantsAmount: number;
+  wantsPercentage: number;
+  savingsAmount: number;
+  savingsPercentage: number;
+  totalAmount: number;
+  score: number; // 0 - 100
+  statusText: string;
+  recommendation: string;
+}
+
+// 🟩 Heatmap Day Data
+export interface HeatmapDayData {
+  dateString: string; // YYYY-MM-DD
+  dayOfWeek: number; // 0-6
+  amount: number;
+  count: number;
+  level: 0 | 1 | 2 | 3 | 4; // 0=none, 1=low, 2=med, 3=high, 4=very high
 }

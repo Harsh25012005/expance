@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Plus } from 'lucide-react-native';
 import { useExpenses } from '../context/ExpenseContext';
 import { useShake } from '../context/ShakeContext';
-import { theme } from '../constants/theme';
 
 interface HeaderProps {
   title?: string;
@@ -18,7 +17,7 @@ export const Header: React.FC<HeaderProps> = ({
   showAddButton = true,
   isHome = false,
 }) => {
-  const { settings } = useExpenses();
+  const { settings, theme } = useExpenses();
   const { openQuickAddModal } = useShake();
 
   const getGreeting = () => {
@@ -33,12 +32,12 @@ export const Header: React.FC<HeaderProps> = ({
   const headerSubtitle = isHome ? "Here's where your money went this month." : subtitle || 'Track your daily finances';
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={[styles.left, !showAddButton && styles.leftFull]}>
-        <Text style={styles.title} numberOfLines={1}>
+        <Text style={[styles.title, { color: theme.colors.textPrimary }]} numberOfLines={1}>
           {headerTitle}
         </Text>
-        <Text style={styles.subtitle} numberOfLines={1}>
+        <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]} numberOfLines={1}>
           {headerSubtitle}
         </Text>
       </View>
@@ -46,7 +45,7 @@ export const Header: React.FC<HeaderProps> = ({
       {showAddButton && (
         <View style={styles.right}>
           <TouchableOpacity
-            style={styles.addBtn}
+            style={[styles.addBtn, { backgroundColor: theme.colors.primary }]}
             onPress={() => openQuickAddModal({ triggeredByShake: false })}
             activeOpacity={0.8}
             accessibilityLabel="Add expense"
@@ -68,7 +67,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 12,
-    backgroundColor: theme.colors.background,
   },
   left: {
     flex: 1,
@@ -78,12 +76,12 @@ const styles = StyleSheet.create({
     marginRight: 0,
   },
   title: {
-    ...theme.typography.pageHeading,
-    color: theme.colors.textPrimary,
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: -0.4,
   },
   subtitle: {
-    ...theme.typography.secondary,
-    color: theme.colors.textSecondary,
+    fontSize: 13,
     marginTop: 2,
   },
   right: {
@@ -93,8 +91,7 @@ const styles = StyleSheet.create({
   addBtn: {
     width: 36,
     height: 36,
-    borderRadius: 9999, // Fully rounded
-    backgroundColor: theme.colors.textPrimary,
+    borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -1,5 +1,5 @@
 import './global.css';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -27,14 +27,14 @@ import { AllExpensesScreen } from './src/screens/AllExpensesScreen';
 import { AnalyticsScreen } from './src/screens/AnalyticsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { TabScreen } from './src/types/expense';
-import { theme } from './src/constants/theme';
 
 function SplashScreen() {
+  const { theme } = useExpenses();
   return (
-    <View style={styles.splashContainer}>
+    <View style={[styles.splashContainer, { backgroundColor: theme.colors.background }]}>
       <AppLogo size="large" />
-      <Text style={styles.splashTitle}>Expenza</Text>
-      <Text style={styles.splashSubtitle}>Track your spending, effortlessly.</Text>
+      <Text style={[styles.splashTitle, { color: theme.colors.textPrimary }]}>Expenza</Text>
+      <Text style={[styles.splashSubtitle, { color: theme.colors.textSecondary }]}>Track your spending, effortlessly.</Text>
       <ActivityIndicator size="small" color={theme.colors.textSecondary} style={styles.splashSpinner} />
     </View>
   );
@@ -42,6 +42,7 @@ function SplashScreen() {
 
 function MainApp() {
   const [activeTab, setActiveTab] = useState<TabScreen>('home');
+  const { isDark, theme } = useExpenses();
   const { navigationTarget, clearNavigationTarget, isSetBudgetModalOpen, closeSetBudgetModal } = useShake();
 
   useEffect(() => {
@@ -51,22 +52,7 @@ function MainApp() {
     }
   }, [navigationTarget, clearNavigationTarget]);
 
-  const renderCurrentScreen = () => {
-    switch (activeTab) {
-      case 'home':
-        return <HomeScreen onNavigateToExpenses={() => setActiveTab('expenses')} />;
-      case 'expenses':
-        return <AllExpensesScreen />;
-      case 'analytics':
-        return <AnalyticsScreen />;
-      case 'settings':
-        return <SettingsScreen />;
-      default:
-        return <HomeScreen onNavigateToExpenses={() => setActiveTab('expenses')} />;
-    }
-  };
-
-  const getHeaderProps = () => {
+  const headerProps = useMemo(() => {
     switch (activeTab) {
       case 'home':
         return {
@@ -91,15 +77,18 @@ function MainApp() {
           subtitle: 'Preferences & data management',
           showAddButton: false,
         };
+      default:
+        return {
+          isHome: true,
+          showAddButton: true,
+        };
     }
-  };
-
-  const headerProps = getHeaderProps();
+  }, [activeTab]);
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      {/* Light Theme Status Bar */}
-      <StatusBar style="dark" />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]} edges={['top', 'left', 'right']}>
+      {/* Dynamic Theme Status Bar */}
+      <StatusBar style={isDark ? 'light' : 'dark'} />
 
       {/* Top Header */}
       <Header
@@ -109,8 +98,21 @@ function MainApp() {
         isHome={headerProps.isHome}
       />
 
-      {/* Screen Body */}
-      <View style={styles.screenContainer}>{renderCurrentScreen()}</View>
+      {/* Screen Body with 0ms Instant Tab Transitions */}
+      <View style={[styles.screenContainer, { backgroundColor: theme.colors.background }]}>
+        <View style={[styles.tabPane, activeTab !== 'home' && styles.hiddenPane]}>
+          <HomeScreen onNavigateToExpenses={() => setActiveTab('expenses')} />
+        </View>
+        <View style={[styles.tabPane, activeTab !== 'expenses' && styles.hiddenPane]}>
+          <AllExpensesScreen />
+        </View>
+        <View style={[styles.tabPane, activeTab !== 'analytics' && styles.hiddenPane]}>
+          <AnalyticsScreen />
+        </View>
+        <View style={[styles.tabPane, activeTab !== 'settings' && styles.hiddenPane]}>
+          <SettingsScreen />
+        </View>
+      </View>
 
       {/* Glassmorphism Bottom Tab Bar */}
       <CustomTabBar activeTab={activeTab} onTabChange={setActiveTab} />
@@ -122,7 +124,7 @@ function MainApp() {
 }
 
 function RootApp() {
-  const { settings, loading } = useExpenses();
+  const { settings, loading, isDark } = useExpenses();
 
   if (loading) {
     return <SplashScreen />;
@@ -132,7 +134,7 @@ function RootApp() {
   if (!settings.onboardingCompleted) {
     return (
       <>
-        <StatusBar style="dark" />
+        <StatusBar style={isDark ? 'light' : 'dark'} />
         <OnboardingScreen />
       </>
     );
@@ -155,7 +157,11 @@ export default function App() {
   }, []);
 
   if (!fontsLoaded) {
-    return <SplashScreen />;
+    return (
+      <View style={styles.splashFallback}>
+        <ActivityIndicator size="small" color="#4F46E5" />
+      </View>
+    );
   }
 
   return (
@@ -174,26 +180,27 @@ export default function App() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+  },
+  splashFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F7F7F5',
   },
   splashContainer: {
     flex: 1,
-    backgroundColor: theme.colors.background,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
   splashTitle: {
-    ...theme.typography.display,
     fontSize: 28,
     fontWeight: '700',
-    color: theme.colors.textPrimary,
     marginTop: 18,
     letterSpacing: -0.5,
   },
   splashSubtitle: {
-    ...theme.typography.body,
-    color: theme.colors.textSecondary,
+    fontSize: 14,
     marginTop: 6,
     textAlign: 'center',
   },
@@ -202,6 +209,11 @@ const styles = StyleSheet.create({
   },
   screenContainer: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+  },
+  tabPane: {
+    flex: 1,
+  },
+  hiddenPane: {
+    display: 'none',
   },
 });

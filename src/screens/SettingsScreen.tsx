@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, memo } from 'react';
 import {
   View,
   Text,
@@ -29,24 +29,29 @@ import {
   Bell,
   Clock,
   Sparkles,
+  Moon,
+  LayoutGrid,
+  PiggyBank,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useExpenses } from '../context/ExpenseContext';
+import { useShake } from '../context/ShakeContext';
 import { SUPPORTED_CURRENCIES } from '../constants/categories';
 import { ShakeSensitivity } from '../types/expense';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { SetBudgetModal } from '../components/SetBudgetModal';
 import { CustomTimePickerModal } from '../components/CustomTimePickerModal';
 import { ShakeSensitivityModal } from '../components/ShakeSensitivityModal';
+import { WidgetsHubModal } from '../components/WidgetsHubModal';
 import { exportExpenses, ExportFormat } from '../services/exportService';
 import { formatCurrency, formatTimeDisplay } from '../utils/formatters';
 import { requestReminderPermissions } from '../utils/reminderService';
-import { theme } from '../constants/theme';
 import { AppLogo } from '../components/AppLogo';
 
-export const SettingsScreen: React.FC = () => {
-  const { settings, updateSettings, expenses, eraseAllData } = useExpenses();
+export const SettingsScreen: React.FC = memo(() => {
+  const { settings, updateSettings, expenses, eraseAllData, isDark, toggleDarkMode, theme } = useExpenses();
+  const { openAddExpensePopup } = useShake();
   const insets = useSafeAreaInsets();
 
   const [showEraseAllConfirm, setShowEraseAllConfirm] = useState<boolean>(false);
@@ -56,6 +61,7 @@ export const SettingsScreen: React.FC = () => {
   const [showBudgetModal, setShowBudgetModal] = useState<boolean>(false);
   const [showReminderTimeModal, setShowReminderTimeModal] = useState<boolean>(false);
   const [showExportModal, setShowExportModal] = useState<boolean>(false);
+  const [showWidgetsModal, setShowWidgetsModal] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [tempName, setTempName] = useState<string>(settings.userName || '');
 
@@ -116,7 +122,7 @@ export const SettingsScreen: React.FC = () => {
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
       contentContainerStyle={[
         styles.contentContainer,
         { paddingBottom: 85 + Math.max(insets.bottom, 16) },
@@ -125,8 +131,8 @@ export const SettingsScreen: React.FC = () => {
     >
       {/* ──────────────── 1. PREFERENCES SECTION ──────────────── */}
       <View style={styles.section}>
-        <Text style={styles.sectionHeader}>PREFERENCES</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionHeader, { color: theme.colors.textSecondary }]}>PREFERENCES</Text>
+        <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
           {/* User Name */}
           <TouchableOpacity
             style={styles.row}
@@ -138,18 +144,18 @@ export const SettingsScreen: React.FC = () => {
             activeOpacity={0.7}
           >
             <View style={styles.rowLeft}>
-              <View style={styles.iconCircle}>
+              <View style={[styles.iconCircle, { backgroundColor: theme.colors.backgroundSecondary }]}>
                 <User size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
               </View>
               <View>
-                <Text style={styles.rowTitle}>Your Name</Text>
-                <Text style={styles.rowSubtitle}>{settings.userName || 'Not set'}</Text>
+                <Text style={[styles.rowTitle, { color: theme.colors.textPrimary }]}>Your Name</Text>
+                <Text style={[styles.rowSubtitle, { color: theme.colors.textSecondary }]}>{settings.userName || 'Not set'}</Text>
               </View>
             </View>
             <ChevronRight size={15} color={theme.colors.textTertiary} strokeWidth={1.5} />
           </TouchableOpacity>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: theme.colors.borderSubtle }]} />
 
           {/* Currency */}
           <TouchableOpacity
@@ -161,12 +167,12 @@ export const SettingsScreen: React.FC = () => {
             activeOpacity={0.7}
           >
             <View style={styles.rowLeft}>
-              <View style={styles.iconCircle}>
+              <View style={[styles.iconCircle, { backgroundColor: theme.colors.backgroundSecondary }]}>
                 <Coins size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
               </View>
               <View>
-                <Text style={styles.rowTitle}>Currency</Text>
-                <Text style={styles.rowSubtitle}>
+                <Text style={[styles.rowTitle, { color: theme.colors.textPrimary }]}>Currency</Text>
+                <Text style={[styles.rowSubtitle, { color: theme.colors.textSecondary }]}>
                   {settings.currencyCode} ({settings.currency})
                 </Text>
               </View>
@@ -174,17 +180,40 @@ export const SettingsScreen: React.FC = () => {
             <ChevronRight size={15} color={theme.colors.textTertiary} strokeWidth={1.5} />
           </TouchableOpacity>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: theme.colors.borderSubtle }]} />
+
+          {/* Widgets Hub & Shortcuts */}
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => {
+              triggerHaptic();
+              setShowWidgetsModal(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={styles.rowLeft}>
+              <View style={[styles.iconCircle, { backgroundColor: theme.colors.backgroundSecondary }]}>
+                <LayoutGrid size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
+              </View>
+              <View>
+                <Text style={[styles.rowTitle, { color: theme.colors.textPrimary }]}>Widgets & App Shortcuts</Text>
+                <Text style={[styles.rowSubtitle, { color: theme.colors.textSecondary }]}>Home screen widgets & 1-tap actions</Text>
+              </View>
+            </View>
+            <ChevronRight size={15} color={theme.colors.textTertiary} strokeWidth={1.5} />
+          </TouchableOpacity>
+
+          <View style={[styles.divider, { backgroundColor: theme.colors.borderSubtle }]} />
 
           {/* Shake-to-Add Toggle */}
           <View style={styles.row}>
             <View style={styles.rowLeft}>
-              <View style={styles.iconCircle}>
+              <View style={[styles.iconCircle, { backgroundColor: theme.colors.backgroundSecondary }]}>
                 <Smartphone size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
               </View>
               <View>
-                <Text style={styles.rowTitle}>Shake to Add Expense</Text>
-                <Text style={styles.rowSubtitle}>Shake phone to trigger quick add</Text>
+                <Text style={[styles.rowTitle, { color: theme.colors.textPrimary }]}>Shake to Add Expense</Text>
+                <Text style={[styles.rowSubtitle, { color: theme.colors.textSecondary }]}>Shake phone to trigger quick add</Text>
               </View>
             </View>
             <Switch
@@ -193,7 +222,7 @@ export const SettingsScreen: React.FC = () => {
                 triggerHaptic();
                 updateSettings({ shakeEnabled: val });
               }}
-              trackColor={{ false: theme.colors.border, true: theme.colors.textPrimary }}
+              trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
               thumbColor="#FFFFFF"
             />
           </View>
@@ -201,7 +230,7 @@ export const SettingsScreen: React.FC = () => {
           {/* Shake Sensitivity Compact Row */}
           {settings.shakeEnabled && (
             <>
-              <View style={styles.divider} />
+              <View style={[styles.divider, { backgroundColor: theme.colors.borderSubtle }]} />
               <TouchableOpacity
                 style={styles.row}
                 onPress={() => {
@@ -211,12 +240,12 @@ export const SettingsScreen: React.FC = () => {
                 activeOpacity={0.7}
               >
                 <View style={styles.rowLeft}>
-                  <View style={styles.iconCircle}>
+                  <View style={[styles.iconCircle, { backgroundColor: theme.colors.backgroundSecondary }]}>
                     <Smartphone size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
                   </View>
                   <View>
-                    <Text style={styles.rowTitle}>Shake Sensitivity</Text>
-                    <Text style={styles.rowSubtitle}>
+                    <Text style={[styles.rowTitle, { color: theme.colors.textPrimary }]}>Shake Sensitivity</Text>
+                    <Text style={[styles.rowSubtitle, { color: theme.colors.textSecondary }]}>
                       {settings.shakeSensitivity === 'low'
                         ? 'Low · Gentle shakes'
                         : settings.shakeSensitivity === 'high'
@@ -230,7 +259,7 @@ export const SettingsScreen: React.FC = () => {
             </>
           )}
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: theme.colors.borderSubtle }]} />
 
           {/* Monthly Budget */}
           <TouchableOpacity
@@ -242,12 +271,12 @@ export const SettingsScreen: React.FC = () => {
             activeOpacity={0.7}
           >
             <View style={styles.rowLeft}>
-              <View style={styles.iconCircle}>
+              <View style={[styles.iconCircle, { backgroundColor: theme.colors.backgroundSecondary }]}>
                 <WalletCards size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
               </View>
               <View>
-                <Text style={styles.rowTitle}>Monthly Budget</Text>
-                <Text style={styles.rowSubtitle}>
+                <Text style={[styles.rowTitle, { color: theme.colors.textPrimary }]}>Monthly Budget</Text>
+                <Text style={[styles.rowSubtitle, { color: theme.colors.textSecondary }]}>
                   {settings.monthlyBudget && settings.monthlyBudget > 0
                     ? formatCurrency(settings.monthlyBudget, settings.currency)
                     : 'Set your monthly budget'}
@@ -257,17 +286,17 @@ export const SettingsScreen: React.FC = () => {
             <ChevronRight size={15} color={theme.colors.textTertiary} strokeWidth={1.5} />
           </TouchableOpacity>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: theme.colors.borderSubtle }]} />
 
           {/* Haptic Feedback Toggle */}
           <View style={styles.row}>
             <View style={styles.rowLeft}>
-              <View style={styles.iconCircle}>
+              <View style={[styles.iconCircle, { backgroundColor: theme.colors.backgroundSecondary }]}>
                 <Vibrate size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
               </View>
               <View>
-                <Text style={styles.rowTitle}>Haptic Feedback</Text>
-                <Text style={styles.rowSubtitle}>Tactile response on actions</Text>
+                <Text style={[styles.rowTitle, { color: theme.colors.textPrimary }]}>Haptic Feedback</Text>
+                <Text style={[styles.rowSubtitle, { color: theme.colors.textSecondary }]}>Tactile response on actions</Text>
               </View>
             </View>
             <Switch
@@ -276,7 +305,7 @@ export const SettingsScreen: React.FC = () => {
                 triggerHaptic();
                 updateSettings({ hapticsEnabled: val });
               }}
-              trackColor={{ false: theme.colors.border, true: theme.colors.textPrimary }}
+              trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
               thumbColor="#FFFFFF"
             />
           </View>
@@ -285,17 +314,17 @@ export const SettingsScreen: React.FC = () => {
 
       {/* ──────────────── 2. EXPENSE REMINDERS SECTION ──────────────── */}
       <View style={styles.section}>
-        <Text style={styles.sectionHeader}>EXPENSE REMINDERS</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionHeader, { color: theme.colors.textSecondary }]}>EXPENSE REMINDERS</Text>
+        <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
           {/* Daily Reminder Toggle */}
           <View style={styles.row}>
             <View style={styles.rowLeft}>
-              <View style={styles.iconCircle}>
+              <View style={[styles.iconCircle, { backgroundColor: theme.colors.backgroundSecondary }]}>
                 <Bell size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
               </View>
               <View>
-                <Text style={styles.rowTitle}>Daily reminder</Text>
-                <Text style={styles.rowSubtitle}>
+                <Text style={[styles.rowTitle, { color: theme.colors.textPrimary }]}>Daily reminder</Text>
+                <Text style={[styles.rowSubtitle, { color: theme.colors.textSecondary }]}>
                   Remind if no expense recorded today
                 </Text>
               </View>
@@ -309,7 +338,7 @@ export const SettingsScreen: React.FC = () => {
                 }
                 updateSettings({ dailyReminderEnabled: val });
               }}
-              trackColor={{ false: theme.colors.border, true: theme.colors.textPrimary }}
+              trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
               thumbColor="#FFFFFF"
             />
           </View>
@@ -317,7 +346,7 @@ export const SettingsScreen: React.FC = () => {
           {/* Reminder Time Selector */}
           {settings.dailyReminderEnabled && (
             <>
-              <View style={styles.divider} />
+              <View style={[styles.divider, { backgroundColor: theme.colors.borderSubtle }]} />
               <TouchableOpacity
                 style={styles.row}
                 onPress={() => {
@@ -327,12 +356,12 @@ export const SettingsScreen: React.FC = () => {
                 activeOpacity={0.7}
               >
                 <View style={styles.rowLeft}>
-                  <View style={styles.iconCircle}>
+                  <View style={[styles.iconCircle, { backgroundColor: theme.colors.backgroundSecondary }]}>
                     <Clock size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
                   </View>
                   <View>
-                    <Text style={styles.rowTitle}>Preferred Time</Text>
-                    <Text style={styles.rowSubtitle}>
+                    <Text style={[styles.rowTitle, { color: theme.colors.textPrimary }]}>Preferred Time</Text>
+                    <Text style={[styles.rowSubtitle, { color: theme.colors.textSecondary }]}>
                       {formatTimeDisplay(settings.reminderTime)}
                     </Text>
                   </View>
@@ -346,8 +375,8 @@ export const SettingsScreen: React.FC = () => {
 
       {/* ──────────────── 3. DATA MANAGEMENT SECTION ──────────────── */}
       <View style={styles.section}>
-        <Text style={styles.sectionHeader}>DATA & STORAGE</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionHeader, { color: theme.colors.textSecondary }]}>DATA & STORAGE</Text>
+        <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
           {/* Export Expenses Modal Trigger */}
           <TouchableOpacity
             style={styles.row}
@@ -365,18 +394,18 @@ export const SettingsScreen: React.FC = () => {
             activeOpacity={0.7}
           >
             <View style={styles.rowLeft}>
-              <View style={styles.iconCircle}>
+              <View style={[styles.iconCircle, { backgroundColor: theme.colors.backgroundSecondary }]}>
                 <Download size={15} color={theme.colors.textPrimary} strokeWidth={1.5} />
               </View>
               <View>
-                <Text style={styles.rowTitle}>Export Expenses</Text>
-                <Text style={styles.rowSubtitle}>Export records as CSV, PDF, or JSON</Text>
+                <Text style={[styles.rowTitle, { color: theme.colors.textPrimary }]}>Export Expenses</Text>
+                <Text style={[styles.rowSubtitle, { color: theme.colors.textSecondary }]}>Export records as CSV, PDF, or JSON</Text>
               </View>
             </View>
             <ChevronRight size={15} color={theme.colors.textTertiary} strokeWidth={1.5} />
           </TouchableOpacity>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: theme.colors.borderSubtle }]} />
 
           {/* Erase All Data */}
           <TouchableOpacity
@@ -393,7 +422,7 @@ export const SettingsScreen: React.FC = () => {
               </View>
               <View>
                 <Text style={[styles.rowTitle, { color: theme.colors.negative }]}>Erase All Data</Text>
-                <Text style={styles.rowSubtitle}>Permanently delete expenses and reset setup</Text>
+                <Text style={[styles.rowSubtitle, { color: theme.colors.textSecondary }]}>Permanently delete expenses and reset setup</Text>
               </View>
             </View>
             <ChevronRight size={15} color={theme.colors.negative} strokeWidth={1.5} />
@@ -403,20 +432,20 @@ export const SettingsScreen: React.FC = () => {
 
       {/* ──────────────── 4. ABOUT SECTION ──────────────── */}
       <View style={styles.section}>
-        <Text style={styles.sectionHeader}>ABOUT</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionHeader, { color: theme.colors.textSecondary }]}>ABOUT</Text>
+        <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
           <View style={styles.aboutBox}>
             <AppLogo size={44} style={styles.aboutLogo} />
-            <Text style={styles.appName}>Expenza</Text>
-            <Text style={styles.appTagline}>Your personal expense tracker.</Text>
-            <Text style={styles.appVersion}>Version 1.0.0</Text>
+            <Text style={[styles.appName, { color: theme.colors.textPrimary }]}>Expenza</Text>
+            <Text style={[styles.appTagline, { color: theme.colors.textSecondary }]}>Your personal expense tracker.</Text>
+            <Text style={[styles.appVersion, { color: theme.colors.textTertiary }]}>Version 1.1.0 • Dark Mode & AI Ready</Text>
           </View>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: theme.colors.borderSubtle }]} />
 
           <View style={styles.privacyRow}>
             <Shield size={15} color={theme.colors.positive} strokeWidth={1.5} />
-            <Text style={styles.privacyText}>
+            <Text style={[styles.privacyText, { color: theme.colors.textSecondary }]}>
               100% On-Device Local Storage. No external databases, no analytics trackers.
             </Text>
           </View>
@@ -431,16 +460,16 @@ export const SettingsScreen: React.FC = () => {
         onRequestClose={() => !isExporting && setShowExportModal(false)}
         statusBarTranslucent
       >
-        <View style={[styles.modalOverlay, { paddingTop: insets.top + 20 }]}>
-          <View style={[styles.modalContent, { paddingBottom: 24 + Math.max(insets.bottom, 16) }]}>
-            <View style={styles.modalHeader}>
+        <View style={[styles.modalOverlay, { backgroundColor: theme.colors.overlay, paddingTop: insets.top + 20 }]}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, paddingBottom: 24 + Math.max(insets.bottom, 16) }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: theme.colors.borderSubtle }]}>
               <View>
-                <Text style={styles.modalTitle}>Export Expenses</Text>
-                <Text style={styles.modalSubtitle}>Choose your preferred export format</Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Export Expenses</Text>
+                <Text style={[styles.modalSubtitle, { color: theme.colors.textSecondary }]}>Choose your preferred export format</Text>
               </View>
               <TouchableOpacity
                 onPress={() => !isExporting && setShowExportModal(false)}
-                style={styles.modalClose}
+                style={[styles.modalClose, { backgroundColor: theme.colors.backgroundSecondary }]}
                 disabled={isExporting}
               >
                 <X size={18} color={theme.colors.textSecondary} strokeWidth={1.5} />
@@ -449,66 +478,68 @@ export const SettingsScreen: React.FC = () => {
 
             {isExporting ? (
               <View style={styles.exportLoadingContainer}>
-                <ActivityIndicator size="large" color={theme.colors.textPrimary} />
-                <Text style={styles.exportLoadingText}>Preparing your report…</Text>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+                <Text style={[styles.exportLoadingText, { color: theme.colors.textPrimary }]}>
+                  Generating your expense report...
+                </Text>
+                <Text style={[styles.exportLoadingSubText, { color: theme.colors.textSecondary }]}>
+                  Formatting transactions and summary statistics
+                </Text>
               </View>
             ) : (
-              <View style={styles.exportOptionsList}>
+              <View style={styles.exportOptions}>
                 {/* Excel Option */}
                 <TouchableOpacity
-                  style={styles.exportOptionCard}
+                  style={[styles.exportCard, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}
                   onPress={() => handleExport('xlsx')}
                   activeOpacity={0.7}
-                  disabled={isExporting}
                 >
-                  <View style={[styles.exportIconCircle, { backgroundColor: '#DCFCE7' }]}>
-                    <Table size={18} color="#16A34A" strokeWidth={1.5} />
+                  <View style={[styles.exportIconCircle, { backgroundColor: '#ECFDF5' }]}>
+                    <Table size={22} color="#059669" strokeWidth={1.75} />
                   </View>
-                  <View style={styles.exportOptionTextCol}>
-                    <Text style={styles.exportOptionTitle}>Export Excel (.xlsx)</Text>
-                    <Text style={styles.exportOptionDesc}>
-                      Formatted spreadsheet with summary header & clean tables
+                  <View style={styles.exportCardText}>
+                    <Text style={[styles.exportFormatTitle, { color: theme.colors.textPrimary }]}>Excel Spreadsheet (.xlsx)</Text>
+                    <Text style={[styles.exportFormatDesc, { color: theme.colors.textSecondary }]}>
+                      Styled sheets, total summary & formulas
                     </Text>
                   </View>
-                  <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.5} />
+                  <ChevronRight size={18} color={theme.colors.textTertiary} strokeWidth={1.5} />
                 </TouchableOpacity>
 
                 {/* PDF Option */}
                 <TouchableOpacity
-                  style={styles.exportOptionCard}
+                  style={[styles.exportCard, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}
                   onPress={() => handleExport('pdf')}
                   activeOpacity={0.7}
-                  disabled={isExporting}
                 >
-                  <View style={[styles.exportIconCircle, { backgroundColor: '#FEE2E2' }]}>
-                    <FileText size={18} color="#DC2626" strokeWidth={1.5} />
+                  <View style={[styles.exportIconCircle, { backgroundColor: '#FEF2F2' }]}>
+                    <FileText size={22} color="#DC2626" strokeWidth={1.75} />
                   </View>
-                  <View style={styles.exportOptionTextCol}>
-                    <Text style={styles.exportOptionTitle}>Export PDF (.pdf)</Text>
-                    <Text style={styles.exportOptionDesc}>
-                      Formatted statement with category breakdown & summary totals
+                  <View style={styles.exportCardText}>
+                    <Text style={[styles.exportFormatTitle, { color: theme.colors.textPrimary }]}>PDF Document (.pdf)</Text>
+                    <Text style={[styles.exportFormatDesc, { color: theme.colors.textSecondary }]}>
+                      Clean statement with categorized tables
                     </Text>
                   </View>
-                  <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.5} />
+                  <ChevronRight size={18} color={theme.colors.textTertiary} strokeWidth={1.5} />
                 </TouchableOpacity>
 
                 {/* JSON Option */}
                 <TouchableOpacity
-                  style={styles.exportOptionCard}
+                  style={[styles.exportCard, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}
                   onPress={() => handleExport('json')}
                   activeOpacity={0.7}
-                  disabled={isExporting}
                 >
-                  <View style={[styles.exportIconCircle, { backgroundColor: theme.colors.accentLight }]}>
-                    <Code2 size={18} color={theme.colors.primary} strokeWidth={1.5} />
+                  <View style={[styles.exportIconCircle, { backgroundColor: '#EEF2FF' }]}>
+                    <Code2 size={22} color="#4F46E5" strokeWidth={1.75} />
                   </View>
-                  <View style={styles.exportOptionTextCol}>
-                    <Text style={styles.exportOptionTitle}>JSON Backup (.json)</Text>
-                    <Text style={styles.exportOptionDesc}>
-                      Full structured data backup for data portability
+                  <View style={styles.exportCardText}>
+                    <Text style={[styles.exportFormatTitle, { color: theme.colors.textPrimary }]}>Raw Backup (.json)</Text>
+                    <Text style={[styles.exportFormatDesc, { color: theme.colors.textSecondary }]}>
+                      Complete data structure for developer backup
                     </Text>
                   </View>
-                  <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.5} />
+                  <ChevronRight size={18} color={theme.colors.textTertiary} strokeWidth={1.5} />
                 </TouchableOpacity>
               </View>
             )}
@@ -516,56 +547,78 @@ export const SettingsScreen: React.FC = () => {
         </View>
       </Modal>
 
-      {/* Currency Selector Modal */}
+      {/* ──────────────── NAME EDIT MODAL ──────────────── */}
       <Modal
-        visible={showCurrencyModal}
-        animationType="slide"
+        visible={showNameModal}
         transparent
-        onRequestClose={() => setShowCurrencyModal(false)}
-        statusBarTranslucent
+        animationType="fade"
+        onRequestClose={() => setShowNameModal(false)}
       >
-        <View style={[styles.modalOverlay, { paddingTop: insets.top + 20 }]}>
-          <View style={[styles.modalContent, { paddingBottom: 24 + Math.max(insets.bottom, 16) }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Currency</Text>
+        <View style={[styles.modalOverlay, { backgroundColor: theme.colors.overlay }]}>
+          <View style={[styles.editNameCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            <Text style={[styles.editNameTitle, { color: theme.colors.textPrimary }]}>Change Your Name</Text>
+            <TextInput
+              style={[styles.nameInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.textPrimary }]}
+              value={tempName}
+              onChangeText={setTempName}
+              placeholder="Enter your name"
+              placeholderTextColor={theme.colors.textTertiary}
+              autoFocus
+            />
+            <View style={styles.editNameActions}>
               <TouchableOpacity
-                onPress={() => setShowCurrencyModal(false)}
-                style={styles.modalClose}
+                style={[styles.cancelBtn, { backgroundColor: theme.colors.backgroundSecondary }]}
+                onPress={() => setShowNameModal(false)}
               >
-                <X size={18} color={theme.colors.textSecondary} strokeWidth={1.5} />
+                <Text style={[styles.cancelBtnText, { color: theme.colors.textSecondary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveBtn, { backgroundColor: theme.colors.primary }]}
+                onPress={handleSaveName}
+              >
+                <Text style={styles.saveBtnText}>Save</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
 
-            <ScrollView style={styles.currencyList} showsVerticalScrollIndicator={false}>
+      {/* ──────────────── CURRENCY MODAL ──────────────── */}
+      <Modal
+        visible={showCurrencyModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCurrencyModal(false)}
+      >
+        <View style={[styles.modalOverlay, { backgroundColor: theme.colors.overlay }]}>
+          <View style={[styles.currencyCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            <View style={styles.currencyHeader}>
+              <Text style={[styles.currencyTitle, { color: theme.colors.textPrimary }]}>Select Currency</Text>
+              <TouchableOpacity onPress={() => setShowCurrencyModal(false)} style={styles.modalClose}>
+                <X size={18} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.currencyScroll} showsVerticalScrollIndicator={false}>
               {SUPPORTED_CURRENCIES.map((curr) => {
                 const isSelected = settings.currencyCode === curr.code;
                 return (
                   <TouchableOpacity
                     key={curr.code}
-                    style={[styles.currencyItem, isSelected && styles.currencyItemActive]}
+                    style={[
+                      styles.currencyRow,
+                      { backgroundColor: theme.colors.background, borderColor: theme.colors.border },
+                      isSelected && { backgroundColor: theme.colors.primaryLight, borderColor: theme.colors.primary },
+                    ]}
                     onPress={() => {
                       triggerHaptic();
                       updateSettings({ currency: curr.symbol, currencyCode: curr.code });
                       setShowCurrencyModal(false);
                     }}
-                    activeOpacity={0.7}
                   >
-                    <View style={styles.currLeft}>
-                      <View style={[styles.currBadge, isSelected && styles.currBadgeActive]}>
-                        <Text style={[styles.currBadgeText, isSelected && styles.currBadgeTextActive]}>
-                          {curr.symbol}
-                        </Text>
-                      </View>
-                      <View style={styles.currTextCol}>
-                        <Text style={[styles.currName, isSelected && styles.currNameActive]}>
-                          {curr.name}
-                        </Text>
-                        <Text style={styles.currCode}>{curr.code}</Text>
-                      </View>
-                    </View>
-                    <View style={[styles.currIndicator, isSelected && styles.currIndicatorActive]}>
-                      {isSelected && <Check size={12} color={theme.colors.primary} strokeWidth={2.5} />}
-                    </View>
+                    <Text style={[styles.currencyRowCode, { color: theme.colors.textPrimary }]}>
+                      {curr.code} ({curr.symbol})
+                    </Text>
+                    <Text style={[styles.currencyRowName, { color: theme.colors.textSecondary }]}>{curr.name}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -574,71 +627,41 @@ export const SettingsScreen: React.FC = () => {
         </View>
       </Modal>
 
-      {/* Name Edit Modal */}
-      <Modal
-        visible={showNameModal}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setShowNameModal(false)}
-        statusBarTranslucent
-      >
-        <View style={[styles.modalOverlay, { justifyContent: 'center', alignItems: 'center', padding: 20, paddingTop: insets.top + 20, paddingBottom: Math.max(insets.bottom, 20) }]}>
-          <View style={styles.nameModalCard}>
-            <Text style={styles.modalTitle}>Your Name</Text>
-            <Text style={styles.modalSubtitle}>What should we call you on the dashboard?</Text>
-
-            <TextInput
-              style={styles.nameInput}
-              value={tempName}
-              onChangeText={setTempName}
-              placeholder="Enter your name"
-              placeholderTextColor={theme.colors.textTertiary}
-              autoFocus
-            />
-
-            <View style={styles.nameModalActions}>
-              <TouchableOpacity
-                style={styles.nameCancelBtn}
-                onPress={() => setShowNameModal(false)}
-              >
-                <Text style={styles.nameCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.nameSaveBtn}
-                onPress={handleSaveName}
-              >
-                <Text style={styles.nameSaveText}>Save</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Set Monthly Budget Modal */}
-      <SetBudgetModal
-        visible={showBudgetModal}
-        onClose={() => setShowBudgetModal(false)}
-      />
-
       {/* Shake Sensitivity Modal */}
       <ShakeSensitivityModal
         visible={showSensitivityModal}
         onClose={() => setShowSensitivityModal(false)}
       />
 
-      {/* Custom Mobile Time Picker Modal */}
+      {/* Set Budget Modal */}
+      <SetBudgetModal
+        visible={showBudgetModal}
+        onClose={() => setShowBudgetModal(false)}
+      />
+
+      {/* Custom Time Picker Modal */}
       <CustomTimePickerModal
         visible={showReminderTimeModal}
         initialTime={settings.reminderTime || '20:00'}
-        onSave={(timeStr) => updateSettings({ reminderTime: timeStr })}
+        onSave={(val: string) => {
+          updateSettings({ reminderTime: val });
+          setShowReminderTimeModal(false);
+        }}
         onClose={() => setShowReminderTimeModal(false)}
+      />
+
+      {/* Widgets & Shortcuts Hub Modal */}
+      <WidgetsHubModal
+        visible={showWidgetsModal}
+        onClose={() => setShowWidgetsModal(false)}
+        onOpenQuickAdd={() => openAddExpensePopup()}
       />
 
       {/* Erase All Data Confirmation Modal */}
       <ConfirmModal
         visible={showEraseAllConfirm}
-        title="Erase all data?"
-        message="This will permanently delete your expenses and reset Expenza to its initial setup. This action cannot be undone."
+        title="Erase All Data?"
+        message="This will permanently wipe all recorded expenses, budgets, savings goals, and preferences. You will restart from fresh onboarding."
         confirmText="Erase Everything"
         cancelText="Cancel"
         isDestructive
@@ -647,250 +670,141 @@ export const SettingsScreen: React.FC = () => {
       />
     </ScrollView>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
   },
   contentContainer: {
     paddingHorizontal: 20,
     paddingTop: 8,
-    paddingBottom: 110,
+    paddingBottom: 85,
   },
   section: {
     marginBottom: 20,
   },
   sectionHeader: {
-    ...theme.typography.label,
-    color: theme.colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.6,
     marginBottom: 8,
-    marginLeft: 4,
+    paddingHorizontal: 4,
   },
   card: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.container,
-    paddingVertical: 4,
-    paddingHorizontal: 16,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    overflow: 'hidden',
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
   rowLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     flex: 1,
-    marginRight: 10,
   },
   iconCircle: {
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: theme.colors.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   rowTitle: {
-    ...theme.typography.body,
-    fontWeight: '500',
-    color: theme.colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '600',
   },
   rowSubtitle: {
-    ...theme.typography.caption,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
+    fontSize: 12,
+    marginTop: 1,
   },
   divider: {
     height: 1,
-    backgroundColor: theme.colors.borderSubtle,
-  },
-  sensitivityContainer: {
-    paddingVertical: 12,
-  },
-  sensitivityHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  sensitivityTitle: {
-    ...theme.typography.body,
-    fontWeight: '500',
-    color: theme.colors.textPrimary,
-  },
-  sensitivityHelpText: {
-    ...theme.typography.caption,
-    color: theme.colors.textSecondary,
-    marginBottom: 8,
-  },
-  sensitivityCardsList: {
-    gap: 8,
-    marginTop: 4,
-  },
-  sensitivityCardItem: {
-    backgroundColor: theme.colors.backgroundSecondary,
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  sensitivityCardItemActive: {
-    backgroundColor: theme.colors.accentLight,
-    borderColor: theme.colors.primary,
-  },
-  sensCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 2,
-  },
-  sensTitleCol: {
-    flex: 1,
-    marginRight: 8,
-  },
-  sensTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  sensMainTitle: {
-    ...theme.typography.body,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
-  },
-  sensRecBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 6,
-    paddingVertical: 1.5,
-    borderRadius: 9999,
-    borderWidth: 1,
-    borderColor: 'rgba(79, 70, 229, 0.2)',
-  },
-  sensRecBadgeText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: theme.colors.primary,
-  },
-  sensSubtitle: {
-    ...theme.typography.caption,
-    fontSize: 11,
-    fontWeight: '600',
-    color: theme.colors.primary,
-    marginTop: 1,
-  },
-  sensIndicator: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sensIndicatorActive: {
-    borderColor: theme.colors.primary,
-    backgroundColor: '#FFFFFF',
-  },
-  sensDesc: {
-    ...theme.typography.caption,
-    fontSize: 11,
-    color: theme.colors.textSecondary,
-    lineHeight: 15,
+    marginLeft: 60,
   },
   aboutBox: {
     alignItems: 'center',
-    paddingVertical: 18,
+    paddingVertical: 24,
+    paddingHorizontal: 16,
   },
   aboutLogo: {
-    marginBottom: 8,
+    marginBottom: 10,
   },
   appName: {
-    ...theme.typography.sectionHeading,
     fontSize: 18,
     fontWeight: '700',
-    color: theme.colors.textPrimary,
   },
   appTagline: {
-    ...theme.typography.secondary,
-    color: theme.colors.textSecondary,
+    fontSize: 13,
     marginTop: 2,
   },
   appVersion: {
-    ...theme.typography.caption,
-    color: theme.colors.textTertiary,
-    marginTop: 4,
+    fontSize: 11,
+    marginTop: 6,
   },
   privacyRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    paddingHorizontal: 16,
     paddingVertical: 12,
   },
   privacyText: {
+    fontSize: 11,
     flex: 1,
-    ...theme.typography.caption,
-    color: theme.colors.textSecondary,
-    lineHeight: 16,
+    lineHeight: 15,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: theme.colors.overlay,
-    justifyContent: 'flex-end',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
   },
   modalContent: {
-    backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: theme.borderRadius.container,
-    borderTopRightRadius: theme.borderRadius.container,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 36,
-    maxHeight: '75%',
-    borderTopWidth: 1,
-    borderColor: theme.colors.border,
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 20,
   },
   modalHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
     paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.borderSubtle,
   },
   modalTitle: {
-    ...theme.typography.sectionHeading,
-    color: theme.colors.textPrimary,
+    fontSize: 18,
+    fontWeight: '700',
   },
   modalSubtitle: {
-    ...theme.typography.secondary,
-    color: theme.colors.textSecondary,
+    fontSize: 12,
     marginTop: 2,
   },
   modalClose: {
-    padding: 4,
+    width: 32,
+    height: 32,
+    borderRadius: 9999,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  exportOptionsList: {
-    paddingTop: 12,
+  exportOptions: {
+    marginTop: 16,
     gap: 10,
   },
-  exportOptionCard: {
+  exportCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.background,
-    borderRadius: 14,
     padding: 14,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: theme.colors.border,
   },
   exportIconCircle: {
     width: 40,
@@ -900,155 +814,109 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
-  exportOptionTextCol: {
+  exportCardText: {
     flex: 1,
-    marginRight: 8,
   },
-  exportOptionTitle: {
-    ...theme.typography.body,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
-    marginBottom: 2,
+  exportFormatTitle: {
+    fontSize: 14,
+    fontWeight: '700',
   },
-  exportOptionDesc: {
-    ...theme.typography.caption,
-    color: theme.colors.textSecondary,
-    lineHeight: 15,
+  exportFormatDesc: {
+    fontSize: 11,
+    marginTop: 2,
   },
   exportLoadingContainer: {
-    paddingVertical: 36,
+    paddingVertical: 32,
     alignItems: 'center',
-    justifyContent: 'center',
   },
   exportLoadingText: {
-    ...theme.typography.body,
-    color: theme.colors.textSecondary,
-    marginTop: 12,
+    fontSize: 15,
+    fontWeight: '700',
+    marginTop: 14,
   },
-  currencyList: {
-    paddingTop: 8,
+  exportLoadingSubText: {
+    fontSize: 12,
+    marginTop: 4,
   },
-  currencyItem: {
+  editNameCard: {
+    width: '100%',
+    maxWidth: 320,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+  },
+  editNameTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 14,
+  },
+  nameInput: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  editNameActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  cancelBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 9999,
+  },
+  cancelBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  saveBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 9999,
+  },
+  saveBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  currencyCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 20,
+    maxHeight: 480,
+  },
+  currencyHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
+    marginBottom: 14,
   },
-  currencyItemActive: {
-    backgroundColor: theme.colors.accentLight,
-    borderColor: theme.colors.primary,
-  },
-  currLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  currBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: theme.colors.backgroundSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  currBadgeActive: {
-    backgroundColor: '#FFFFFF',
-  },
-  currBadgeText: {
-    fontSize: 16,
+  currencyTitle: {
+    fontSize: 17,
     fontWeight: '700',
-    color: theme.colors.textPrimary,
   },
-  currBadgeTextActive: {
-    color: theme.colors.primary,
+  currencyScroll: {
+    maxHeight: 380,
   },
-  currTextCol: {
-    gap: 2,
-  },
-  currName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
-  },
-  currNameActive: {
-    color: theme.colors.textPrimary,
-  },
-  currCode: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: theme.colors.textSecondary,
-  },
-  currIndicator: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  currIndicatorActive: {
-    borderColor: theme.colors.primary,
-    backgroundColor: '#FFFFFF',
-  },
-  nameModalCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.container,
-    padding: 24,
-    marginHorizontal: 20,
-    marginBottom: 'auto',
-    marginTop: 'auto',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    width: '100%',
-    maxWidth: 340,
-  },
-  nameInput: {
-    backgroundColor: theme.colors.background,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 15,
-    fontWeight: '500',
-    color: theme.colors.textPrimary,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    marginBottom: 18,
-    marginTop: 12,
-  },
-  nameModalActions: {
+  currencyRow: {
     flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'flex-end',
-  },
-  nameCancelBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 9999, // Fully rounded
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    marginBottom: 8,
   },
-  nameCancelText: {
-    ...theme.typography.secondary,
-    fontWeight: '500',
-    color: theme.colors.textSecondary,
+  currencyRowCode: {
+    fontSize: 14,
+    fontWeight: '700',
   },
-  nameSaveBtn: {
-    backgroundColor: theme.colors.textPrimary,
-    paddingHorizontal: 22,
-    paddingVertical: 10,
-    borderRadius: 9999, // Fully rounded
-  },
-  nameSaveText: {
-    ...theme.typography.secondary,
-    fontWeight: '600',
-    color: '#FFFFFF',
+  currencyRowName: {
+    fontSize: 12,
   },
 });

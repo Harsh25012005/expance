@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
@@ -6,14 +6,13 @@ import { useExpenses } from '../context/ExpenseContext';
 import { CATEGORIES } from '../constants/categories';
 import { CategoryType } from '../types/expense';
 import { formatCurrency } from '../utils/formatters';
-import { theme } from '../constants/theme';
 
 interface WhereDidItGoWidgetProps {
   onOpenBreakdown: () => void;
 }
 
-export const WhereDidItGoWidget: React.FC<WhereDidItGoWidgetProps> = ({ onOpenBreakdown }) => {
-  const { expenses, settings } = useExpenses();
+export const WhereDidItGoWidget: React.FC<WhereDidItGoWidgetProps> = memo(({ onOpenBreakdown }) => {
+  const { expenses, settings, theme } = useExpenses();
 
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -59,25 +58,25 @@ export const WhereDidItGoWidget: React.FC<WhereDidItGoWidgetProps> = ({ onOpenBr
   };
 
   return (
-    <View style={styles.widgetContainer}>
+    <View style={[styles.widgetContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Where did it go?</Text>
-          <Text style={styles.totalSpentText}>
+          <Text style={[styles.title, { color: theme.colors.textPrimary }]}>Where did it go?</Text>
+          <Text style={[styles.totalSpentText, { color: theme.colors.textSecondary }]}>
             {formatCurrency(totalMonthSpent, settings.currency)} spent this month
           </Text>
         </View>
 
         <TouchableOpacity
-          style={styles.viewBtn}
+          style={[styles.viewBtn, { backgroundColor: theme.colors.accentLight }]}
           onPress={() => {
             triggerHaptic();
             onOpenBreakdown();
           }}
           activeOpacity={0.7}
         >
-          <Text style={styles.viewBtnText}>Breakdown</Text>
+          <Text style={[styles.viewBtnText, { color: theme.colors.primary }]}>Breakdown</Text>
           <ChevronRight size={13} color={theme.colors.primary} strokeWidth={2} />
         </TouchableOpacity>
       </View>
@@ -85,7 +84,7 @@ export const WhereDidItGoWidget: React.FC<WhereDidItGoWidgetProps> = ({ onOpenBr
       {/* Multi-segment horizontal indicator bar */}
       {topCategories.length > 0 ? (
         <>
-          <View style={styles.multiBarTrack}>
+          <View style={[styles.multiBarTrack, { backgroundColor: theme.colors.backgroundSecondary }]}>
             {topCategories.map((cat) => (
               <View
                 key={cat.id}
@@ -106,9 +105,9 @@ export const WhereDidItGoWidget: React.FC<WhereDidItGoWidgetProps> = ({ onOpenBr
               <View key={cat.id} style={styles.catRow}>
                 <View style={styles.catLeft}>
                   <View style={[styles.dot, { backgroundColor: cat.color || theme.colors.primary }]} />
-                  <Text style={styles.catName}>{cat.label}</Text>
+                  <Text style={[styles.catName, { color: theme.colors.textPrimary }]}>{cat.label}</Text>
                 </View>
-                <Text style={styles.catAmount}>
+                <Text style={[styles.catAmount, { color: theme.colors.textPrimary }]}>
                   {formatCurrency(cat.amount, settings.currency)}
                 </Text>
               </View>
@@ -116,19 +115,17 @@ export const WhereDidItGoWidget: React.FC<WhereDidItGoWidgetProps> = ({ onOpenBr
           </View>
         </>
       ) : (
-        <Text style={styles.emptyText}>Add expenses to see your spending breakdown.</Text>
+        <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>Add expenses to see your spending breakdown.</Text>
       )}
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   widgetContainer: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.container,
+    borderRadius: 20,
     padding: 16,
     borderWidth: 1,
-    borderColor: theme.colors.border,
     marginBottom: 12,
   },
   header: {
@@ -138,36 +135,29 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   title: {
-    ...theme.typography.sectionHeading,
     fontSize: 15,
-    color: theme.colors.textPrimary,
+    fontWeight: '700',
   },
   totalSpentText: {
-    ...theme.typography.caption,
     fontSize: 12,
     fontWeight: '600',
-    color: theme.colors.textSecondary,
     marginTop: 2,
   },
   viewBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: theme.colors.accentLight,
     paddingHorizontal: 12,
     paddingVertical: 5,
-    borderRadius: 9999, // Fully rounded
+    borderRadius: 9999,
   },
   viewBtnText: {
-    ...theme.typography.caption,
     fontSize: 11,
     fontWeight: '700',
-    color: theme.colors.primary,
   },
   multiBarTrack: {
     height: 6,
-    borderRadius: 9999, // Fully rounded track
-    backgroundColor: theme.colors.backgroundSecondary,
+    borderRadius: 9999,
     flexDirection: 'row',
     overflow: 'hidden',
     gap: 2,
@@ -196,20 +186,15 @@ const styles = StyleSheet.create({
     borderRadius: 9999,
   },
   catName: {
-    ...theme.typography.body,
     fontSize: 13,
     fontWeight: '500',
-    color: theme.colors.textPrimary,
   },
   catAmount: {
-    ...theme.typography.body,
     fontSize: 13,
     fontWeight: '700',
-    color: theme.colors.textPrimary,
   },
   emptyText: {
-    ...theme.typography.caption,
-    color: theme.colors.textSecondary,
+    fontSize: 12,
     fontStyle: 'italic',
     paddingVertical: 4,
   },
